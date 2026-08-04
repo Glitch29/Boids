@@ -1,0 +1,16 @@
+# IntelliJ compiler output
+out/
+
+# Generated artifacts: simulation frames and navigability maps.
+# Everything here is reproducible from a seed plus the committed source.
+render/
+
+# Java
+*.class
+
+# Claude Code per-user settings (settings.json, if it ever exists, is shared)
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
