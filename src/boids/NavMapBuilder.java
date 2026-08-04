@@ -20,6 +20,14 @@ public final class NavMapBuilder {
 
     private static final double INF = 1e18;
 
+    /**
+     * A range spanning the full circle cannot be represented, since its two bounds
+     * would coincide. Capping just short keeps the midpoint meaningful, which both
+     * the visualiser's hue and the forced turn depend on. The visual difference from
+     * a true 360 is nil: value has already fallen to zero.
+     */
+    private static final double MAX_RANGE = 359.9;
+
     /** Program-level entry point. {@code #000000} is out of bounds, anything else is traversable. */
     public static NavMap buildFromPng(Path png, int radius) throws IOException {
         BufferedImage img = ImageIO.read(png.toFile());
@@ -40,6 +48,24 @@ public final class NavMapBuilder {
      * @param radius the boid's turning radius in pixels
      */
     public static NavMap build(boolean[] oob, int width, int height, int radius) {
+        List<List<NavMap.Range>> found = new ArrayList<>(width * height);
+        for (int i = 0; i < width * height; i++) found.add(new ArrayList<>());
+
+        addInBoundsRanges(oob, width, height, radius, found);
+        addOutOfBoundsRanges(oob, width, height, radius, found);
+
+        List<List<NavMap.Range>> out = new ArrayList<>(width * height);
+        for (int i = 0; i < width * height; i++) out.add(NavMap.merge(found.get(i)));
+
+        return new NavMap(width, height, radius, Arrays.copyOf(oob, width * height), out);
+    }
+
+    /**
+     * The headings from which a traversable pixel inevitably leaves play, one
+     * out-of-bounds region at a time.
+     */
+    private static void addInBoundsRanges(boolean[] oob, int width, int height, int radius,
+                                          List<List<NavMap.Range>> found) {
         // Pad with out-of-bounds so that every sample point taken from an in-bounds
         // pixel lands inside the working grid, and so the play area is genuinely
         // bounded rather than open at the image edge.
@@ -56,9 +82,6 @@ public final class NavMapBuilder {
         }
 
         Labeling lab = label(work, pw, ph);
-
-        List<List<NavMap.Range>> found = new ArrayList<>(width * height);
-        for (int i = 0; i < width * height; i++) found.add(new ArrayList<>());
 
         // One sample every half pixel or so along C, with a floor that keeps angular
         // resolution usable at small radii.
@@ -89,7 +112,7 @@ public final class NavMapBuilder {
 
             // Distance to this region alone. Thresholding at r gives the dilation D;
             // thresholding at 2r prunes pixels whose circle C cannot reach D at all.
-            double[] d2 = squaredEdt(regionMask, pw, ph);
+            double[] d2 = featureTransform(regionMask, pw, ph).d2();
             for (int i = 0; i < pw * ph; i++) inD[i] = d2[i] <= near2;
 
             for (int y = 0; y < height; y++) {
@@ -110,12 +133,44 @@ public final class NavMapBuilder {
                 }
             }
         }
+    }
 
-        List<List<NavMap.Range>> out = new ArrayList<>(width * height);
-        for (int i = 0; i < width * height; i++) out.add(NavMap.merge(found.get(i)));
+    /**
+     * Out-of-bounds pixels within one turning radius of the play area carry a forced
+     * turn too, so a boid that has clipped the boundary is steered back rather than
+     * left unconstrained.
+     * <p>
+     * The prohibited interval is centred on the heading directly away from the nearest
+     * point of the play area, and widens from 180 degrees at the border to the full
+     * circle one turning radius out. Beyond that there is no range at all.
+     */
+    private static void addOutOfBoundsRanges(boolean[] oob, int width, int height, int radius,
+                                             List<List<NavMap.Range>> found) {
+        boolean[] free = new boolean[width * height];
+        for (int i = 0; i < width * height; i++) free[i] = !oob[i];
 
-        boolean[] oobCopy = Arrays.copyOf(oob, width * height);
-        return new NavMap(width, height, radius, oobCopy, out);
+        Features ft = featureTransform(free, width, height);
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int p = x + y * width;
+                if (!oob[p]) continue;
+
+                double d = Math.sqrt(ft.d2()[p]);
+                if (d > radius) continue;
+
+                double dx = ft.srcX()[p] - x;
+                double dy = ft.srcY()[p] - y;
+                if (dx == 0 && dy == 0) continue;
+
+                double away = Math.toDegrees(Math.atan2(dy, dx)) + 180.0;
+                double len = Math.min(180.0 + 180.0 * (d / radius), MAX_RANGE);
+
+                found.get(p).add(new NavMap.Range(
+                        NavMap.norm(away - len / 2.0),
+                        NavMap.norm(away + len / 2.0)));
+            }
+        }
     }
 
     /**
@@ -197,37 +252,53 @@ public final class NavMapBuilder {
         return new Labeling(labels, next);
     }
 
-    // ---- Exact squared Euclidean distance transform ------------------------
+    // ---- Exact Euclidean feature transform ---------------------------------
+
+    /** Squared distance to the nearest set cell of the mask, and that cell's coordinates. */
+    private record Features(double[] d2, int[] srcX, int[] srcY) {}
 
     /**
-     * Squared distance from each cell to the nearest set cell of {@code mask},
-     * by Felzenszwalb and Huttenlocher's lower-envelope method. Exact, and linear
-     * in the number of pixels.
+     * Felzenszwalb and Huttenlocher's lower-envelope method, carrying the argmin
+     * through both passes so the nearest set cell is recovered as well as its
+     * distance. Exact, and linear in the number of pixels.
      */
-    private static double[] squaredEdt(boolean[] mask, int w, int h) {
+    private static Features featureTransform(boolean[] mask, int w, int h) {
         int n = Math.max(w, h);
         double[] f = new double[n];
         double[] d = new double[n];
+        int[] arg = new int[n];
         int[] v = new int[n];
         double[] z = new double[n + 1];
 
-        double[] out = new double[w * h];
-        for (int i = 0; i < w * h; i++) out[i] = mask[i] ? 0.0 : INF;
+        double[] dist = new double[w * h];
+        int[] argY = new int[w * h];
+        int[] srcX = new int[w * h];
+        int[] srcY = new int[w * h];
+
+        for (int i = 0; i < w * h; i++) dist[i] = mask[i] ? 0.0 : INF;
 
         for (int x = 0; x < w; x++) {
-            for (int y = 0; y < h; y++) f[y] = out[x + y * w];
-            transform1d(f, d, h, v, z);
-            for (int y = 0; y < h; y++) out[x + y * w] = d[y];
+            for (int y = 0; y < h; y++) f[y] = dist[x + y * w];
+            transform1d(f, d, arg, h, v, z);
+            for (int y = 0; y < h; y++) {
+                dist[x + y * w] = d[y];
+                argY[x + y * w] = arg[y];
+            }
         }
         for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) f[x] = out[x + y * w];
-            transform1d(f, d, w, v, z);
-            for (int x = 0; x < w; x++) out[x + y * w] = d[x];
+            for (int x = 0; x < w; x++) f[x] = dist[x + y * w];
+            transform1d(f, d, arg, w, v, z);
+            for (int x = 0; x < w; x++) {
+                dist[x + y * w] = d[x];
+                int sx = arg[x];
+                srcX[x + y * w] = sx;
+                srcY[x + y * w] = argY[sx + y * w];
+            }
         }
-        return out;
+        return new Features(dist, srcX, srcY);
     }
 
-    private static void transform1d(double[] f, double[] d, int n, int[] v, double[] z) {
+    private static void transform1d(double[] f, double[] d, int[] arg, int n, int[] v, double[] z) {
         int k = 0;
         v[0] = 0;
         z[0] = -INF;
@@ -248,6 +319,7 @@ public final class NavMapBuilder {
             while (z[k + 1] < q) k++;
             double dq = q - v[k];
             d[q] = dq * dq + f[v[k]];
+            arg[q] = v[k];
         }
     }
 

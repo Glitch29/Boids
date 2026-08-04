@@ -15,9 +15,9 @@ public final class Rules {
     /**
      * @return -1 to turn left, 0 to hold heading, +1 to turn right.
      */
-    public static int decide(Sim s, int i) {
-        final double hx = Sim.COS[s.h[i]];
-        final double hy = Sim.SIN[s.h[i]];
+    public static int decide(State s, int i) {
+        final double hx = Params.COS[s.h[i]];
+        final double hy = Params.SIN[s.h[i]];
         final double xi = s.x[i];
         final double yi = s.y[i];
 
@@ -45,8 +45,8 @@ public final class Rules {
 
             cohX += dx;
             cohY += dy;
-            aliX += Sim.COS[s.h[j]];
-            aliY += Sim.SIN[s.h[j]];
+            aliX += Params.COS[s.h[j]];
+            aliY += Params.SIN[s.h[j]];
 
             if (d < Params.R_SEP) {
                 double falloff = (Params.R_SEP - d) / Params.R_SEP;  // 1 at contact, 0 at the rim
@@ -73,7 +73,7 @@ public final class Rules {
         double bestScore = Double.NEGATIVE_INFINITY;
         for (int delta : CANDIDATES) {
             int a = Math.floorMod(s.h[i] + delta, Params.TURNS);
-            double score = Sim.COS[a] * dirX + Sim.SIN[a] * dirY
+            double score = Params.COS[a] * dirX + Params.SIN[a] * dirY
                     + (delta == 0 ? Params.STRAIGHT_BIAS : 0.0);
             if (score > bestScore) {
                 bestScore = score;

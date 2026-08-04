@@ -1,59 +1,37 @@
 package boids;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Builds the annulus test area, runs the navigability transform at two turning radii,
- * and writes the visualisations.
+ * Builds the play areas, runs the navigability transform over each, and writes the
+ * visualisations.
  * <p>
- * Also prints a radial profile beside the closed-form answer for this particular
- * geometry, since an annulus is one of the few shapes where the prohibited ranges can
- * be solved exactly and checked against the sampled result.
+ * The annulus is kept as a regression check: it is one of the few shapes whose
+ * prohibited ranges can be solved exactly, so its computed profile is printed beside
+ * the closed form.
  */
 public final class PlayAreaMain {
 
-    private static final int SIZE = 100;
-    private static final double CENTRE = SIZE / 2.0;
-    private static final double R_OUTER = 45.0;
-    private static final double R_INNER = 15.0;
-
-    private static final int RENDER_SCALE = 4;
+    private static final Path DIR = Path.of("render", "playarea");
 
     public static void main(String[] args) throws IOException {
-        // Not out/ — that belongs to the IDE's compiler output and is marked excluded.
-        Path dir = Path.of("render", "playarea");
-        Files.createDirectories(dir);
+        PlayAreas.writePeanut();
+        int radius = (int) Math.round(Params.R_TURN);
+        System.out.printf("peanut %dx%d, r=%d -> %s%n",
+                PlayAreas.PEANUT_W, PlayAreas.PEANUT_H, radius, PlayAreas.PEANUT);
+        NavMapRender.write(NavMapBuilder.buildFromPng(PlayAreas.PEANUT, radius), 1,
+                DIR.resolve("peanut_navmap.png"));
 
-        Path source = dir.resolve("annulus.png");
-        writeTestArea(source);
-        System.out.println("test area -> " + source);
-
-        for (int radius : new int[]{10, 5}) {
-            NavMap map = NavMapBuilder.buildFromPng(source, radius);
-            Path out = dir.resolve("navmap_r" + radius + ".png");
-            NavMapRender.write(map, RENDER_SCALE, out);
-            System.out.printf("%nturning radius %d  ->  %s  (scale %dx)%n", radius, out, RENDER_SCALE);
-            profile(map, radius);
+        PlayAreas.writeAnnulus();
+        for (int r : new int[]{10, 5}) {
+            NavMap map = NavMapBuilder.buildFromPng(PlayAreas.ANNULUS, r);
+            NavMapRender.write(map, 4, DIR.resolve("annulus_navmap_r" + r + ".png"));
+            System.out.printf("%nannulus, turning radius %d (scale 4x)%n", r);
+            profile(map, r);
             cardinals(map);
         }
-    }
-
-    /** Black 100x100, white disk of radius 45, black disk of radius 15, concentric. */
-    private static void writeTestArea(Path out) throws IOException {
-        BufferedImage img = new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_RGB);
-        for (int y = 0; y < SIZE; y++) {
-            for (int x = 0; x < SIZE; x++) {
-                double d = Math.hypot(x + 0.5 - CENTRE, y + 0.5 - CENTRE);
-                boolean free = d > R_INNER && d < R_OUTER;
-                img.setRGB(x, y, free ? 0xFFFFFF : 0x000000);
-            }
-        }
-        ImageIO.write(img, "png", out.toFile());
     }
 
     /**
@@ -61,11 +39,11 @@ public final class PlayAreaMain {
      * the exact answer for an annulus.
      */
     private static void profile(NavMap map, int radius) {
-        int row = SIZE / 2;
+        int row = PlayAreas.ANNULUS_SIZE / 2;
         System.out.println("    d    n   computed (mid, length)          exact length");
         for (int x = 66; x <= 94; x += 2) {
-            double dx = x + 0.5 - CENTRE;
-            double dy = row + 0.5 - CENTRE;
+            double dx = x + 0.5 - PlayAreas.ANNULUS_CENTRE;
+            double dy = row + 0.5 - PlayAreas.ANNULUS_CENTRE;
             double d = Math.hypot(dx, dy);
 
             List<NavMap.Range> ranges = map.ranges(x, row);
@@ -85,7 +63,7 @@ public final class PlayAreaMain {
      * screen convention, so 90 degrees is downward.
      */
     private static void cardinals(NavMap map) {
-        int c = SIZE / 2;
+        int c = PlayAreas.ANNULUS_SIZE / 2;
         // {x, y, expected midpoint heading}
         int[][] probes = {
                 {c, c - 18, 90}, {c, c - 42, 270},    // north of centre: in toward it is down
@@ -109,8 +87,10 @@ public final class PlayAreaMain {
      * heading away from it (0 degrees).
      */
     private static String exact(double d, double r) {
-        double kIn = ((R_INNER + r) * (R_INNER + r) - d * d - r * r) / (2 * d * r);
-        double kOut = ((R_OUTER - r) * (R_OUTER - r) - d * d - r * r) / (2 * d * r);
+        double rIn = PlayAreas.ANNULUS_INNER;
+        double rOut = PlayAreas.ANNULUS_OUTER;
+        double kIn = ((rIn + r) * (rIn + r) - d * d - r * r) / (2 * d * r);
+        double kOut = ((rOut - r) * (rOut - r) - d * d - r * r) / (2 * d * r);
 
         StringBuilder sb = new StringBuilder();
         if (kIn > 0 && kIn < 1) {

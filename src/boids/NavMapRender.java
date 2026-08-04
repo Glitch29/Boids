@@ -11,17 +11,28 @@ import java.util.List;
 /**
  * Encodes a {@link NavMap} visually.
  * <p>
- * Out of bounds is black. A traversable pixel with no prohibited range is white.
- * Otherwise the longest range is shown directly: hue is its midpoint heading, and
- * value falls from a medium pastel toward black as the cube root of its length
- * approaches the cube root of 360 degrees. Saturation halves for each range beyond
- * the first, so a pixel with two ranges reads as a washed-out version of its longest.
+ * Every pixel carrying a prohibited range is coloured the same way, whether it is
+ * inside the play area or out of it: hue is the midpoint heading of the longest
+ * range, and value falls from a medium pastel toward black as the cube root of that
+ * range's length approaches the cube root of 360 degrees. Saturation halves for each
+ * range beyond the first, so a pixel with two ranges reads as a washed-out version of
+ * its longest.
+ * <p>
+ * Because the out-of-bounds ranges are centred on the heading away from the play area
+ * and the in-bounds ranges near a wall are centred on the heading into it, hue runs
+ * continuously across the boundary and only value steps.
+ * <p>
+ * Pixels with no range at all are flat: pale blue outside the play area, pale green
+ * inside it.
  */
 public final class NavMapRender {
     private NavMapRender() {}
 
     /** Saturation of a pixel whose single range has length near zero. */
     private static final double BASE_SATURATION = 0.5;
+
+    private static final int UNRESTRICTED_OOB = 0xBAD5F5;
+    private static final int UNRESTRICTED_FREE = 0xE9F5E1;
 
     public static void write(NavMap map, int scale, Path out) throws IOException {
         if (out.getParent() != null) Files.createDirectories(out.getParent());
@@ -48,10 +59,10 @@ public final class NavMapRender {
     }
 
     private static int colorOf(NavMap map, int x, int y) {
-        if (map.oob(x, y)) return 0x000000;
-
         List<NavMap.Range> ranges = map.ranges(x, y);
-        if (ranges.isEmpty()) return 0xFFFFFF;
+        if (ranges.isEmpty()) {
+            return map.oob(x, y) ? UNRESTRICTED_OOB : UNRESTRICTED_FREE;
+        }
 
         NavMap.Range longest = ranges.get(0);
         double length = longest.lengthDeg();

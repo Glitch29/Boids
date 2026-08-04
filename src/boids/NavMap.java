@@ -55,6 +55,40 @@ public final class NavMap {
     /** Merged, zero-length-free, ordered longest first. Empty if the pixel is free. */
     public List<Range> ranges(int x, int y) { return ranges.get(x + y * width); }
 
+    /** Anything off the image counts as out of bounds; the play area is the image. */
+    public boolean traversable(double x, double y) {
+        int px = (int) Math.floor(x);
+        int py = (int) Math.floor(y);
+        if (px < 0 || py < 0 || px >= width || py >= height) return false;
+        return !oob[px + py * width];
+    }
+
+    /**
+     * The compulsory turn for a boid standing on this pixel with this heading.
+     * <p>
+     * If the heading falls inside a prohibited range, the boid turns away from that
+     * range's midpoint — continuing in whichever rotational direction already carries
+     * it further from the obstacle. Ranges are disjoint after merging, so at most one
+     * can contain the heading.
+     *
+     * @return {@code -1} or {@code +1} to force a turn, or {@code 0} when the heading
+     *         is unrestricted. Zero is unambiguous as a sentinel because turning away
+     *         from a midpoint is never "hold straight".
+     */
+    public int forcedTurn(double x, double y, double headingDeg) {
+        int px = (int) Math.floor(x);
+        int py = (int) Math.floor(y);
+        if (px < 0 || py < 0 || px >= width || py >= height) return 0;
+
+        for (Range r : ranges.get(px + py * width)) {
+            if (norm(headingDeg - r.ccwDeg()) < r.lengthDeg()) {
+                double offset = norm(headingDeg - r.midDeg() + 180.0) - 180.0;
+                return offset >= 0 ? +1 : -1;
+            }
+        }
+        return 0;
+    }
+
     static double norm(double deg) {
         double d = deg % 360.0;
         return d < 0 ? d + 360.0 : d;

@@ -10,6 +10,8 @@ package boids;
  * achievable if {@link #R_SEP} comfortably exceeds it. A boid that detects a
  * neighbour it cannot turn away from in time produces jitter that no amount of
  * weight tuning will fix.
+ * <p>
+ * The arena is no longer defined here. Its extent comes from the play area image.
  */
 public final class Params {
     private Params() {}
@@ -25,8 +27,23 @@ public final class Params {
     /** Distance covered per tick: the chord of the TURNS-gon of radius R_TURN. */
     public static final double SPEED = 2.0 * R_TURN * StrictMath.sin(StrictMath.PI / TURNS);
 
-    public static final double W = 20.0 * R_TURN;
-    public static final double H = 20.0 * R_TURN;
+    public static double headingDeg(int heading) {
+        return heading * 360.0 / TURNS;
+    }
+
+    /** Unit vectors for each heading index, built once. */
+    public static final double[] COS = new double[TURNS];
+    public static final double[] SIN = new double[TURNS];
+
+    static {
+        // StrictMath, not Math: bit-identical on every platform, so a corpus
+        // generated on one machine is reproducible on another.
+        for (int a = 0; a < TURNS; a++) {
+            double t = 2.0 * StrictMath.PI * a / TURNS;
+            COS[a] = StrictMath.cos(t);
+            SIN[a] = StrictMath.sin(t);
+        }
+    }
 
     // ---- Perception --------------------------------------------------------
 
