@@ -1,8 +1,13 @@
 package boids;
 
+import javax.imageio.ImageIO;
+import java.awt.*;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Random;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The simulation engine: it owns the play area's navigation and knows how to advance a
@@ -15,10 +20,10 @@ import java.util.Random;
  */
 public final class Sim {
 
-    private static final long DEFAULT_SEED = 1234L;
-    private static final int MAX_SEED_ATTEMPTS = 10_000;
-
-    private final NavMap area;
+    private final Engine engine;
+    private List<State> states = new ArrayList<>();
+    private final List<List<State>> printGrid = new ArrayList<>();
+    private final Renderer renderer;
 
     /**
      * @param playArea PNG where {@code #000000} is out of bounds
@@ -27,102 +32,127 @@ public final class Sim {
      *                  knob for making boids commit to their turns earlier than they
      *                  strictly must.
      */
-    public Sim(Path playArea, double navRadius) throws IOException {
-        this.area = NavMapBuilder.buildFromPng(playArea, (int) Math.round(navRadius));
+    public Sim(ScenarioParameter parameter) throws IOException {
+        engine = new Boids2DEngine(parameter);
+        renderer = new Boids2DRenderer(parameter.mapPath());
     }
 
-    public NavMap area() { return area; }
-
-    public State init(int n) {
-        return init(n, DEFAULT_SEED);
-    }
-
-    /**
-     * A fresh timeline with {@code n} boids placed uniformly over the play area by
-     * rejection, and no override.
-     * <p>
-     * Position and heading are drawn together and redrawn as a pair, because a boid
-     * must start somewhere it is both in play and unconstrained — starting inside a
-     * restricted interval would mean beginning the run already committed to a turn.
-     */
-    public State init(int n, long seed) {
-        double[] x = new double[n];
-        double[] y = new double[n];
-        int[] h = new int[n];
-
-        // java.util.Random's algorithm is specified exactly in its javadoc, so a
-        // given seed produces the same sequence on any JVM.
-        Random rng = new Random(seed);
-        for (int i = 0; i < n; i++) {
-            boolean placed = false;
-            for (int attempt = 0; attempt < MAX_SEED_ATTEMPTS && !placed; attempt++) {
-                x[i] = rng.nextDouble() * area.width();
-                y[i] = rng.nextDouble() * area.height();
-                h[i] = rng.nextInt(Params.TURNS);
-                placed = area.traversable(x[i], y[i])
-                        && area.forcedTurn(x[i], y[i], Params.headingDeg(h[i])) == 0;
-            }
-            if (!placed) {
-                throw new IllegalStateException("no unconstrained start for boid " + i
-                        + " in " + MAX_SEED_ATTEMPTS + " attempts");
-            }
+    public void startSeeds(long... seeds) {
+        for (long seed : seeds) {
+            states.add(engine.init(seed));
         }
-        return new State(n, x, y, h, 0L, null);
-    }
-
-    /**
-     * Advance one tick, returning a new state and leaving the argument untouched.
-     * <p>
-     * The play area's compulsory turn is applied here rather than folded into the
-     * decision layer, so a boid facing a wall has its choice removed rather than
-     * discouraged.
-     *
-     * @throws IllegalStateException if a boid leaves the image
-     */
-    public State step(State s) {
-        int n = s.n;
-        double[] x = new double[n];
-        double[] y = new double[n];
-        int[] h = new int[n];
-
-        for (int i = 0; i < n; i++) {
-            // decide() reads only s, which no longer changes, so deciding and acting
-            // can share one pass without any risk of reading a half-updated tick.
-            int turn = Rules.decide(s, i);
-
-            int forced = area.forcedTurn(s.x[i], s.y[i], Params.headingDeg(s.h[i]));
-            if (forced != 0) turn = forced;
-
-            int a = Math.floorMod(s.h[i] + turn, Params.TURNS);
-            h[i] = a;
-
-            // Turn is applied before translation, so a boid moves along its new heading.
-            double px = s.x[i] + Params.SPEED * Params.COS[a];
-            double py = s.y[i] + Params.SPEED * Params.SIN[a];
-
-            if (px < 0 || py < 0 || px >= area.width() || py >= area.height()) {
-                throw new IllegalStateException(String.format(
-                        "boid %d left the image at tick %d: (%.1f, %.1f) heading %d",
-                        i, s.tick, px, py, a));
-            }
-
-            x[i] = px;
-            y[i] = py;
-        }
-
-        return new State(n, x, y, h, s.tick + 1, s.override);
     }
 
     /**
      * Advance until the state reaches {@code targetTick}. Returns the argument
      * unchanged if it is already there.
      */
-    public State stepTo(State s, long targetTick) {
-        if (targetTick < s.tick) {
-            throw new IllegalArgumentException(
-                    "cannot step back from tick " + s.tick + " to " + targetTick);
+    public void stepTo(long targetTick) {
+        List<State> result = new ArrayList<>();
+        for (State s : states) {
+            while (s.tick < targetTick) s = engine.tick(s);
+            result.add(s);
         }
-        while (s.tick < targetTick) s = step(s);
-        return s;
+        states = result;
+    }
+
+    public void logAll() {
+        printGrid.add(new ArrayList<>(states));
+    }
+
+    public void print(Path out) throws IOException {
+        List<BufferedImage> rows = new ArrayList<>();
+        for (List<State> states : printGrid) {
+            List<BufferedImage> images = new ArrayList<>();
+            for (State state : states) {
+                images.add(renderer.render(state));
+            }
+            rows.add(stitchHorizontal(images));
+        }
+        if (out.getParent() != null) Files.createDirectories(out.getParent());
+        writePng(out,stitchVertical(rows));
+    }
+    private static void writePng(Path out, BufferedImage image) throws IOException {
+        if (out.getParent() != null) Files.createDirectories(out.getParent());
+        ImageIO.write(image, "png", out.toFile());
+    }
+
+    private static BufferedImage stitchHorizontal(List<BufferedImage> images) {
+        BufferedImage result;
+        {
+            int w = 0;
+            int h = 0;
+            for (BufferedImage image : images) {
+                w += image.getWidth();
+                h = Math.max(h, image.getHeight());
+            }
+            result = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        }
+        Graphics2D g = result.createGraphics();
+        int x = 0;
+        for (BufferedImage image : images) {
+            g.drawImage(image,x,0,null);
+            x += image.getWidth();
+        }
+        g.dispose();
+        return result;
+    }
+
+    private static BufferedImage stitchVertical(List<BufferedImage> images) {
+        BufferedImage result;
+        {
+            int w = 0;
+            int h = 0;
+            for (BufferedImage image : images) {
+                w = Math.max(w, image.getWidth());
+                h += image.getHeight();
+            }
+            result = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        }
+        Graphics2D g = result.createGraphics();
+        int y = 0;
+        for (BufferedImage image : images) {
+            g.drawImage(image,0,y,null);
+            y += image.getHeight();
+        }
+        g.dispose();
+        return result;
+    }
+
+    /**
+     * One instant of a timeline: every boid's position and heading, the tick, and the
+     * override in force.
+     * <p>
+     * Treat instances as immutable. The arrays are exposed directly rather than copied,
+     * because the decision layer reads them in its inner loop and a copy per access would
+     * dominate the cost. Nothing writes to a {@code State} once it has been constructed —
+     * {@link Sim#step} allocates fresh arrays and returns a new instance.
+     * <p>
+     * Because an old state can never be clobbered, the decide and act phases no longer
+     * need separating: reading the previous tick is guaranteed safe by construction.
+     */
+    public static final class State {
+
+        public final int n;
+        public final double[] x;
+        public final double[] y;
+        public final int[] h;
+        public final long tick;
+        public final long score;
+        public final PsyboidOverride[] psyboidOverrides;
+
+        /**
+         * Sets every field explicitly. Called by {@link Sim} and by the {@code with...}
+         * methods below; there is no other way to build a state.
+         */
+        State(int n, double[] x, double[] y, int[] h, long tick, long score, PsyboidOverride... psyboidOverrides) {
+            this.n = n;
+            this.x = x;
+            this.y = y;
+            this.h = h;
+            this.tick = tick;
+            this.score = score;
+            this.psyboidOverrides = psyboidOverrides;
+        }
     }
 }

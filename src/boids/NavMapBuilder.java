@@ -18,6 +18,7 @@ import java.util.List;
 public final class NavMapBuilder {
     private NavMapBuilder() {}
 
+    private static final int SCORE_ORANGE = 0xFF7F27;
     private static final double INF = 1e18;
 
     /**
@@ -35,19 +36,22 @@ public final class NavMapBuilder {
         int w = img.getWidth();
         int h = img.getHeight();
         boolean[] oob = new boolean[w * h];
+        int[] score = new int[w * h];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 oob[x + y * w] = (img.getRGB(x, y) & 0xFFFFFF) == 0x000000;
+                score[x + y * w] = (img.getRGB(x, y) & 0xFFFFFF) == SCORE_ORANGE ? 1 : 0;
             }
         }
-        return build(oob, w, h, radius);
+        return build(oob, score, w, h, radius);
+
     }
 
     /**
      * @param oob    row-major, {@code true} where the pixel is out of bounds
      * @param radius the boid's turning radius in pixels
      */
-    public static NavMap build(boolean[] oob, int width, int height, int radius) {
+    public static NavMap build(boolean[] oob, int[] score, int width, int height, int radius) {
         List<List<NavMap.Range>> found = new ArrayList<>(width * height);
         for (int i = 0; i < width * height; i++) found.add(new ArrayList<>());
 
@@ -57,7 +61,7 @@ public final class NavMapBuilder {
         List<List<NavMap.Range>> out = new ArrayList<>(width * height);
         for (int i = 0; i < width * height; i++) out.add(NavMap.merge(found.get(i)));
 
-        return new NavMap(width, height, radius, Arrays.copyOf(oob, width * height), out);
+        return new NavMap(width, height, radius, Arrays.copyOf(oob, width * height), score, out);
     }
 
     /**

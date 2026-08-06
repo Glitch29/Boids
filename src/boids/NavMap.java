@@ -36,19 +36,23 @@ public final class NavMap {
     private final int height;
     private final int radius;
     private final boolean[] oob;
+    private final int[] score;
     private final List<List<Range>> ranges;
 
-    NavMap(int width, int height, int radius, boolean[] oob, List<List<Range>> ranges) {
+    NavMap(int width, int height, int radius, boolean[] oob, int[] score, List<List<Range>> ranges) {
         this.width = width;
         this.height = height;
         this.radius = radius;
         this.oob = oob;
+        this.score = score;
         this.ranges = ranges;
     }
 
     public int width() { return width; }
     public int height() { return height; }
     public int radius() { return radius; }
+
+    public int score(int x, int y) { return score[x + y * width]; }
 
     public boolean oob(int x, int y) { return oob[x + y * width]; }
 

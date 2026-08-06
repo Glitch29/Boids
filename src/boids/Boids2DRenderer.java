@@ -7,7 +7,7 @@ import java.awt.RenderingHints;
 import java.awt.geom.Path2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
-import java.nio.file.Files;
+import java.lang.Override;
 import java.nio.file.Path;
 
 /**
@@ -17,11 +17,14 @@ import java.nio.file.Path;
  * changing the play area, the boid count or the turning radius does not require
  * readjusting the drawing parameters.
  */
-public final class Render {
-    private Render() {}
-
+public final class Boids2DRenderer implements Renderer{
     private static final int TRAVERSABLE = 0xE6E6E6;
     private static final int WALL = 0x000000;
+    private final Path background;
+
+    public Boids2DRenderer(Path background) {
+        this.background = background;
+    }
 
     /**
      * Boid length as a multiple of the flock's characteristic spacing.
@@ -36,34 +39,27 @@ public final class Render {
 
     private static final double MIN_LEN = 2.0;
 
-    public static void writePng(Sim sim, State s, int scale, Path out) throws IOException {
-        if (out.getParent() != null) Files.createDirectories(out.getParent());
-        ImageIO.write(toImage(sim, s, scale), "png", out.toFile());
-    }
+    @Override
+    public BufferedImage render(Sim.State s) throws IOException {
+        BufferedImage img = ImageIO.read(background.toFile());;
+        int w = img.getWidth();
+        int h = img.getHeight();
 
-    public static BufferedImage toImage(Sim sim, State s, int scale) {
-        NavMap area = sim.area();
-        int w = area.width() * scale;
-        int h = area.height() * scale;
-
-        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
-
-        int[] row = new int[w];
-        for (int py = 0; py < h; py++) {
-            int sy = py / scale;
-            for (int px = 0; px < w; px++) {
-                row[px] = area.oob(px / scale, sy) ? WALL : TRAVERSABLE;
-            }
-            img.setRGB(0, py, w, 1, row, 0, w);
-        }
+//        int[] row = new int[w];
+//        for (int y = 0; y < h; y++) {
+//            for (int x = 0; x < w; x++) {
+//                row[x] = (img.getRGB(x, y) & 0x00FFFFFF) == 0 ? WALL : TRAVERSABLE;
+//            }
+//            img.setRGB(0, y, w, 1, row, 0, w);
+//        }
 
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        double len = boidLength(sim, s);
+        double len = boidLength(s, w, h);
         for (int i = 0; i < s.n; i++) {
             g.setColor(colorOf(i, s.n));
-            g.fill(triangle(s.x[i], s.y[i], Params.COS[s.h[i]], Params.SIN[s.h[i]], len, scale));
+            g.fill(triangle(s.x[i], s.y[i], Params.COS[s.h[i]], Params.SIN[s.h[i]], len));
         }
 
         g.dispose();
@@ -87,7 +83,7 @@ public final class Render {
      * n boids spread over an area A sit about sqrt(A/n) apart, and A is proportional
      * to the total positional variance, so length goes as sqrt(variance / n).
      */
-    public static double boidLength(Sim sim, State s) {
+    public static double boidLength(Sim.State s, int w, int h) {
         double mx = 0, my = 0;
         for (int i = 0; i < s.n; i++) { mx += s.x[i]; my += s.y[i]; }
         mx /= s.n;
@@ -102,14 +98,14 @@ public final class Render {
         variance /= s.n;
 
         double len = SIZE_K * Math.sqrt(variance / s.n);
-        double max = Math.min(sim.area().width(), sim.area().height()) / 10.0;
+        double max = Math.min(w, h) / 10.0;
         return Math.min(Math.max(len, MIN_LEN), max);
     }
 
     /** Isosceles triangle centred on (px,py), nose along the unit vector (cx,cy). */
     private static Path2D.Double triangle(double px, double py,
                                           double cx, double cy,
-                                          double len, int scale) {
+                                          double len) {
         double halfBase = len / (2.0 * ASPECT);
 
         double noseX = px + cx * len * (2.0 / 3.0);
@@ -121,9 +117,9 @@ public final class Render {
         double perpY = cx * halfBase;
 
         Path2D.Double t = new Path2D.Double();
-        t.moveTo(noseX * scale, noseY * scale);
-        t.lineTo((backX + perpX) * scale, (backY + perpY) * scale);
-        t.lineTo((backX - perpX) * scale, (backY - perpY) * scale);
+        t.moveTo(noseX, noseY);
+        t.lineTo((backX + perpX), (backY + perpY));
+        t.lineTo((backX - perpX), (backY - perpY));
         t.closePath();
         return t;
     }
