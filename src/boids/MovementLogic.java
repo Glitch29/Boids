@@ -9,11 +9,22 @@ import java.lang.Override;
  * boid picks whichever of its three reachable headings best aligns with it.
  */
 public final class MovementLogic implements MovementControl{
-    public static final MovementLogic LOGIC = new MovementLogic();
-    private MovementLogic() {}
 
     /** Turn candidates in fixed evaluation order: hold, left, right. */
     private static final int[] CANDIDATES = {0, -1, +1};
+
+    private final double rSep;
+    private final double rFlock;
+
+    /**
+     * Perception radii scale with the turning radius, so this is per-scenario rather
+     * than a shared singleton. A boid must begin reacting to a neighbour far enough
+     * out that it can actually turn away in time.
+     */
+    public MovementLogic(double turningRadius) {
+        this.rSep = Params.separation(turningRadius);
+        this.rFlock = Params.flock(turningRadius);
+    }
 
     private static double len(double a, double b) {
         return Math.sqrt(a * a + b * b);
@@ -38,7 +49,7 @@ public final class MovementLogic implements MovementControl{
                 double dx = s.x()[j] - xi;
                 double dy = s.y()[j] - yi;
                 double d2 = dx * dx + dy * dy;
-                if (d2 == 0.0 || d2 > Params.R_FLOCK * Params.R_FLOCK) continue;
+                if (d2 == 0.0 || d2 > rFlock * rFlock) continue;
 
                 double d = Math.sqrt(d2);
 
@@ -51,8 +62,8 @@ public final class MovementLogic implements MovementControl{
                 aliX += Params.COS[s.h()[j]];
                 aliY += Params.SIN[s.h()[j]];
 
-                if (d < Params.R_SEP) {
-                    double falloff = (Params.R_SEP - d) / Params.R_SEP;  // 1 at contact, 0 at the rim
+                if (d < rSep) {
+                    double falloff = (rSep - d) / rSep;  // 1 at contact, 0 at the rim
                     sepX -= dx / d * falloff;
                     sepY -= dy / d * falloff;
                 }

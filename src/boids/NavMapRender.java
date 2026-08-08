@@ -68,7 +68,7 @@ public final class NavMapRender {
         double length = longest.lengthDeg();
 
         float hue = (float) (longest.midDeg() / 360.0);
-        float value = (float) (1.0 - Math.cbrt(length / 360.0));
+        float value = (float) (1.0 - 0.8f * Math.cbrt(length / 360.0));
         float saturation = (float) (BASE_SATURATION / Math.pow(2, ranges.size() - 1));
 
         return Color.HSBtoRGB(hue, saturation, value) & 0xFFFFFF;

@@ -20,10 +20,47 @@ import java.nio.file.Path;
 public final class Boids2DRenderer implements Renderer{
     private static final int TRAVERSABLE = 0xE6E6E6;
     private static final int WALL = 0x000000;
-    private final Path background;
+    private static final int SCORING = 0xF7E0CC;
 
-    public Boids2DRenderer(Path background) {
-        this.background = background;
+    /** The colour the source images use to mark a scoring zone. */
+    private static final int SOURCE_SCORING = 0xFF7F27;
+
+    private final BufferedImage background;
+
+    public Boids2DRenderer(Path source) throws IOException {
+        this.background = buildBackground(source);
+    }
+
+    /**
+     * Recolours the source play area once, into a fresh opaque image.
+     * <p>
+     * Two reasons not to paint over the loaded image directly. It is read back at
+     * whatever type the PNG encoder chose — the maps drawn in Paint come back as
+     * {@code TYPE_4BYTE_ABGR} while a generated one comes back as {@code TYPE_3BYTE_BGR}
+     * — and writing a plain {@code 0xRRGGBB} constant into an image that has an alpha
+     * channel sets alpha to zero, so every pixel becomes transparent and composites to
+     * black later. Building an opaque image of a known type sidesteps the question.
+     * And doing it once in the constructor beats re-reading the file on every frame.
+     */
+    private static BufferedImage buildBackground(Path source) throws IOException {
+        BufferedImage src = ImageIO.read(source.toFile());
+        if (src == null) throw new IOException("not a readable image: " + source);
+
+        int w = src.getWidth();
+        int h = src.getHeight();
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        int[] row = new int[w];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int rgb = src.getRGB(x, y) & 0xFFFFFF;
+                row[x] = rgb == 0x000000 ? WALL
+                       : rgb == SOURCE_SCORING ? SCORING
+                       : TRAVERSABLE;
+            }
+            out.setRGB(0, y, w, 1, row, 0, w);
+        }
+        return out;
     }
 
     /**
@@ -40,20 +77,13 @@ public final class Boids2DRenderer implements Renderer{
     private static final double MIN_LEN = 2.0;
 
     @Override
-    public BufferedImage render(Sim.State s) throws IOException {
-        BufferedImage img = ImageIO.read(background.toFile());;
-        int w = img.getWidth();
-        int h = img.getHeight();
+    public BufferedImage render(Sim.State s) {
+        int w = background.getWidth();
+        int h = background.getHeight();
 
-//        int[] row = new int[w];
-//        for (int y = 0; y < h; y++) {
-//            for (int x = 0; x < w; x++) {
-//                row[x] = (img.getRGB(x, y) & 0x00FFFFFF) == 0 ? WALL : TRAVERSABLE;
-//            }
-//            img.setRGB(0, y, w, 1, row, 0, w);
-//        }
-
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = img.createGraphics();
+        g.drawImage(background, 0, 0, null);
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         double len = boidLength(s, w, h);

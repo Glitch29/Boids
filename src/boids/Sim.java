@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 /**
  * The simulation engine: it owns the play area's navigation and knows how to advance a
@@ -20,10 +21,18 @@ import java.util.List;
  */
 public final class Sim {
 
+    /** Which boid an override steers. Fixed for now. */
+    private static final int PSYBOID = 0;
+
+    /** Ticks to swing an eighth of a turn — the shortest override worth committing to. */
+    private static final int MIN_OVERRIDE_TICKS = Params.TURNS / 8;
+    private static final int MAX_OVERRIDE_TICKS = 3 * MIN_OVERRIDE_TICKS;
+
     private final Engine engine;
     private List<State> states = new ArrayList<>();
     private final List<List<State>> printGrid = new ArrayList<>();
     private final Renderer renderer;
+    private Random overrideRng = new Random(0);
 
     /**
      * @param playArea PNG where {@code #000000} is out of bounds
@@ -41,19 +50,83 @@ public final class Sim {
         for (long seed : seeds) {
             states.add(engine.init(seed));
         }
+        // Overrides drawn later come from the same seed that made the states, so a run
+        // is reproducible end to end from what was passed here.
+        if (seeds.length > 0) overrideRng = new Random(seeds[0]);
     }
 
     /**
-     * Advance until the state reaches {@code targetTick}. Returns the argument
-     * unchanged if it is already there.
+     * A random override for the psyboid, beginning within {@code maxDelay} ticks of
+     * wherever the timelines currently stand.
+     * <p>
+     * Everything else is fixed for now: an even split between turning each way with a
+     * small chance of holding straight instead, and a duration between the time it
+     * takes to swing an eighth of a turn and three times that.
      */
-    public void stepTo(long targetTick) {
-        List<State> result = new ArrayList<>();
+    public PsyboidOverride randomOverride(int maxDelay) {
+        long now = states.isEmpty() ? 0 : states.get(0).tick;
+
+        int onset = (int) now + overrideRng.nextInt(maxDelay + 1);
+        int duration = MIN_OVERRIDE_TICKS
+                + overrideRng.nextInt(MAX_OVERRIDE_TICKS - MIN_OVERRIDE_TICKS + 1);
+
+        double roll = overrideRng.nextDouble();
+        int direction = roll < 0.45 ? -1 : roll < 0.55 ? 0 : +1;
+
+        return new PsyboidOverride(onset, duration, direction, PSYBOID);
+    }
+
+    /**
+     * Fans each timeline out into one variant per override, preceded by an untouched
+     * control. With a single state in and {@code k} overrides, the result is
+     * {@code k + 1} states: the control at index 0, then the variants in order.
+     */
+    public void splitByOverrides(PsyboidOverride... overrides) {
+        List<State> result = new ArrayList<>(states.size() * (overrides.length + 1));
         for (State s : states) {
-            while (s.tick < targetTick) s = engine.tick(s);
-            result.add(s);
+            result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score));
+            for (PsyboidOverride o : overrides) {
+                result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score, o));
+            }
         }
         states = result;
+    }
+
+    /**
+     * Advance every state until it reaches {@code targetTick}. States already there are
+     * left alone.
+     * <p>
+     * Run in parallel, one timeline per task. This is safe because a tick reads nothing
+     * mutable: the engine's navigation map and its arrays are built in the constructor
+     * and never written afterwards, so final-field semantics publish them safely, and
+     * every working array a tick needs is allocated inside it. Timelines never see each
+     * other. Encounter order is preserved, so results stay aligned with their seeds and
+     * runs remain reproducible.
+     */
+    public void stepTo(long targetTick) {
+        states = new ArrayList<>(states.parallelStream()
+                .map(start -> {
+                    State s = start;
+                    while (s.tick < targetTick) s = engine.tick(s);
+                    return s;
+                })
+                .toList());
+    }
+
+    /** Zeroes the accumulated score on every state, leaving the timelines untouched. */
+    public void resetScores() {
+        List<State> result = new ArrayList<>(states.size());
+        for (State s : states) {
+            result.add(new State(s.n, s.x, s.y, s.h, s.tick, 0L, s.psyboidOverrides));
+        }
+        states = result;
+    }
+
+    /** Accumulated score of each state, in seed order. */
+    public List<Long> scores() {
+        List<Long> out = new ArrayList<>(states.size());
+        for (State s : states) out.add(s.score);
+        return out;
     }
 
     public void logAll() {

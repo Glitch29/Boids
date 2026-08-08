@@ -8,14 +8,24 @@ import java.util.Random;
 
 public class Boids2DEngine implements Engine {
     private static final int MAX_SEED_ATTEMPTS = 10_000;
-    private NavMap map;
-    private int turningRadius;
-    private int defaultFlockSize;
-    private MovementControl collision;
+    private final NavMap map;
+    private final double turningRadius;
+    private final double speed;
+    private final int defaultFlockSize;
+    private final MovementControl flocking;
+    private final MovementControl collision;
 
     Boids2DEngine(ScenarioParameter parameters) throws IOException {
-        turningRadius = (int) parameters.turningRadius();
-        map = NavMapBuilder.buildFromPng(parameters.mapPath(), turningRadius);
+        turningRadius = parameters.turningRadius();
+
+        // Speed and the perception radii must come from the same radius the map is
+        // built at. Deriving any of them from a constant instead lets the map assume
+        // a boid more agile than the one actually flying, which reads as boids
+        // sailing straight through walls the map says they can avoid.
+        speed = Params.speed(turningRadius);
+        map = NavMapBuilder.buildFromPng(parameters.mapPath(), (int) Math.round(turningRadius));
+        flocking = new MovementLogic(turningRadius);
+
         defaultFlockSize = parameters.flockSize();
         NavMapRender.write(map,1,Path.of("render","recent","navmap.png"));
         collision = new Collision();
@@ -38,7 +48,7 @@ public class Boids2DEngine implements Engine {
         double[] y = new double[n];
         int[] h = new int[n];
 
-        MovementLogic.LOGIC.calculate(movement);
+        flocking.calculate(movement);
         for (PsyboidOverride override : state.psyboidOverrides) {
             override.calculate(movement);
         }
@@ -49,8 +59,8 @@ public class Boids2DEngine implements Engine {
             h[i] = Math.floorMod(state.h[i] + movement.movement[i], Params.TURNS);
 
             // Turn is applied before translation, so a boid moves along its new heading.
-            double px = state.x[i] + Params.SPEED * Params.COS[h[i]];
-            double py = state.y[i] + Params.SPEED * Params.SIN[h[i]];
+            double px = state.x[i] + speed * Params.COS[h[i]];
+            double py = state.y[i] + speed * Params.SIN[h[i]];
 
             if (px < 0 || py < 0 || px >= map.width() || py >= map.height()) {
                 throw new IllegalStateException(String.format(

@@ -3,15 +3,18 @@ package boids;
 /**
  * Every tunable constant.
  * <p>
- * Lengths are given as multiples of {@link #R_TURN}, so the whole simulation
- * rescales by changing that one number. The ratios matter more than the absolute
- * values: because a boid moves at fixed speed and can only turn by one step per
- * tick, it has a hard minimum turning radius, and separation is only physically
- * achievable if {@link #R_SEP} comfortably exceeds it. A boid that detects a
- * neighbour it cannot turn away from in time produces jitter that no amount of
- * weight tuning will fix.
+ * Only the scale-free values live here as constants. Everything with a length —
+ * speed, separation radius, flocking radius — is a <em>function</em> of the
+ * scenario's turning radius rather than a static, because each scenario sets its own
+ * and a hard-coded one silently decouples the physics from the navigation map.
  * <p>
- * The arena is no longer defined here. Its extent comes from the play area image.
+ * The ratios matter more than the absolute values: because a boid moves at fixed
+ * speed and can only turn by one step per tick, it has a hard minimum turning radius,
+ * and separation is only physically achievable if {@link #separation} comfortably
+ * exceeds it. A boid that detects a neighbour it cannot turn away from in time
+ * produces jitter that no amount of weight tuning will fix.
+ * <p>
+ * The arena is not defined here. Its extent comes from the play area image.
  */
 public final class Params {
     private Params() {}
@@ -21,11 +24,26 @@ public final class Params {
     /** Distinct headings. A boid turns by exactly one of these per tick. */
     public static final int TURNS = 64;
 
-    /** Turning radius, in arena units. The scale everything else derives from. */
-    public static final double R_TURN = 40.0;
+    /**
+     * Distance covered per tick: the chord of the TURNS-gon of the given radius.
+     * <p>
+     * This is what actually determines how tightly a boid turns, so it must be
+     * derived from the same radius the navigation map is built at. If the two
+     * disagree the map grants turns the boid cannot physically make.
+     */
+    public static double speed(double turningRadius) {
+        return 2.0 * turningRadius * StrictMath.sin(StrictMath.PI / TURNS);
+    }
 
-    /** Distance covered per tick: the chord of the TURNS-gon of radius R_TURN. */
-    public static final double SPEED = 2.0 * R_TURN * StrictMath.sin(StrictMath.PI / TURNS);
+    /** Separation acts within this radius, with linear falloff. */
+    public static double separation(double turningRadius) {
+        return 1.25 * turningRadius;
+    }
+
+    /** Cohesion and alignment act within this radius. */
+    public static double flock(double turningRadius) {
+        return 3.75 * turningRadius;
+    }
 
     public static double headingDeg(int heading) {
         return heading * 360.0 / TURNS;
@@ -46,12 +64,6 @@ public final class Params {
     }
 
     // ---- Perception --------------------------------------------------------
-
-    /** Separation acts within this radius, with linear falloff. */
-    public static final double R_SEP = 1.25 * R_TURN;
-
-    /** Cohesion and alignment act within this radius. */
-    public static final double R_FLOCK = 3.75 * R_TURN;
 
     /**
      * cos(120 degrees). A 240-degree forward field of view leaving a 120-degree
@@ -74,6 +86,4 @@ public final class Params {
      * the dead zone is invariant to the overall weight magnitude.
      */
     public static final double STRAIGHT_BIAS = (W_SEP + W_COH + W_ALI) / 64.0;
-
-    public static final int N_BOIDS = 60;
 }
