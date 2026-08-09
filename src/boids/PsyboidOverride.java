@@ -20,6 +20,20 @@ public class PsyboidOverride implements MovementControl {
         this.psyboid = psyboid;
     }
 
+    public int onset() { return onset; }
+    public int duration() { return duration; }
+    public int direction() { return direction; }
+    public int psyboid() { return psyboid; }
+
+    /**
+     * Compact identifier, so a score can be traced back to the override that produced
+     * it. Contains no commas or pipes, both of which separate fields elsewhere.
+     */
+    public String label() {
+        char turn = direction < 0 ? 'L' : direction > 0 ? 'R' : 'S';
+        return "p" + psyboid + turn + "d" + duration + "t" + onset;
+    }
+
     @java.lang.Override
     public void calculate(Movement movement) {
         if (movement.boids.tick() >= onset && movement.boids.tick() < onset + duration) {

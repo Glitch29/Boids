@@ -5,6 +5,12 @@ out/
 # Everything here is reproducible from a seed plus the committed source.
 render/
 
+# Sweep output: one CSV per seed, ~1 MB each.
+data/
+
+# Summary tables derived from data/ by Analyze.
+analysis/
+
 # Java
 *.class
 

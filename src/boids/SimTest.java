@@ -1,6 +1,8 @@
 package boids;
 
+import java.io.BufferedWriter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,8 +32,138 @@ public final class SimTest {
     /** Observation window after the delay window closes: ten eighths of a turn. */
     private static final int OBSERVE = 10 * Params.TURNS / 8;
 
+    // ---- Exhaustive override sweep -----------------------------------------
+
+    private static final int SWEEP_BOIDS = 10;
+
+    /** Widest start delay: ten eighths of a turn. */
+    private static final int SWEEP_MAX_DELAY = 30 * Params.TURNS / 8;
+
+    /**
+     * Delays enumerated evenly in the square root of the delay, so starts bunch toward
+     * the beginning of the window rather than spreading flat across it.
+     */
+    private static final int SWEEP_DELAY_STEPS = 16;
+
+    private static final int SWEEP_HORIZON = 640;
+    private static final int SWEEP_CHECKPOINT = 32;
+
+    /** Seeds run when none are given on the command line. */
+    private static final long[] DEFAULT_SEEDS;
+    static {
+        DEFAULT_SEEDS = new long[500];
+        for (int i = 0 ; i < DEFAULT_SEEDS.length; i++) {
+            DEFAULT_SEEDS[i]=i;
+        }
+    }
+
     public static void main(String[] args) throws IOException {
-        psyboidLeverage();
+        long[] seeds = DEFAULT_SEEDS;
+        if (args.length > 0) {
+            seeds = new long[args.length];
+            for (int i = 0; i < args.length; i++) seeds[i] = Long.parseLong(args[i]);
+        }
+        // One bad seed must not cost the whole batch: these runs are meant to be left
+        // alone, so a failure is logged and the sweep moves on.
+        int failed = 0;
+        for (long seed : seeds) {
+            try {
+                overrideSweep(seed);
+            } catch (RuntimeException e) {
+                failed++;
+                System.out.printf("seed %d FAILED: %s%n", seed, e);
+            }
+        }
+        System.out.printf("%ndone: %d seeds, %d failed%n", seeds.length, failed);
+    }
+
+    /**
+     * Every override this scenario admits, run against one warmed-up timeline, with the
+     * score of each recorded at fixed intervals out to a long horizon.
+     * <p>
+     * The suite is deterministic rather than sampled: every boid as psyboid, crossed
+     * with every turn direction, every permitted duration, and a fixed ladder of start
+     * delays. The early checkpoints deliberately land before the later-starting
+     * overrides have taken effect, so the data contains its own baseline.
+     * <p>
+     * Scores are cumulative from the split, so the score over any interval is the
+     * difference between two columns.
+     */
+    private static void overrideSweep(long seed) throws IOException {
+        long start = System.nanoTime();
+
+        Sim sim = new Sim(withFlockSize(PresetScenarioParameter.HAMBURGER, SWEEP_BOIDS));
+        sim.startSeeds(seed);
+        sim.stepTo(WARMUP);
+        long splitTick = sim.tick();
+
+        List<PsyboidOverride> overrides = new ArrayList<>();
+        for (int psyboid = 0; psyboid < SWEEP_BOIDS; psyboid++) {
+            for (int direction = -1; direction <= 1; direction++) {
+                for (int duration = Sim.MIN_OVERRIDE_TICKS; duration <= Sim.MAX_OVERRIDE_TICKS; duration++) {
+                    for (int step = 0; step < SWEEP_DELAY_STEPS; step++) {
+                        double u = (step + 0.5) / SWEEP_DELAY_STEPS;
+                        int delay = (int) Math.round(u * u * SWEEP_MAX_DELAY);
+                        overrides.add(new PsyboidOverride(
+                                (int) splitTick + delay, duration, direction, psyboid));
+                    }
+                }
+            }
+        }
+
+        sim.splitByOverrides(overrides.toArray(new PsyboidOverride[0]));
+        sim.resetScores();
+
+        int checkpoints = SWEEP_HORIZON / SWEEP_CHECKPOINT;
+        long[][] columns = new long[checkpoints][];
+        for (int c = 0; c < checkpoints; c++) {
+            sim.stepTo(splitTick + (long) (c + 1) * SWEEP_CHECKPOINT);
+            List<Long> scores = sim.scores();
+            columns[c] = new long[scores.size()];
+            for (int i = 0; i < scores.size(); i++) columns[c][i] = scores.get(i);
+        }
+
+        Path out = Path.of("data", String.format("hamburger_n%d_seed%d.csv", SWEEP_BOIDS, seed));
+        writeSweep(out, seed, splitTick, overrides, sim.labels(), columns);
+
+        System.out.printf("seed %d: %d variations + control, %d checkpoints, %.1fs -> %s%n",
+                seed, overrides.size(), checkpoints, (System.nanoTime() - start) / 1e9, out);
+    }
+
+    private static void writeSweep(Path out, long seed, long splitTick,
+                                   List<PsyboidOverride> overrides, List<String> labels,
+                                   long[][] columns) throws IOException {
+        if (out.getParent() != null) Files.createDirectories(out.getParent());
+
+        try (BufferedWriter w = Files.newBufferedWriter(out)) {
+            w.write("seed,label,psyboid,direction,duration,onset,delay,boids,split_tick");
+            for (int c = 0; c < columns.length; c++) {
+                w.write(",t" + (c + 1) * SWEEP_CHECKPOINT);
+            }
+            w.newLine();
+
+            for (int row = 0; row < labels.size(); row++) {
+                // Row 0 is the control; the rest line up with the override list.
+                PsyboidOverride o = row == 0 ? null : overrides.get(row - 1);
+
+                w.write(Long.toString(seed));
+                w.write(',');
+                w.write(labels.get(row));
+                if (o == null) {
+                    w.write(",,,,,");
+                } else {
+                    w.write("," + o.psyboid());
+                    w.write("," + o.direction());
+                    w.write("," + o.duration());
+                    w.write("," + o.onset());
+                    w.write("," + (o.onset() - splitTick));
+                }
+                w.write("," + SWEEP_BOIDS);
+                w.write("," + splitTick);
+                for (long[] column : columns) w.write("," + column[row]);
+                w.newLine();
+            }
+        }
     }
 
     /**
@@ -99,6 +231,11 @@ public final class SimTest {
                     boids, leverageTotal / REPEATS, avgRatio,
                     scoring < REPEATS ? "   (" + (REPEATS - scoring) + " set(s) scored nothing)" : "");
         }
+    }
+
+    /** Kept from an earlier run: the max-minus-mean leverage probe. */
+    public static void leverageProbe() throws IOException {
+        psyboidLeverage();
     }
 
     /** Kept from an earlier run: the score-rate sweep across maps and boid counts. */

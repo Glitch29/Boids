@@ -71,7 +71,8 @@ public class Boids2DEngine implements Engine {
             x[i] = px;
             y[i] = py;
         }
-        return new Sim.State(n, x, y, h, state.tick + 1, state.score + score, state.psyboidOverrides.clone());
+        return new Sim.State(n, x, y, h, state.tick + 1, state.score + score,
+                state.label, state.psyboidOverrides.clone());
     }
 
 
@@ -107,7 +108,7 @@ public class Boids2DEngine implements Engine {
                         + " in " + MAX_SEED_ATTEMPTS + " attempts");
             }
         }
-        return new Sim.State(n, x, y, h, 0L, 0L);
+        return new Sim.State(n, x, y, h, 0L, 0L, "seed" + seed);
     }
 
     @Override

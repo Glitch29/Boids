@@ -25,8 +25,8 @@ public final class Sim {
     private static final int PSYBOID = 0;
 
     /** Ticks to swing an eighth of a turn — the shortest override worth committing to. */
-    private static final int MIN_OVERRIDE_TICKS = Params.TURNS / 8;
-    private static final int MAX_OVERRIDE_TICKS = 3 * MIN_OVERRIDE_TICKS;
+    public static final int MIN_OVERRIDE_TICKS = Params.TURNS / 8;
+    public static final int MAX_OVERRIDE_TICKS = 3 * MIN_OVERRIDE_TICKS;
 
     private final Engine engine;
     private List<State> states = new ArrayList<>();
@@ -84,9 +84,10 @@ public final class Sim {
     public void splitByOverrides(PsyboidOverride... overrides) {
         List<State> result = new ArrayList<>(states.size() * (overrides.length + 1));
         for (State s : states) {
-            result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score));
+            result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score, s.label + "|control"));
             for (PsyboidOverride o : overrides) {
-                result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score, o));
+                result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score,
+                        s.label + "|" + o.label(), o));
             }
         }
         states = result;
@@ -117,17 +118,28 @@ public final class Sim {
     public void resetScores() {
         List<State> result = new ArrayList<>(states.size());
         for (State s : states) {
-            result.add(new State(s.n, s.x, s.y, s.h, s.tick, 0L, s.psyboidOverrides));
+            result.add(new State(s.n, s.x, s.y, s.h, s.tick, 0L, s.label, s.psyboidOverrides));
         }
         states = result;
     }
 
-    /** Accumulated score of each state, in seed order. */
+    /** Accumulated score of each state, in order. */
     public List<Long> scores() {
         List<Long> out = new ArrayList<>(states.size());
         for (State s : states) out.add(s.score);
         return out;
     }
+
+    /** Scenario label of each state, in the same order as {@link #scores()}. */
+    public List<String> labels() {
+        List<String> out = new ArrayList<>(states.size());
+        for (State s : states) out.add(s.label);
+        return out;
+    }
+
+    public int size() { return states.size(); }
+
+    public long tick() { return states.isEmpty() ? 0 : states.get(0).tick; }
 
     public void logAll() {
         printGrid.add(new ArrayList<>(states));
@@ -212,19 +224,30 @@ public final class Sim {
         public final int[] h;
         public final long tick;
         public final long score;
+
+        /**
+         * Identifies which scenario this timeline came from. Carried through every tick
+         * untouched and appended to whenever a timeline is split, so a score at the end
+         * of a batch can be traced back to the branch that produced it rather than
+         * being an anonymous number in a list.
+         */
+        public final String label;
+
         public final PsyboidOverride[] psyboidOverrides;
 
         /**
          * Sets every field explicitly. Called by {@link Sim} and by the {@code with...}
          * methods below; there is no other way to build a state.
          */
-        State(int n, double[] x, double[] y, int[] h, long tick, long score, PsyboidOverride... psyboidOverrides) {
+        State(int n, double[] x, double[] y, int[] h, long tick, long score, String label,
+              PsyboidOverride... psyboidOverrides) {
             this.n = n;
             this.x = x;
             this.y = y;
             this.h = h;
             this.tick = tick;
             this.score = score;
+            this.label = label;
             this.psyboidOverrides = psyboidOverrides;
         }
     }
