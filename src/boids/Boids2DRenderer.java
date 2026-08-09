@@ -26,9 +26,32 @@ public final class Boids2DRenderer implements Renderer{
     private static final int SOURCE_SCORING = 0xFF7F27;
 
     private final BufferedImage background;
+    private final int scale;
+    private final int sourceWidth;
+    private final int sourceHeight;
 
     public Boids2DRenderer(Path source) throws IOException {
-        this.background = buildBackground(source);
+        this(source, 1);
+    }
+
+    /** {@code scale} enlarges the output by whole pixels; the play area is unchanged. */
+    public Boids2DRenderer(Path source, int scale) throws IOException {
+        BufferedImage recoloured = buildBackground(source);
+        this.scale = scale;
+        this.sourceWidth = recoloured.getWidth();
+        this.sourceHeight = recoloured.getHeight();
+        this.background = scale == 1 ? recoloured : enlarge(recoloured, scale);
+    }
+
+    private static BufferedImage enlarge(BufferedImage src, int scale) {
+        BufferedImage out = new BufferedImage(
+                src.getWidth() * scale, src.getHeight() * scale, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < out.getHeight(); y++) {
+            for (int x = 0; x < out.getWidth(); x++) {
+                out.setRGB(x, y, src.getRGB(x / scale, y / scale));
+            }
+        }
+        return out;
     }
 
     /**
@@ -86,10 +109,11 @@ public final class Boids2DRenderer implements Renderer{
         g.drawImage(background, 0, 0, null);
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        double len = boidLength(s, w, h);
+        double len = boidLength(s, sourceWidth, sourceHeight) * scale;
         for (int i = 0; i < s.n; i++) {
             g.setColor(colorOf(i, s.n));
-            g.fill(triangle(s.x[i], s.y[i], Params.COS[s.h[i]], Params.SIN[s.h[i]], len));
+            g.fill(triangle(s.x[i] * scale, s.y[i] * scale,
+                    Params.COS[s.h[i]], Params.SIN[s.h[i]], len));
         }
 
         g.dispose();

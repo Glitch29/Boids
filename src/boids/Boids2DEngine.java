@@ -55,6 +55,7 @@ public class Boids2DEngine implements Engine {
         collision.calculate(movement);
 
         int score = 0;
+        long[] boidScore = new long[n];
         for (int i = 0; i < n; i++) {
             h[i] = Math.floorMod(state.h[i] + movement.movement[i], Params.TURNS);
 
@@ -67,11 +68,13 @@ public class Boids2DEngine implements Engine {
                         "boid %d left the image at tick %d: (%.1f, %.1f) heading %d",
                         i, state.tick, px, py, h[i]));
             }
-            score += map.score((int) px, (int) py);
+            int scored = map.score((int) px, (int) py);
+            score += scored;
+            boidScore[i] = state.boidScore[i] + scored;
             x[i] = px;
             y[i] = py;
         }
-        return new Sim.State(n, x, y, h, state.tick + 1, state.score + score,
+        return new Sim.State(n, x, y, h, state.tick + 1, state.score + score, boidScore,
                 state.label, state.psyboidOverrides.clone());
     }
 
@@ -108,7 +111,7 @@ public class Boids2DEngine implements Engine {
                         + " in " + MAX_SEED_ATTEMPTS + " attempts");
             }
         }
-        return new Sim.State(n, x, y, h, 0L, 0L, "seed" + seed);
+        return new Sim.State(n, x, y, h, 0L, 0L, new long[n], "seed" + seed);
     }
 
     @Override

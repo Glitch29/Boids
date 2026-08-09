@@ -21,7 +21,14 @@ public final class Params {
 
     // ---- Geometry ----------------------------------------------------------
 
-    /** Distinct headings. A boid turns by exactly one of these per tick. */
+    /**
+     * Distinct headings. A boid turns by exactly one of these per tick.
+     * <p>
+     * A full turn therefore always takes {@code TURNS} ticks and a "second" — an eighth
+     * of a turn — is always {@code TURNS / 8}, both <b>independent of the turning
+     * radius</b>. The radius sets how much ground a turn covers, not how long it takes,
+     * so a duration expressed in seconds transfers between scenarios unchanged.
+     */
     public static final int TURNS = 64;
 
     /**

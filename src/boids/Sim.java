@@ -22,7 +22,7 @@ import java.util.Random;
 public final class Sim {
 
     /** Which boid an override steers. Fixed for now. */
-    private static final int PSYBOID = 0;
+    public static final int PSYBOID = 0;
 
     /** Ticks to swing an eighth of a turn — the shortest override worth committing to. */
     public static final int MIN_OVERRIDE_TICKS = Params.TURNS / 8;
@@ -76,6 +76,46 @@ public final class Sim {
         return new PsyboidOverride(onset, duration, direction, PSYBOID);
     }
 
+    /** A single-segment override, equivalent to {@code segmentedOverride(maxDelay, duration, 1)}. */
+    public PsyboidOverride[] segmentedOverride(int maxDelay, int duration) {
+        return segmentedOverride(maxDelay, duration, 1);
+    }
+
+    /** As {@link #segmentedOverride(int, int, int, int, int, Random)}, based at the current tick. */
+    public PsyboidOverride[] segmentedOverride(int maxDelay, int duration, int segments) {
+        long now = states.isEmpty() ? 0 : states.get(0).tick;
+        return segmentedOverride((int) now, maxDelay, duration, segments, PSYBOID, overrideRng);
+    }
+
+    /**
+     * An override chopped into consecutive segments, each free to turn either way or
+     * hold straight. Maximum control over the psyboid rather than a single committed
+     * sweep.
+     * <p>
+     * The whole thing starts somewhere in {@code [0, maxDelay]} past {@code baseTick},
+     * then {@code segments - 1} cut points are drawn uniformly over the duration and
+     * sorted, partitioning it into {@code segments} consecutive intervals. Each interval
+     * picks a direction with equal probability. Cut points may coincide, which yields a
+     * zero-length segment — harmless, since such an override never fires.
+     */
+    public static PsyboidOverride[] segmentedOverride(int baseTick, int maxDelay, int duration,
+                                                      int segments, int psyboid, Random rng) {
+        int start = baseTick + rng.nextInt(maxDelay + 1);
+
+        int[] cuts = new int[segments - 1];
+        for (int i = 0; i < cuts.length; i++) cuts[i] = rng.nextInt(duration);
+        java.util.Arrays.sort(cuts);
+
+        PsyboidOverride[] out = new PsyboidOverride[segments];
+        int from = 0;
+        for (int i = 0; i < segments; i++) {
+            int to = i < cuts.length ? cuts[i] : duration;
+            out[i] = new PsyboidOverride(start + from, to - from, rng.nextInt(3) - 1, psyboid);
+            from = to;
+        }
+        return out;
+    }
+
     /**
      * Fans each timeline out into one variant per override, preceded by an untouched
      * control. With a single state in and {@code k} overrides, the result is
@@ -84,9 +124,10 @@ public final class Sim {
     public void splitByOverrides(PsyboidOverride... overrides) {
         List<State> result = new ArrayList<>(states.size() * (overrides.length + 1));
         for (State s : states) {
-            result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score, s.label + "|control"));
+            result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score, s.boidScore,
+                    s.label + "|control"));
             for (PsyboidOverride o : overrides) {
-                result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score,
+                result.add(new State(s.n, s.x, s.y, s.h, s.tick, s.score, s.boidScore,
                         s.label + "|" + o.label(), o));
             }
         }
@@ -118,9 +159,17 @@ public final class Sim {
     public void resetScores() {
         List<State> result = new ArrayList<>(states.size());
         for (State s : states) {
-            result.add(new State(s.n, s.x, s.y, s.h, s.tick, 0L, s.label, s.psyboidOverrides));
+            result.add(new State(s.n, s.x, s.y, s.h, s.tick, 0L, new long[s.n],
+                    s.label, s.psyboidOverrides));
         }
         states = result;
+    }
+
+    /** Per-boid accumulated score of each state, in the same order as {@link #scores()}. */
+    public List<long[]> boidScores() {
+        List<long[]> out = new ArrayList<>(states.size());
+        for (State s : states) out.add(s.boidScore);
+        return out;
     }
 
     /** Accumulated score of each state, in order. */
@@ -162,7 +211,7 @@ public final class Sim {
         ImageIO.write(image, "png", out.toFile());
     }
 
-    private static BufferedImage stitchHorizontal(List<BufferedImage> images) {
+    static BufferedImage stitchHorizontal(List<BufferedImage> images) {
         BufferedImage result;
         {
             int w = 0;
@@ -183,7 +232,7 @@ public final class Sim {
         return result;
     }
 
-    private static BufferedImage stitchVertical(List<BufferedImage> images) {
+    static BufferedImage stitchVertical(List<BufferedImage> images) {
         BufferedImage result;
         {
             int w = 0;
@@ -226,6 +275,15 @@ public final class Sim {
         public final long score;
 
         /**
+         * Score accumulated by each boid individually; sums to {@link #score}.
+         * <p>
+         * Kept alongside the total because a psyboid that simply parks itself in the
+         * scoring zone is trivially visible, whereas one whose gain comes from moving
+         * the rest of the flock is not. Telling those apart needs the breakdown.
+         */
+        public final long[] boidScore;
+
+        /**
          * Identifies which scenario this timeline came from. Carried through every tick
          * untouched and appended to whenever a timeline is split, so a score at the end
          * of a batch can be traced back to the branch that produced it rather than
@@ -239,14 +297,15 @@ public final class Sim {
          * Sets every field explicitly. Called by {@link Sim} and by the {@code with...}
          * methods below; there is no other way to build a state.
          */
-        State(int n, double[] x, double[] y, int[] h, long tick, long score, String label,
-              PsyboidOverride... psyboidOverrides) {
+        State(int n, double[] x, double[] y, int[] h, long tick, long score, long[] boidScore,
+              String label, PsyboidOverride... psyboidOverrides) {
             this.n = n;
             this.x = x;
             this.y = y;
             this.h = h;
             this.tick = tick;
             this.score = score;
+            this.boidScore = boidScore;
             this.label = label;
             this.psyboidOverrides = psyboidOverrides;
         }

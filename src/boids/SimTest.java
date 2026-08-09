@@ -1,11 +1,14 @@
 package boids;
 
+import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 
 /**
  * One-off runs against {@link Sim}. Nothing here is part of the simulation; this is
@@ -57,7 +60,525 @@ public final class SimTest {
         }
     }
 
+    // ---- Receding-horizon psyboid search -----------------------------------
+
+    private static final int SEARCH_MAX_DELAY = Params.TURNS / 8;        // 1s
+    private static final int SEARCH_DURATION = 4 * Params.TURNS / 8;     // 4s
+    private static final int SEARCH_SEGMENTS = 3;
+    private static final int SEARCH_LOOKAHEAD = 80;
+    private static final int SEARCH_COMMITS = 20;
+
+    private record Run(int[] branches, double alpha, long seed) {}
+
+    /**
+     * @param lift mean of the per-seed lift, not the lift of the means — the control is
+     *             paired with each seed, so pairing before averaging is what makes the
+     *             standard error meaningful
+     */
+    private record Result(int[] branches, String label, double budget, double alpha,
+                          double psyboid, double control, int ticks, int n,
+                          double lift, double sem) {}
+
+    /**
+     * Sweeps branch shapes and discount rates against the same warmed timelines, to see
+     * how a fixed concurrency budget is best spent: wide and greedy, or narrow and deep.
+     */
+    /** Widths the enumerated tail may use, largest first so recursion stays non-increasing. */
+    private static final int[] TAIL_VALUES = {16, 8, 4, 2, 1};
+    private static final int MAX_TAIL_LENGTH = 8;
+    private static final int MIN_ROOT_WIDTH = 8;
+
+    public static void rollingSearch(PresetScenarioParameter preset) throws IOException {
+        Engine engine = new Boids2DEngine(withFlockSize(preset, SWEEP_BOIDS));
+
+        List<int[]> shapes = enumerateShapes();
+        System.out.printf("%s: %d shapes fit the budget of %d%n%n",
+                preset.name(), shapes.size(), PsyboidSearch.MAX_BUDGET);
+
+        System.out.println("=== shape sweep, alpha 0.85, 20 seeds ===");
+        List<Result> broad = sweep(engine, shapes, new double[]{0.85}, seedRange(20));
+        report(broad, 20);
+
+        List<int[]> best = broad.stream()
+                .sorted((a, b) -> Double.compare(b.lift(), a.lift()))
+                .limit(6)
+                .map(Result::branches)
+                .toList();
+
+        System.out.println("=== top shapes, alpha sweep, 40 seeds ===");
+        report(sweep(engine, best, new double[]{0.78, 0.82, 0.85, 0.88, 0.92}, seedRange(40)), 40);
+    }
+
+    /**
+     * Every non-increasing tail over {@link #TAIL_VALUES} that leaves room for a root
+     * wide enough to be worth searching.
+     * <p>
+     * The root width factors cleanly out of the budget, so the tail is enumerated over
+     * round numbers and the root simply takes whatever allowance is left.
+     */
+    private static List<int[]> enumerateShapes() {
+        List<int[]> tails = new ArrayList<>();
+        tails.add(new int[0]);
+        buildTails(new int[MAX_TAIL_LENGTH], 0, 0, tails);
+
+        double k = (SEARCH_LOOKAHEAD + SEARCH_MAX_DELAY + SEARCH_DURATION)
+                / (double) (SEARCH_MAX_DELAY + SEARCH_DURATION);
+
+        List<int[]> shapes = new ArrayList<>();
+        for (int[] tail : tails) {
+            double cost = tailCost(tail, k);
+            int root = (int) (PsyboidSearch.MAX_BUDGET / cost);
+            if (root < MIN_ROOT_WIDTH) continue;
+            if (tail.length > 0 && root < tail[0]) continue;   // must stay non-increasing
+
+            int[] shape = new int[tail.length + 1];
+            shape[0] = root;
+            System.arraycopy(tail, 0, shape, 1, tail.length);
+            shapes.add(shape);
+        }
+        return shapes;
+    }
+
+    private static void buildTails(int[] prefix, int length, int startValue, List<int[]> out) {
+        if (length == MAX_TAIL_LENGTH) return;
+        for (int i = startValue; i < TAIL_VALUES.length; i++) {
+            prefix[length] = TAIL_VALUES[i];
+            out.add(java.util.Arrays.copyOf(prefix, length + 1));
+            buildTails(prefix, length + 1, i, out);
+        }
+    }
+
+    /** The budget a tail consumes per unit of root width. */
+    private static double tailCost(int[] tail, double k) {
+        double total = 0;
+        double partial = 1;
+        for (int value : tail) {
+            total += partial;
+            partial *= value;
+        }
+        return total + partial * k;
+    }
+
+    private static long[] seedRange(int count) {
+        long[] seeds = new long[count];
+        for (int i = 0; i < count; i++) seeds[i] = i;
+        return seeds;
+    }
+
+    private static List<Result> sweep(Engine engine, List<int[]> shapes,
+                                      double[] alphas, long[] seeds) {
+        List<Run> runs = new ArrayList<>();
+        for (int[] branches : shapes) {
+            for (double alpha : alphas) {
+                for (long seed : seeds) runs.add(new Run(branches, alpha, seed));
+            }
+        }
+
+        long started = System.nanoTime();
+        Map<String, List<Result>> grouped = runs.parallelStream().map(run -> {
+            PsyboidSearch.Config config = new PsyboidSearch.Config(
+                    run.branches(), SEARCH_LOOKAHEAD, run.alpha(),
+                    SEARCH_MAX_DELAY, SEARCH_DURATION, SEARCH_SEGMENTS);
+
+            Sim.State root = warmedRoot(engine, run.seed());
+            int ticks = SEARCH_COMMITS * config.splitSpacing();
+
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, run.seed());
+            for (int c = 0; c < SEARCH_COMMITS; c++) search.commit();
+
+            double control = plainRun(engine, root, ticks).score;
+            double psyboid = search.canonical().score;
+            return new Result(run.branches(), config.describe(), config.budget(), run.alpha(),
+                    psyboid, control, ticks, 1, 100.0 * (psyboid - control) / control, 0);
+        }).collect(java.util.stream.Collectors.groupingBy(r -> r.label() + "|" + r.alpha()));
+
+        List<Result> merged = new ArrayList<>();
+        for (List<Result> group : grouped.values()) {
+            int n = group.size();
+            double psy = 0, ctl = 0, lift = 0;
+            for (Result r : group) { psy += r.psyboid(); ctl += r.control(); lift += r.lift(); }
+            psy /= n; ctl /= n; lift /= n;
+
+            double variance = 0;
+            for (Result r : group) variance += (r.lift() - lift) * (r.lift() - lift);
+            double sem = n > 1 ? Math.sqrt(variance / (n - 1) / n) : 0;
+
+            Result first = group.get(0);
+            merged.add(new Result(first.branches(), first.label(), first.budget(), first.alpha(),
+                    psy, ctl, first.ticks(), n, lift, sem));
+        }
+        System.out.printf("%d runs in %.1fs%n", runs.size(), (System.nanoTime() - started) / 1e9);
+        return merged;
+    }
+
+    private static void report(List<Result> results, int limit) {
+        System.out.println("branches                budget  alpha    n   psyboid  control      lift +/- sem   per boid/tick");
+        results.stream()
+                .sorted((a, b) -> Double.compare(b.lift(), a.lift()))
+                .limit(limit)
+                .forEach(r -> System.out.printf("%-23s %6.0f  %5.2f %4d  %8.1f %8.1f  %+7.1f%% +/-%4.1f   %.4f%n",
+                        r.label(), r.budget(), r.alpha(), r.n(), r.psyboid(), r.control(),
+                        r.lift(), r.sem(), r.psyboid() / SWEEP_BOIDS / r.ticks()));
+        System.out.println();
+    }
+
+    /** A warmed timeline with its score zeroed and no override installed. */
+    private static Sim.State warmedRoot(Engine engine, long seed) {
+        Sim.State s = engine.init(seed);
+        while (s.tick < WARMUP) s = engine.tick(s);
+        return new Sim.State(s.n, s.x, s.y, s.h, s.tick, 0L, new long[s.n], s.label);
+    }
+
+    /** The same timeline with nobody steering it, for comparison. */
+    private static Sim.State plainRun(Engine engine, Sim.State root, int ticks) {
+        Sim.State s = root;
+        for (int i = 0; i < ticks; i++) s = engine.tick(s);
+        return s;
+    }
+
+    // ---- Dilution and budget grid ------------------------------------------
+
+    /** Canonical ticks each run is measured over, regardless of how long a commit is. */
+    private static final int GRID_TICKS = 3200;
+    private static final int GRID_SEEDS = 30;
+
+    private record GridRun(int[] branches, int uncontrolled, long seed) {}
+
+    private record GridResult(String shape, int uncontrolled, long seed, int psyboid,
+                              int ticks, double budget, long flock, long psy,
+                              long controlFlock, long controlPsy, String label) {}
+
+    /**
+     * How much the psyboid's grip matters, against how much search is spent on it.
+     * <p>
+     * Dilution lengthens the uncontrolled gap before each override while the override
+     * itself stays four seconds, so the psyboid goes from steering four ticks in five to
+     * one in nine. Since a commit spans one whole override cycle, diluting also
+     * lengthens the commit — so runs are held to a fixed number of canonical ticks
+     * rather than a fixed number of commits, and the search gets correspondingly fewer
+     * decisions at high dilution.
+     */
+    public static void dilutionGrid(PresetScenarioParameter preset) throws IOException {
+        ScenarioParameter parameter = withFlockSize(preset, SWEEP_BOIDS);
+        Engine engine = new Boids2DEngine(parameter);
+
+        int[][] shapes = {{35, 4, 2}, {70, 4, 2}, {140, 4, 2}};
+        int[] uncontrolledTicks = {8, 16, 32, 64, 128, 256};
+
+        List<GridRun> runs = new ArrayList<>();
+        for (int[] branches : shapes) {
+            for (int uncontrolled : uncontrolledTicks) {
+                for (long seed = 0; seed < GRID_SEEDS; seed++) {
+                    runs.add(new GridRun(branches, uncontrolled, seed));
+                }
+            }
+        }
+
+        long started = System.nanoTime();
+        List<GridResult> results = runs.parallelStream().map(run -> {
+            int psyboid = (int) (run.seed() % SWEEP_BOIDS);
+            PsyboidSearch.Config config = new PsyboidSearch.Config(
+                    run.branches(), SEARCH_LOOKAHEAD, 0.85,
+                    run.uncontrolled(), SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+
+            int commits = Math.max(1, Math.round(GRID_TICKS / (float) config.splitSpacing()));
+            int ticks = commits * config.splitSpacing();
+
+            Sim.State root = warmedRoot(engine, run.seed());
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, run.seed());
+            for (int c = 0; c < commits; c++) search.commit();
+
+            Sim.State canonical = search.canonical();
+            Sim.State control = plainRun(engine, root, ticks);
+
+            return new GridResult(config.describe(), run.uncontrolled(), run.seed(), psyboid,
+                    ticks, config.budget(), canonical.score, canonical.boidScore[psyboid],
+                    control.score, control.boidScore[psyboid], canonical.label);
+        }).toList();
+
+        Path out = Path.of("data", "canonical_" + preset.name().toLowerCase() + ".csv");
+        Files.createDirectories(out.getParent());
+        try (BufferedWriter w = Files.newBufferedWriter(out)) {
+            w.write("shape,uncontrolled,seed,psyboid,ticks,budget,flock,psyboid_score,"
+                    + "control_flock,control_psyboid,label");
+            w.newLine();
+            for (GridResult r : results) {
+                w.write(r.shape() + "," + r.uncontrolled() + "," + r.seed() + "," + r.psyboid()
+                        + "," + r.ticks() + "," + (long) r.budget() + "," + r.flock() + ","
+                        + r.psy() + "," + r.controlFlock() + "," + r.controlPsy() + ","
+                        + r.label());
+                w.newLine();
+            }
+        }
+
+        System.out.printf("%s, %d boids, %d canonical ticks, %d seeds%n",
+                preset.name(), SWEEP_BOIDS, GRID_TICKS, GRID_SEEDS);
+        System.out.printf("%d runs in %.0fs -> %s%n%n", runs.size(),
+                (System.nanoTime() - started) / 1e9, out);
+        System.out.println("shape      ctrl:unctrl  budget  commits   flock%   psyboid%   others%   psy/others");
+
+        for (int[] branches : shapes) {
+            for (int uncontrolled : uncontrolledTicks) {
+                double flock = 0, psy = 0, cFlock = 0, ticks = 0, budget = 0;
+                int n = 0;
+                String shape = null;
+                for (GridResult r : results) {
+                    if (r.uncontrolled() != uncontrolled
+                            || !r.shape().equals(new PsyboidSearch.Config(branches,
+                            SEARCH_LOOKAHEAD, 0.85, uncontrolled, SEARCH_DURATION,
+                            SEARCH_SEGMENTS).describe())) continue;
+                    flock += r.flock();
+                    psy += r.psy();
+                    cFlock += r.controlFlock();
+                    ticks += r.ticks();
+                    budget = r.budget();
+                    shape = r.shape();
+                    n++;
+                }
+                double perTick = ticks / n;
+                double flockPct = 100 * flock / n / SWEEP_BOIDS / perTick;
+                double psyPct = 100 * psy / n / perTick;
+                double othersPct = 100 * (flock - psy) / n / (SWEEP_BOIDS - 1) / perTick;
+
+                System.out.printf("%-10s %5.1f:%-5.1f %7.0f %8.0f  %6.2f%%   %6.2f%%   %6.2f%%      %.2fx%n",
+                        shape, SEARCH_DURATION / 8.0, uncontrolled / 8.0, budget,
+                        perTick / (uncontrolled + SEARCH_DURATION),
+                        flockPct, psyPct, othersPct, psyPct / othersPct);
+            }
+            System.out.printf("%-10s control flock%% %.2f%%%n%n", "",
+                    100 * results.stream().filter(r -> r.shape().startsWith(branches[0] + "x"))
+                            .mapToLong(GridResult::controlFlock).average().orElse(0)
+                            / SWEEP_BOIDS / GRID_TICKS);
+        }
+    }
+
+    // ---- Label reconstruction ----------------------------------------------
+
+    /**
+     * Checks that a canonical line can be rebuilt from its label alone, by replaying it
+     * and comparing every boid's position, heading and score against the original.
+     */
+    public static boolean verifyReplay(PresetScenarioParameter preset, int uncontrolled,
+                                       int[] branches, long seed, int commits) throws IOException {
+        ScenarioParameter parameter = withFlockSize(preset, SWEEP_BOIDS);
+        Engine engine = new Boids2DEngine(parameter);
+
+        PsyboidSearch.Config config = new PsyboidSearch.Config(
+                branches, SEARCH_LOOKAHEAD, 0.85,
+                uncontrolled, SEARCH_DURATION, SEARCH_SEGMENTS, 3);
+
+        Sim.State root = warmedRoot(engine, seed);
+        PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+        for (int c = 0; c < commits; c++) search.commit();
+
+        Sim.State original = search.canonical();
+        Sim.State rebuilt = PsyboidSearch.replay(engine, original.label, WARMUP, original.tick);
+
+        boolean ok = original.tick == rebuilt.tick && original.score == rebuilt.score;
+        double worstPosition = 0;
+        for (int i = 0; i < original.n && ok; i++) {
+            worstPosition = Math.max(worstPosition,
+                    Math.hypot(original.x[i] - rebuilt.x[i], original.y[i] - rebuilt.y[i]));
+            if (original.h[i] != rebuilt.h[i]) ok = false;
+            if (original.boidScore[i] != rebuilt.boidScore[i]) ok = false;
+        }
+        if (worstPosition != 0) ok = false;
+
+        System.out.printf("  %-10s uncontrolled %3d  %-10s seed %2d  commits %3d  "
+                        + "tick %5d  score %6d vs %6d  worst offset %.1e  %s%n",
+                preset.name(), uncontrolled, config.describe(), seed, commits,
+                original.tick, original.score, rebuilt.score, worstPosition,
+                ok ? "MATCH" : "MISMATCH");
+        return ok;
+    }
+
+    // ---- Score attribution -------------------------------------------------
+
+    private record Attribution(double psyOwn, double psyOthers,
+                               double ctlOwn, double ctlOthers,
+                               int rank, boolean top) {}
+
+    /**
+     * Splits the excess score into the part the psyboid collects itself and the part it
+     * causes the rest of the flock to collect.
+     * <p>
+     * The first kind is trivially visible — a boid that parks in the scoring zone stands
+     * out at a glance. The second is the interesting kind, and the fraction of excess
+     * coming from it is the dial to turn when making a scenario harder.
+     */
+    public static void attribution() throws IOException {
+        ScenarioParameter parameter = withFlockSize(PresetScenarioParameter.HAMBURGER, SWEEP_BOIDS);
+        Engine engine = new Boids2DEngine(parameter);
+
+        List<long[]> cases = new ArrayList<>();
+        for (long seed = 0; seed < 30; seed++) {
+            for (int psyboid = 0; psyboid < SWEEP_BOIDS; psyboid++) {
+                cases.add(new long[]{seed, psyboid});
+            }
+        }
+
+        List<Attribution> results = cases.parallelStream().map(c -> {
+            long seed = c[0];
+            int psyboid = (int) c[1];
+
+            PsyboidSearch.Config config = new PsyboidSearch.Config(
+                    new int[]{256, 1}, SEARCH_LOOKAHEAD, 0.85,
+                    SEARCH_MAX_DELAY, SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+
+            Sim.State root = warmedRoot(engine, seed);
+            int ticks = SEARCH_COMMITS * config.splitSpacing();
+
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+            for (int i = 0; i < SEARCH_COMMITS; i++) search.commit();
+
+            long[] psy = search.canonical().boidScore;
+            long[] ctl = plainRun(engine, root, ticks).boidScore;
+
+            long psyOthers = 0, ctlOthers = 0;
+            int better = 0;
+            for (int i = 0; i < psy.length; i++) {
+                if (i == psyboid) continue;
+                psyOthers += psy[i];
+                ctlOthers += ctl[i];
+                if (psy[i] > psy[psyboid]) better++;
+            }
+            return new Attribution(psy[psyboid], psyOthers, ctl[psyboid], ctlOthers,
+                    better + 1, better == 0);
+        }).toList();
+
+        int n = results.size();
+        double psyOwn = 0, psyOthers = 0, ctlOwn = 0, ctlOthers = 0, rank = 0;
+        int top = 0;
+        for (Attribution a : results) {
+            psyOwn += a.psyOwn();
+            psyOthers += a.psyOthers();
+            ctlOwn += a.ctlOwn();
+            ctlOthers += a.ctlOthers();
+            rank += a.rank();
+            if (a.top()) top++;
+        }
+        psyOwn /= n; psyOthers /= n; ctlOwn /= n; ctlOthers /= n; rank /= n;
+
+        int ticks = SEARCH_COMMITS * (SEARCH_MAX_DELAY + SEARCH_DURATION);
+        int others = SWEEP_BOIDS - 1;
+        double excessOwn = psyOwn - ctlOwn;
+        double excessOthers = psyOthers - ctlOthers;
+        double excess = excessOwn + excessOthers;
+
+        System.out.printf("%d runs: every boid as psyboid across 30 seeds, %d ticks each%n%n", n, ticks);
+        System.out.println("                        psyboid   others(each)      flock");
+        System.out.printf("control  score/tick     %8.4f       %8.4f   %8.4f%n",
+                ctlOwn / ticks, ctlOthers / others / ticks, (ctlOwn + ctlOthers) / ticks);
+        System.out.printf("steered  score/tick     %8.4f       %8.4f   %8.4f%n",
+                psyOwn / ticks, psyOthers / others / ticks, (psyOwn + psyOthers) / ticks);
+        System.out.printf("excess                  %+8.1f       %+8.1f   %+8.1f%n",
+                excessOwn, excessOthers / others, excess);
+        System.out.printf("share of excess          %6.1f%%         %6.1f%%%n%n",
+                100 * excessOwn / excess, 100 * excessOthers / excess);
+
+        System.out.printf("psyboid scores %.2fx the average of the others%n",
+                psyOwn / (psyOthers / others));
+        System.out.printf("psyboid is the single highest scorer in %.1f%% of runs (chance is %.1f%%)%n",
+                100.0 * top / n, 100.0 / SWEEP_BOIDS);
+        System.out.printf("mean rank by score: %.2f of %d%n", rank, SWEEP_BOIDS);
+    }
+
+    // ---- Detective scenario ------------------------------------------------
+
+    private static final int GRID_COLUMNS = 4;
+    private static final int GRID_ROWS = 5;
+    private static final int GRID_SCALE = 3;
+    private static final int DETECTIVE_COMMITS = 40;
+
+    /**
+     * One run with a randomly chosen psyboid, rendered as a grid of snapshots for
+     * someone to inspect without being told who it is. The answer goes to a file rather
+     * than to the console so it can be checked afterwards rather than spoiled.
+     */
+    public static void detective(long seed) throws IOException {
+        Random meta = new Random(seed);
+        int psyboid = meta.nextInt(SWEEP_BOIDS);
+
+        ScenarioParameter parameter = withFlockSize(PresetScenarioParameter.HAMBURGER, SWEEP_BOIDS);
+        Engine engine = new Boids2DEngine(parameter);
+        Renderer renderer = new Boids2DRenderer(parameter.mapPath(), GRID_SCALE);
+
+        PsyboidSearch.Config config = new PsyboidSearch.Config(
+                new int[]{256, 1}, SEARCH_LOOKAHEAD, 0.85,
+                SEARCH_MAX_DELAY, SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+
+        Sim.State root = warmedRoot(engine, seed);
+        PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+
+        List<Sim.State> timeline = new ArrayList<>();
+        for (int c = 0; c < DETECTIVE_COMMITS; c++) {
+            search.commit();
+            timeline.add(search.canonical());
+        }
+
+        int panels = GRID_COLUMNS * GRID_ROWS;
+        List<Integer> chosen = new ArrayList<>();
+        for (int i = 0; i < timeline.size(); i++) chosen.add(i);
+        java.util.Collections.shuffle(chosen, meta);
+        chosen = new ArrayList<>(chosen.subList(0, panels));
+        java.util.Collections.sort(chosen);
+
+        List<BufferedImage> rows = new ArrayList<>();
+        for (int r = 0; r < GRID_ROWS; r++) {
+            List<BufferedImage> row = new ArrayList<>();
+            for (int c = 0; c < GRID_COLUMNS; c++) {
+                row.add(renderer.render(timeline.get(chosen.get(r * GRID_COLUMNS + c))));
+            }
+            rows.add(Sim.stitchHorizontal(row));
+        }
+
+        Path dir = Path.of("render", "detective");
+        Files.createDirectories(dir);
+        Path grid = dir.resolve("hamburger_seed" + seed + ".png");
+        javax.imageio.ImageIO.write(Sim.stitchVertical(rows), "png", grid.toFile());
+
+        try (BufferedWriter w = Files.newBufferedWriter(dir.resolve("answer_seed" + seed + ".txt"))) {
+            w.write("psyboid index: " + psyboid);
+            w.newLine();
+            w.write("colour: " + hex(psyboid, SWEEP_BOIDS));
+            w.newLine();
+        }
+
+        System.out.println("boid  colour");
+        for (int i = 0; i < SWEEP_BOIDS; i++) {
+            System.out.printf("%4d  %s%n", i, hex(i, SWEEP_BOIDS));
+        }
+        System.out.println();
+        System.out.println("grid   -> " + grid);
+        System.out.println("answer -> " + dir.resolve("answer_seed" + seed + ".txt"));
+    }
+
+    private static String hex(int index, int n) {
+        return String.format("#%06X", Boids2DRenderer.colorOf(index, n).getRGB() & 0xFFFFFF);
+    }
+
     public static void main(String[] args) throws IOException {
+        System.out.println("=== label replay check ===");
+        boolean all = true;
+        for (int uncontrolled : new int[]{8, 64, 256}) {
+            for (int[] branches : new int[][]{{35, 4, 2}, {140, 4, 2}}) {
+                for (long seed : new long[]{0, 3}) {
+                    all &= verifyReplay(PresetScenarioParameter.PLINKO, uncontrolled,
+                            branches, seed, 12);
+                }
+            }
+        }
+        for (long seed : new long[]{0, 1}) {
+            all &= verifyReplay(PresetScenarioParameter.HAMBURGER, 8, new int[]{35, 4, 2}, seed, 12);
+        }
+        System.out.println(all ? "all replays exact" : "REPLAY FAILED");
+        if (!all) return;
+
+        System.out.println();
+        dilutionGrid(PresetScenarioParameter.PLINKO);
+    }
+
+    public static void sweepMain(String[] args) throws IOException {
         long[] seeds = DEFAULT_SEEDS;
         if (args.length > 0) {
             seeds = new long[args.length];

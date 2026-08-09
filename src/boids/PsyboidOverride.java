@@ -34,6 +34,21 @@ public class PsyboidOverride implements MovementControl {
         return "p" + psyboid + turn + "d" + duration + "t" + onset;
     }
 
+    /** Inverse of {@link #label()}. */
+    public static PsyboidOverride parse(String label) {
+        int turnAt = 1;
+        while ("LSR".indexOf(label.charAt(turnAt)) < 0) turnAt++;
+        int dAt = label.indexOf('d', turnAt);
+        int tAt = label.indexOf('t', dAt);
+
+        int psyboid = Integer.parseInt(label, 1, turnAt, 10);
+        char turn = label.charAt(turnAt);
+        int duration = Integer.parseInt(label, dAt + 1, tAt, 10);
+        int onset = Integer.parseInt(label, tAt + 1, label.length(), 10);
+
+        return new PsyboidOverride(onset, duration, turn == 'L' ? -1 : turn == 'R' ? 1 : 0, psyboid);
+    }
+
     @java.lang.Override
     public void calculate(Movement movement) {
         if (movement.boids.tick() >= onset && movement.boids.tick() < onset + duration) {
