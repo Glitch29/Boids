@@ -557,6 +557,16 @@ public final class SimTest {
         return String.format("#%06X", Boids2DRenderer.colorOf(index, n).getRGB() & 0xFFFFFF);
     }
 
+    /** Replays a saved canonical line and draws the psyboid's path over the play area. */
+    public static void trailFromLabel(PresetScenarioParameter preset, String label,
+                                      long targetTick, Path out) throws IOException {
+        Sim sim = new Sim(withFlockSize(preset, SWEEP_BOIDS));
+        PsyboidTrailLogger logger = new PsyboidTrailLogger(out, 2);
+        sim.register(logger, PsyboidTrailLogger.TRIGGERS);
+        sim.replay(label, WARMUP, targetTick);
+        System.out.printf("psyboid %d, %d ticks -> %s%n", logger.psyboid(), targetTick - WARMUP, out);
+    }
+
     public static void main(String[] args) throws IOException {
         System.out.println("=== label replay check ===");
         boolean all = true;
@@ -575,7 +585,18 @@ public final class SimTest {
         if (!all) return;
 
         System.out.println();
-        dilutionGrid(PresetScenarioParameter.PLINKO);
+        System.out.println("=== psyboid trails from saved canonical lines ===");
+        List<String> lines = Files.readAllLines(Path.of("data", "canonical_plinko.csv"));
+        for (String pick : new String[]{"35x4x2,8,0,", "140x4x2,8,3,", "140x4x2,256,5,"}) {
+            for (String line : lines) {
+                if (!line.startsWith(pick)) continue;
+                String[] f = line.split(",");
+                long ticks = Long.parseLong(f[4]);
+                trailFromLabel(PresetScenarioParameter.PLINKO, f[10], WARMUP + ticks,
+                        Path.of("render", "trail", "plinko_" + f[0] + "_u" + f[1] + "_seed" + f[2] + ".png"));
+                break;
+            }
+        }
     }
 
     public static void sweepMain(String[] args) throws IOException {

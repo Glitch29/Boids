@@ -34,6 +34,11 @@ public final class Sim {
     private final Renderer renderer;
     private Random overrideRng = new Random(0);
 
+    @Observable
+    private final ScenarioParameter parameter;
+
+    private final SimObserver.Registry observers = new SimObserver.Registry();
+
     /**
      * @param playArea PNG where {@code #000000} is out of bounds
      * @param navRadius the turning radius the navigation map is built at. Normally
@@ -42,8 +47,39 @@ public final class Sim {
      *                  strictly must.
      */
     public Sim(ScenarioParameter parameter) throws IOException {
+        this.parameter = parameter;
         engine = new Boids2DEngine(parameter);
         renderer = new Boids2DRenderer(parameter.mapPath());
+    }
+
+    /** Watches this run. What the observer can see is whatever it asks for by probe. */
+    public void register(SimObserver observer, SimObserver.Trigger... triggers) {
+        observers.register(observer, triggers);
+    }
+
+    /**
+     * Rebuilds a canonical line from its label and runs it tick by tick, so observers
+     * see the whole trajectory rather than only its endpoints.
+     * <p>
+     * Deliberately single-threaded: an observer accumulating state across a run has no
+     * reason to be thread-safe, and a replay is one timeline anyway.
+     */
+    public void replay(String label, int warmup, long targetTick) {
+        observers.fire(SimObserver.Trigger.SIM_START, this);
+
+        State s = engine.init(PsyboidSearch.seedOf(label));
+        while (s.tick < warmup) s = engine.tick(s);
+        s = new State(s.n, s.x, s.y, s.h, s.tick, 0L, new long[s.n], label,
+                PsyboidSearch.overridesOf(label));
+        observers.fire(SimObserver.Trigger.STATE_INIT, s);
+
+        while (s.tick < targetTick) {
+            s = engine.tick(s);
+            observers.fire(SimObserver.Trigger.STATE_ADVANCE, s);
+        }
+
+        states = new ArrayList<>(List.of(s));
+        observers.fire(SimObserver.Trigger.SIM_END, this);
     }
 
     public void startSeeds(long... seeds) {
@@ -268,8 +304,13 @@ public final class Sim {
     public static final class State {
 
         public final int n;
+
+        @Observable
         public final double[] x;
+
+        @Observable
         public final double[] y;
+
         public final int[] h;
         public final long tick;
         public final long score;
@@ -291,6 +332,7 @@ public final class Sim {
          */
         public final String label;
 
+        @Observable
         public final PsyboidOverride[] psyboidOverrides;
 
         /**
