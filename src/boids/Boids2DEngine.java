@@ -44,8 +44,8 @@ public class Boids2DEngine implements Engine {
     public Sim.State tick(Sim.State state) {
         MovementControl.Movement movement = new MovementControl.Movement(state.x, state.y, state.h, state.tick);
         int n = state.n;
-        double[] x = new double[n];
-        double[] y = new double[n];
+        int[] x = new int[n];
+        int[] y = new int[n];
         int[] h = new int[n];
 
         flocking.calculate(movement);
@@ -60,15 +60,17 @@ public class Boids2DEngine implements Engine {
             h[i] = Math.floorMod(state.h[i] + movement.movement[i], Params.TURNS);
 
             // Turn is applied before translation, so a boid moves along its new heading.
-            double px = state.x[i] + speed * Params.COS[h[i]];
-            double py = state.y[i] + speed * Params.SIN[h[i]];
+            int px = state.x[i] + map.stepX(h[i]);
+            int py = state.y[i] + map.stepY(h[i]);
 
-            if (px < 0 || py < 0 || px >= map.width() || py >= map.height()) {
+            // The collision layer only ever hands back a turn whose whole segment stays
+            // in play, so this cannot fire unless a boid was started somewhere dead.
+            if (!map.traversable(px, py)) {
                 throw new IllegalStateException(String.format(
-                        "boid %d left the image at tick %d: (%.1f, %.1f) heading %d",
+                        "boid %d left the play area at tick %d: (%d, %d) heading %d",
                         i, state.tick, px, py, h[i]));
             }
-            int scored = map.score((int) px, (int) py);
+            int scored = map.score(px, py);
             score += scored;
             boidScore[i] = state.boidScore[i] + scored;
             x[i] = px;
@@ -83,15 +85,16 @@ public class Boids2DEngine implements Engine {
      * A fresh timeline with {@code n} boids placed uniformly over the play area by
      * rejection, and no override.
      * <p>
-     * Position and heading are drawn together and redrawn as a pair, because a boid
-     * must start somewhere it is both in play and unconstrained — starting inside a
-     * restricted interval would mean beginning the run already committed to a turn.
+     * Position and heading are drawn together and redrawn as a pair, because a boid must
+     * start in a state it can survive from. That is the whole precondition of the
+     * no-escape guarantee: from a live state the collision layer can always find a live
+     * turn, so a run that starts live stays in play forever.
      */
     @Override
     public Sim.State init(long seed) {
         int n = defaultFlockSize;
-        double[] x = new double[n];
-        double[] y = new double[n];
+        int[] x = new int[n];
+        int[] y = new int[n];
         int[] h = new int[n];
 
         // java.util.Random's algorithm is specified exactly in its javadoc, so a
@@ -100,14 +103,13 @@ public class Boids2DEngine implements Engine {
         for (int i = 0; i < n; i++) {
             boolean placed = false;
             for (int attempt = 0; attempt < MAX_SEED_ATTEMPTS && !placed; attempt++) {
-                x[i] = rng.nextDouble() * map.width();
-                y[i] = rng.nextDouble() * map.height();
+                x[i] = rng.nextInt(map.width());
+                y[i] = rng.nextInt(map.height());
                 h[i] = rng.nextInt(Params.TURNS);
-                placed = map.traversable(x[i], y[i])
-                        && map.forcedTurn(x[i], y[i], Params.headingDeg(h[i])) == 0;
+                placed = map.alive(x[i], y[i], h[i]);
             }
             if (!placed) {
-                throw new IllegalStateException("no unconstrained start for boid " + i
+                throw new IllegalStateException("no survivable start for boid " + i
                         + " in " + MAX_SEED_ATTEMPTS + " attempts");
             }
         }
@@ -118,13 +120,20 @@ public class Boids2DEngine implements Engine {
     public BufferedImage print(Sim.State state) {
         return null;
     }
+
+    /**
+     * Runs last, after the flocking rules and any override, so nothing upstream can
+     * steer a boid out of play. It vetoes rather than dictates: the proposed turn stands
+     * whenever it survives.
+     */
     class Collision implements MovementControl {
 
         @Override
         public void calculate(Movement movement) {
-            for (int i = 0; i < movement.boids.n(); i++) {
-                int forced = map.forcedTurn(movement.boids.x()[i], movement.boids.y()[i], Params.headingDeg(movement.boids.h()[i]));
-                if (forced != 0) movement.movement[i] = forced;
+            BoidArray boids = movement.boids;
+            for (int i = 0; i < boids.n(); i++) {
+                movement.movement[i] = map.constrainTurn(
+                        boids.x()[i], boids.y()[i], boids.h()[i], movement.movement[i]);
             }
         }
     }

@@ -6,7 +6,10 @@ import java.nio.file.Path;
 public enum PresetScenarioParameter implements ScenarioParameter{
     HAMBURGER ("hamburger.png", 20f, 20),
     PEANUT ("peanut.png", 40f, 20),
-    PLINKO ("plinko.png", 40f, 20);
+    PLINKO ("plinko.png", 40f, 20),
+    WORMWAY ("wormway.png", 40f, 20),
+    ROUNDABOUT ("roundabout.png", 40f, 20),
+    OUTLOOPED ("outlooped.png", 40f, 20);
 
     private final String filename;
     private final float r;

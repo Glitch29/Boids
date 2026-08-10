@@ -8,7 +8,7 @@ public interface MovementControl {
         BoidArray boids;
         int[] movement;
 
-        Movement(double[] x, double[] y, int[] h, long tick) {
+        Movement(int[] x, int[] y, int[] h, long tick) {
             boids = new BoidArray(x.length, x, y, h, tick);
             movement = new int[x.length];
         }

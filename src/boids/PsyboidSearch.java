@@ -28,7 +28,7 @@ public final class PsyboidSearch {
      * Ceiling on {@link Config#budget()} — a measure of state calculations rather than
      * of concurrency, so shapes of different depths are compared at equal cost.
      */
-    public static final int MAX_BUDGET = 1024;
+    public static final int MAX_BUDGET = 4096;
 
     /** Ticks per "second": the time to swing an eighth of a turn. */
     public static final int SECOND = Params.TURNS / 8;

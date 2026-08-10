@@ -306,13 +306,16 @@ public final class Sim {
         public final int n;
 
         @Observable
-        public final double[] x;
+        public final int[] x;
 
         @Observable
-        public final double[] y;
+        public final int[] y;
 
+        @Observable
         public final int[] h;
+        @Observable
         public final long tick;
+
         public final long score;
 
         /**
@@ -322,6 +325,7 @@ public final class Sim {
          * scoring zone is trivially visible, whereas one whose gain comes from moving
          * the rest of the flock is not. Telling those apart needs the breakdown.
          */
+        @Observable
         public final long[] boidScore;
 
         /**
@@ -339,7 +343,7 @@ public final class Sim {
          * Sets every field explicitly. Called by {@link Sim} and by the {@code with...}
          * methods below; there is no other way to build a state.
          */
-        State(int n, double[] x, double[] y, int[] h, long tick, long score, long[] boidScore,
+        State(int n, int[] x, int[] y, int[] h, long tick, long score, long[] boidScore,
               String label, PsyboidOverride... psyboidOverrides) {
             this.n = n;
             this.x = x;

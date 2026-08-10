@@ -32,6 +32,12 @@ public final class Observation {
     /** Where the psyboid was, and which boid it is. */
     public record Psyboid(int index, double x, double y) {}
 
+    /**
+     * Where every boid was. The arrays belong to the state and are never written after
+     * it is built, so holding on to them is safe.
+     */
+    public record Flock(long tick, int n, int[] x, int[] y, int[] h) {}
+
     // ---- Catalogue ---------------------------------------------------------
 
     /** The play area image the run is using. */
@@ -53,8 +59,23 @@ public final class Observation {
                 PsyboidOverride[] overrides = (PsyboidOverride[]) values[2];
                 if (overrides.length == 0) return null;
                 int index = overrides[0].psyboid();
-                return new Psyboid(index, ((double[]) values[0])[index], ((double[]) values[1])[index]);
+                return new Psyboid(index, ((int[]) values[0])[index], ((int[]) values[1])[index]);
             });
+
+    /** Each boid's accumulated score at a moment in time. */
+    public record Scores(long tick, long[] perBoid) {}
+
+    public static final Probe<Scores> SCORES = new Probe<>(
+            "scores", SimObserver.Trigger.Scope.STATE,
+            new String[]{"tick", "boidScore"},
+            values -> new Scores((Long) values[0], (long[]) values[1]));
+
+    /** Every boid's position. */
+    public static final Probe<Flock> FLOCK = new Probe<>(
+            "flock", SimObserver.Trigger.Scope.STATE,
+            new String[]{"tick", "x", "y", "h"},
+            values -> new Flock((Long) values[0], ((int[]) values[1]).length,
+                    (int[]) values[1], (int[]) values[2], (int[]) values[3]));
 
     // ------------------------------------------------------------------------
 

@@ -76,7 +76,7 @@ public final class SimTest {
      *             standard error meaningful
      */
     private record Result(int[] branches, String label, double budget, double alpha,
-                          double psyboid, double control, int ticks, int n,
+                          double psyboid, double control, int ticks, int boids, int n,
                           double lift, double sem) {}
 
     /**
@@ -85,19 +85,24 @@ public final class SimTest {
      */
     /** Widths the enumerated tail may use, largest first so recursion stays non-increasing. */
     private static final int[] TAIL_VALUES = {16, 8, 4, 2, 1};
-    private static final int MAX_TAIL_LENGTH = 8;
+    /** Raised alongside the budget, so deeper tails can compete for it. */
+    private static final int MAX_TAIL_LENGTH = 10;
     private static final int MIN_ROOT_WIDTH = 8;
 
-    public static void rollingSearch(PresetScenarioParameter preset) throws IOException {
-        Engine engine = new Boids2DEngine(withFlockSize(preset, SWEEP_BOIDS));
+    public static void rollingSearch(PresetScenarioParameter preset, int boids,
+                                     int uncontrolled, int commits) throws IOException {
+        Engine engine = new Boids2DEngine(withFlockSize(preset, boids));
 
-        List<int[]> shapes = enumerateShapes();
-        System.out.printf("%s: %d shapes fit the budget of %d%n%n",
-                preset.name(), shapes.size(), PsyboidSearch.MAX_BUDGET);
+        List<int[]> shapes = enumerateShapes(uncontrolled);
+        System.out.printf("%s, %d boids, %d uncontrolled ticks, %d commits of %d ticks%n",
+                preset.name(), boids, uncontrolled, commits, uncontrolled + SEARCH_DURATION);
+        System.out.printf("%d shapes fit the budget of %d%n%n",
+                shapes.size(), PsyboidSearch.MAX_BUDGET);
 
-        System.out.println("=== shape sweep, alpha 0.85, 20 seeds ===");
-        List<Result> broad = sweep(engine, shapes, new double[]{0.85}, seedRange(20));
-        report(broad, 20);
+        System.out.println("=== shape sweep, alpha 0.85 ===");
+        List<Result> broad = sweep(engine, boids, uncontrolled, commits,
+                shapes, new double[]{0.85}, seedRange(8));
+        report(broad, 24);
 
         List<int[]> best = broad.stream()
                 .sorted((a, b) -> Double.compare(b.lift(), a.lift()))
@@ -105,8 +110,9 @@ public final class SimTest {
                 .map(Result::branches)
                 .toList();
 
-        System.out.println("=== top shapes, alpha sweep, 40 seeds ===");
-        report(sweep(engine, best, new double[]{0.78, 0.82, 0.85, 0.88, 0.92}, seedRange(40)), 40);
+        System.out.println("=== top shapes, alpha sweep ===");
+        report(sweep(engine, boids, uncontrolled, commits,
+                best, new double[]{0.80, 0.85, 0.90}, seedRange(20)), 30);
     }
 
     /**
@@ -116,13 +122,15 @@ public final class SimTest {
      * The root width factors cleanly out of the budget, so the tail is enumerated over
      * round numbers and the root simply takes whatever allowance is left.
      */
-    private static List<int[]> enumerateShapes() {
+    private static List<int[]> enumerateShapes(int uncontrolled) {
         List<int[]> tails = new ArrayList<>();
         tails.add(new int[0]);
         buildTails(new int[MAX_TAIL_LENGTH], 0, 0, tails);
 
-        double k = (SEARCH_LOOKAHEAD + SEARCH_MAX_DELAY + SEARCH_DURATION)
-                / (double) (SEARCH_MAX_DELAY + SEARCH_DURATION);
+        // Diluting lengthens the commit, which makes the lookahead a smaller share of a
+        // branching interval and so cheapens the deepest level.
+        double k = (SEARCH_LOOKAHEAD + uncontrolled + SEARCH_DURATION)
+                / (double) (uncontrolled + SEARCH_DURATION);
 
         List<int[]> shapes = new ArrayList<>();
         for (int[] tail : tails) {
@@ -165,8 +173,8 @@ public final class SimTest {
         return seeds;
     }
 
-    private static List<Result> sweep(Engine engine, List<int[]> shapes,
-                                      double[] alphas, long[] seeds) {
+    private static List<Result> sweep(Engine engine, int boids, int uncontrolled, int commits,
+                                      List<int[]> shapes, double[] alphas, long[] seeds) {
         List<Run> runs = new ArrayList<>();
         for (int[] branches : shapes) {
             for (double alpha : alphas) {
@@ -175,21 +183,27 @@ public final class SimTest {
         }
 
         long started = System.nanoTime();
+        java.util.Queue<String> labels = new java.util.concurrent.ConcurrentLinkedQueue<>();
         Map<String, List<Result>> grouped = runs.parallelStream().map(run -> {
             PsyboidSearch.Config config = new PsyboidSearch.Config(
                     run.branches(), SEARCH_LOOKAHEAD, run.alpha(),
-                    SEARCH_MAX_DELAY, SEARCH_DURATION, SEARCH_SEGMENTS);
+                    uncontrolled, SEARCH_DURATION, SEARCH_SEGMENTS);
 
             Sim.State root = warmedRoot(engine, run.seed());
-            int ticks = SEARCH_COMMITS * config.splitSpacing();
+            int ticks = commits * config.splitSpacing();
 
             PsyboidSearch search = new PsyboidSearch(engine, config, root, run.seed());
-            for (int c = 0; c < SEARCH_COMMITS; c++) search.commit();
+            for (int c = 0; c < commits; c++) search.commit();
 
             double control = plainRun(engine, root, ticks).score;
-            double psyboid = search.canonical().score;
+            Sim.State canonical = search.canonical();
+            // Every search result is a run that can be reconstructed later; throwing the
+            // label away means paying for the search twice.
+            labels.add(config.describe() + "," + run.alpha() + "," + run.seed()
+                    + "," + ticks + "," + canonical.label);
             return new Result(run.branches(), config.describe(), config.budget(), run.alpha(),
-                    psyboid, control, ticks, 1, 100.0 * (psyboid - control) / control, 0);
+                    canonical.score, control, ticks, boids, 1,
+                    100.0 * (canonical.score - control) / control, 0);
         }).collect(java.util.stream.Collectors.groupingBy(r -> r.label() + "|" + r.alpha()));
 
         List<Result> merged = new ArrayList<>();
@@ -205,9 +219,24 @@ public final class SimTest {
 
             Result first = group.get(0);
             merged.add(new Result(first.branches(), first.label(), first.budget(), first.alpha(),
-                    psy, ctl, first.ticks(), n, lift, sem));
+                    psy, ctl, first.ticks(), first.boids(), n, lift, sem));
         }
-        System.out.printf("%d runs in %.1fs%n", runs.size(), (System.nanoTime() - started) / 1e9);
+        try {
+            Path out = Path.of("data", "sweep_labels.csv");
+            Files.createDirectories(out.getParent());
+            boolean fresh = !Files.exists(out);
+            try (BufferedWriter w = Files.newBufferedWriter(out,
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND)) {
+                if (fresh) { w.write("shape,alpha,seed,ticks,label"); w.newLine(); }
+                for (String line : labels) { w.write(line); w.newLine(); }
+            }
+        } catch (IOException e) {
+            System.out.println("could not append sweep labels: " + e);
+        }
+
+        System.out.printf("%d runs in %.1fs, %d labels logged%n",
+                runs.size(), (System.nanoTime() - started) / 1e9, labels.size());
         return merged;
     }
 
@@ -218,7 +247,7 @@ public final class SimTest {
                 .limit(limit)
                 .forEach(r -> System.out.printf("%-23s %6.0f  %5.2f %4d  %8.1f %8.1f  %+7.1f%% +/-%4.1f   %.4f%n",
                         r.label(), r.budget(), r.alpha(), r.n(), r.psyboid(), r.control(),
-                        r.lift(), r.sem(), r.psyboid() / SWEEP_BOIDS / r.ticks()));
+                        r.lift(), r.sem(), r.psyboid() / r.boids() / r.ticks()));
         System.out.println();
     }
 
@@ -567,7 +596,353 @@ public final class SimTest {
         System.out.printf("psyboid %d, %d ticks -> %s%n", logger.psyboid(), targetTick - WARMUP, out);
     }
 
+    /** A plain run with no psyboid, with every boid's path traced. */
+    public static void flockTrail(PresetScenarioParameter preset, long seed,
+                                  int ticks, Path out) throws IOException {
+        Sim sim = new Sim(preset);
+        sim.register(new FlockTrailLogger(out, 2, 1.2f), FlockTrailLogger.TRIGGERS);
+        // A label with no override sections replays as an ordinary unsteered run.
+        sim.replay("seed" + seed, WARMUP, WARMUP + ticks);
+        System.out.printf("%s seed %d, %d boids, %d ticks -> %s%n",
+                preset.name(), seed, preset.flockSize(), ticks, out);
+    }
+
+    /**
+     * One timeline per dilution level, all from the same seed and psyboid, searched and
+     * then replayed with every path traced.
+     */
+    public static void wormwayPsyboid(long seed, int psyboid, int ticks) throws IOException {
+        PresetScenarioParameter preset = PresetScenarioParameter.WORMWAY;
+        Engine engine = new Boids2DEngine(preset);
+        int boids = preset.flockSize();
+
+        System.out.println("uncontrolled  commits   flock%   psyboid%   others%   control flock%");
+        for (int uncontrolled : new int[]{8, 32, 256}) {
+            PsyboidSearch.Config config = new PsyboidSearch.Config(
+                    new int[]{35, 4, 2}, SEARCH_LOOKAHEAD, 0.85,
+                    uncontrolled, SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+
+            int commits = Math.max(1, ticks / config.splitSpacing());
+            int span = commits * config.splitSpacing();
+
+            Sim.State root = warmedRoot(engine, seed);
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+            for (int c = 0; c < commits; c++) search.commit();
+
+            Sim.State canonical = search.canonical();
+            Sim.State control = plainRun(engine, root, span);
+
+            double psy = 100.0 * canonical.boidScore[psyboid] / span;
+            double others = 100.0 * (canonical.score - canonical.boidScore[psyboid])
+                    / (boids - 1) / span;
+            System.out.printf("%12d %8d  %6.2f%%   %6.2f%%   %6.2f%%   %11.2f%%%n",
+                    uncontrolled, commits, 100.0 * canonical.score / boids / span,
+                    psy, others, 100.0 * control.score / boids / span);
+
+            Sim sim = new Sim(preset);
+            sim.register(new FlockTrailLogger(
+                            Path.of("render", "trail", "wormway_psy_u" + uncontrolled + ".png"),
+                            2, 1.0f),
+                    FlockTrailLogger.TRIGGERS);
+            sim.replay(canonical.label, WARMUP, WARMUP + span);
+        }
+    }
+
+    /**
+     * One deep, expensive run, kept and dissected rather than aggregated away: the
+     * canonical timeline is searched once, then replayed to produce the picture and the
+     * score series.
+     */
+    public static void longRun(PresetScenarioParameter preset, int[] branches, int lookahead,
+                               double alpha, int commits, long seed, int psyboid, String tag)
+            throws IOException {
+        int boids = preset.flockSize();
+        int uncontrolled = 32;
+
+        Engine engine = new Boids2DEngine(preset);
+        PsyboidSearch.Config config = new PsyboidSearch.Config(
+                branches, lookahead, alpha, uncontrolled, SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+
+        int span = commits * config.splitSpacing();
+        int planned = branches.length * config.splitSpacing();
+        System.out.printf("%n%s  %s  shape %s  lookahead %d  alpha %.2f  budget %.0f%n",
+                preset.name(), tag, config.describe(), lookahead, alpha, config.budget());
+        System.out.printf("  horizon: %d planned + %d coasting = %d ticks (%.0fs)%n",
+                planned, lookahead, planned + lookahead, (planned + lookahead) / 8.0);
+
+        long started = System.nanoTime();
+        Sim.State root = warmedRoot(engine, seed);
+        PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+        for (int c = 0; c < commits; c++) {
+            search.commit();
+            if ((c + 1) % 25 == 0 || c + 1 == commits) {
+                double secs = (System.nanoTime() - started) / 1e9;
+                System.out.printf("  %d/%d commits, %.0fs (%.2fs each)%n",
+                        c + 1, commits, secs, secs / (c + 1));
+            }
+        }
+
+        Sim.State canonical = search.canonical();
+        Sim.State control = plainRun(engine, root, span);
+
+        String stem = preset.name().toLowerCase() + "_" + tag;
+        Path dir = Path.of("render", "longrun");
+        Sim sim = new Sim(preset);
+        sim.register(new FlockTrailLogger(dir.resolve(stem + "_paths.png"), 2, 0.8f),
+                FlockTrailLogger.TRIGGERS);
+        sim.register(new ScoreSeriesLogger(
+                Path.of("data", stem + "_scores.csv"), Params.TURNS / 8),
+                ScoreSeriesLogger.TRIGGERS);
+        sim.register(new FrameGridLogger(dir.resolve(stem + "_grid.png"), span / 20, 4, 1),
+                FrameGridLogger.TRIGGERS);
+        sim.register(new TrailGridLogger(dir.resolve(stem + "_sequence.png"), span / 16, 4, 1, 0.8f),
+                TrailGridLogger.TRIGGERS);
+        sim.replay(canonical.label, WARMUP, WARMUP + span);
+
+        // The label is the whole run; keeping it means never paying for this search twice.
+        Files.writeString(Path.of("data", stem + "_label.txt"), canonical.label);
+
+        System.out.printf("%nscoring occupancy over %d ticks%n", span);
+        System.out.printf("  flock          %6.2f%%   (control %.2f%%)%n",
+                100.0 * canonical.score / boids / span, 100.0 * control.score / boids / span);
+        System.out.printf("  psyboid (%d)    %6.2f%%   (unsteered %.2f%%)%n",
+                psyboid, 100.0 * canonical.boidScore[psyboid] / span,
+                100.0 * control.boidScore[psyboid] / span);
+        System.out.printf("  others (each)  %6.2f%%%n",
+                100.0 * (canonical.score - canonical.boidScore[psyboid]) / (boids - 1) / span);
+
+        int better = 0;
+        for (int i = 0; i < boids; i++) {
+            if (canonical.boidScore[i] > canonical.boidScore[psyboid]) better++;
+        }
+        System.out.printf("  psyboid rank by score: %d of %d%n", better + 1, boids);
+        System.out.println("  -> " + dir.resolve(stem + "_paths.png") + " , data/" + stem + "_scores.csv");
+    }
+
+    /**
+     * The same map and the same search at several flock sizes, each reduced to one picture
+     * and two numbers.
+     * <p>
+     * Flock size is the one scenario knob that changes the problem rather than the search:
+     * a psyboid nudging nine neighbours and a psyboid nudging thirty-nine are doing
+     * different jobs with the same lever. Only the psyboid's own path is drawn, since with
+     * forty boids a whole-flock trail is a solid block of ink.
+     */
+    public static void flockSizes(PresetScenarioParameter preset, int[] branches, int commits,
+                                  int[] sizes, long seed, int psyboid) throws IOException {
+        Path dir = Path.of("render", "flocksize");
+
+        PsyboidSearch.Config shape = new PsyboidSearch.Config(
+                branches, SEARCH_LOOKAHEAD, 0.85, 32, SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+        int span = commits * shape.splitSpacing();
+        System.out.printf("%s  shape %s  lookahead %d  alpha %.2f  budget %.0f%n",
+                preset.name(), shape.describe(), SEARCH_LOOKAHEAD, 0.85, shape.budget());
+        System.out.printf("%d commits of %d = %d ticks, seed %d, psyboid %d%n%n",
+                commits, shape.splitSpacing(), span, seed, psyboid);
+        System.out.println("boids     flock    psyboid    control  unsteered   rank    secs");
+
+        for (int boids : sizes) {
+            ScenarioParameter scenario = withFlockSize(preset, boids);
+            Engine engine = new Boids2DEngine(scenario);
+            PsyboidSearch.Config config = new PsyboidSearch.Config(
+                    branches, SEARCH_LOOKAHEAD, 0.85, 32, SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+
+            long started = System.nanoTime();
+            Sim.State root = warmedRoot(engine, seed);
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+            for (int c = 0; c < commits; c++) search.commit();
+
+            Sim.State canonical = search.canonical();
+            Sim.State control = plainRun(engine, root, span);
+            double secs = (System.nanoTime() - started) / 1e9;
+
+            String stem = preset.name().toLowerCase() + "_n" + boids;
+            Sim sim = new Sim(scenario);
+            sim.register(new PsyboidTrailLogger(dir.resolve(stem + "_psyboid.png"), 2),
+                    PsyboidTrailLogger.TRIGGERS);
+            sim.replay(canonical.label, WARMUP, WARMUP + span);
+            Files.writeString(Path.of("data", stem + "_label.txt"), canonical.label);
+
+            System.out.printf("%5d   %6.2f%%   %6.2f%%   %6.2f%%   %6.2f%%   %2d/%-2d  %6.0f%n",
+                    boids,
+                    100.0 * canonical.score / boids / span,
+                    100.0 * canonical.boidScore[psyboid] / span,
+                    100.0 * control.score / boids / span,
+                    100.0 * control.boidScore[psyboid] / span,
+                    rankOf(canonical, psyboid), boids, secs);
+        }
+        System.out.println("\n-> " + dir);
+    }
+
+    /**
+     * Deliberately does nothing. The entry points below all launch searches that cost
+     * minutes to hours, so which one runs is a decision to make on purpose rather than
+     * by launching the class.
+     */
+    /**
+     * Does the flock need the psyboid, or has it merely been parked somewhere good?
+     * <p>
+     * At intervals along a run the flock is frozen, the psyboid withdrawn, and the
+     * timeline allowed to continue unsteered. An orbit that holds its occupancy is
+     * self-sustaining and the psyboid's work was one-time setup; one that decays back
+     * toward the control was being actively maintained, and the gap between the two is
+     * how much work the psyboid is doing per unit time.
+     */
+    public static void orbitMaintenance(PresetScenarioParameter preset, int[] branches,
+                                        int commits, long[] seeds, int psyboid)
+            throws IOException {
+        Engine engine = new Boids2DEngine(preset);
+        int boids = preset.flockSize();
+
+        PsyboidSearch.Config config = new PsyboidSearch.Config(
+                branches, SEARCH_LOOKAHEAD, 0.85, 32, SEARCH_DURATION, SEARCH_SEGMENTS, psyboid);
+        int spacing = config.splitSpacing();
+        int span = commits * spacing;
+
+        final int tail = 2000;
+        final int sub = 500;
+        int windowCommits = tail / spacing;
+
+        System.out.printf("%s  shape %s  budget %.0f  %d commits of %d = %d ticks%n",
+                preset.name(), config.describe(), config.budget(), commits, spacing, span);
+        System.out.printf("abandonment: freeze, withdraw the psyboid, run %d ticks in %d-tick windows%n%n",
+                tail, sub);
+        System.out.println("seed   tick   steered   withdrawn: +500  +1000  +1500  +2000   control");
+
+        for (long seed : seeds) {
+            Sim.State root = warmedRoot(engine, seed);
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+            long[] scoreAt = new long[commits + 1];
+
+            double controlOcc = 100.0 * plainRun(engine, root, span).score / boids / span;
+
+            for (int c = 1; c <= commits; c++) {
+                search.commit();
+                Sim.State canonical = search.canonical();
+                scoreAt[c] = canonical.score;
+
+                boolean breakpoint = c % (commits / 4) == 0;
+                if (!breakpoint || c < windowCommits) continue;
+
+                double steered = 100.0 * (scoreAt[c] - scoreAt[c - windowCommits])
+                        / boids / (windowCommits * spacing);
+                double[] withdrawn = withdraw(engine, canonical, boids, tail, sub);
+
+                System.out.printf("%4d %6d   %6.2f%%             ", seed, c * spacing, steered);
+                for (double occ : withdrawn) System.out.printf("%6.2f ", occ);
+                System.out.printf("  %6.2f%%%n", controlOcc);
+            }
+
+            Sim.State canonical = search.canonical();
+            Files.writeString(Path.of("data",
+                    preset.name().toLowerCase() + "_maint_seed" + seed + "_label.txt"),
+                    canonical.label);
+
+            if (seed == seeds[0]) {
+                String stem = preset.name().toLowerCase() + "_maint";
+                Path dir = Path.of("render", "longrun");
+                Sim sim = new Sim(preset);
+                sim.register(new FlockTrailLogger(dir.resolve(stem + "_paths.png"), 2, 0.8f),
+                        FlockTrailLogger.TRIGGERS);
+                sim.register(new ScoreSeriesLogger(
+                        Path.of("data", stem + "_scores.csv"), Params.TURNS / 8),
+                        ScoreSeriesLogger.TRIGGERS);
+                sim.register(new FrameGridLogger(dir.resolve(stem + "_grid.png"), span / 20, 4, 1),
+                        FrameGridLogger.TRIGGERS);
+                sim.replay(canonical.label, WARMUP, WARMUP + span);
+            }
+
+            System.out.printf("     final  flock %.2f%%  psyboid %.2f%%  others %.2f%%  rank %d/%d%n%n",
+                    100.0 * canonical.score / boids / span,
+                    100.0 * canonical.boidScore[psyboid] / span,
+                    100.0 * (canonical.score - canonical.boidScore[psyboid]) / (boids - 1) / span,
+                    rankOf(canonical, psyboid), boids);
+        }
+    }
+
+    /** Occupancy per sub-window once the overrides are dropped. */
+    private static double[] withdraw(Engine engine, Sim.State from, int boids, int tail, int sub) {
+        Sim.State s = new Sim.State(from.n, from.x, from.y, from.h, from.tick, 0L,
+                new long[from.n], from.label);
+        double[] occupancy = new double[tail / sub];
+        long previous = 0;
+        for (int w = 0; w < occupancy.length; w++) {
+            for (int t = 0; t < sub; t++) s = engine.tick(s);
+            occupancy[w] = 100.0 * (s.score - previous) / boids / sub;
+            previous = s.score;
+        }
+        return occupancy;
+    }
+
+    private static int rankOf(Sim.State state, int boid) {
+        int better = 0;
+        for (int i = 0; i < state.n; i++) if (state.boidScore[i] > state.boidScore[boid]) better++;
+        return better + 1;
+    }
+
+    /** Cheap viability check before committing to a long search on a new map. */
+    public static void kernelReport(PresetScenarioParameter preset) throws IOException {
+        NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
+                Math.round(preset.turningRadius()));
+        long free = 0, live = 0, traps = 0, full = 0;
+        for (int y = 0; y < map.height(); y++) {
+            for (int x = 0; x < map.width(); x++) {
+                if (map.oob(x, y)) continue;
+                free++;
+                int n = map.liveHeadings(x, y);
+                live += n;
+                if (n == 0) traps++;
+                else if (n == Params.TURNS) full++;
+            }
+        }
+        System.out.printf("%s %dx%d r=%.0f  in-play %d  live headings %.1f%%  "
+                        + "traps %d  unconstrained %d%n",
+                preset.name(), map.width(), map.height(), preset.turningRadius(),
+                free, 100.0 * live / (free * Params.TURNS), traps, full);
+        NavMapRender.write(map, 1,
+                Path.of("render", "kernel", preset.name().toLowerCase() + ".png"));
+    }
+
     public static void main(String[] args) throws IOException {
+        PresetScenarioParameter preset = PresetScenarioParameter.OUTLOOPED;
+        int commits = args.length > 0 ? Integer.parseInt(args[0]) : 250;
+
+        kernelReport(preset);
+        flockSizes(preset, new int[]{256, 2, 2, 2, 1, 1, 1, 1},
+                commits, new int[]{10, 20, 30, 40}, 0L, 7);
+        if (true) return;
+        System.out.println("Nothing runs by default. Call one of:");
+        System.out.println("  longRun(preset, branches, lookahead, alpha, commits, seed, psyboid, tag)");
+        System.out.println("  rollingSearch(preset, boids, uncontrolled, commits)");
+        System.out.println("  dilutionGrid(preset)");
+        System.out.println("  flockTrail(preset, seed, ticks, out)");
+        System.out.println("  replayLabel(preset, labelFile, span, tag)");
+    }
+
+    /**
+     * Redraws a saved canonical line without re-searching. Every run writes its label,
+     * so any picture or series from a past run can be regenerated from a few kilobytes
+     * rather than by paying for the search again.
+     */
+    public static void replayLabel(PresetScenarioParameter preset, Path labelFile,
+                                   int span, String tag) throws IOException {
+        String label = Files.readString(labelFile).trim();
+        String stem = preset.name().toLowerCase() + "_" + tag;
+        Path dir = Path.of("render", "longrun");
+
+        Sim sim = new Sim(preset);
+        sim.register(new FlockTrailLogger(dir.resolve(stem + "_paths.png"), 2, 0.8f),
+                FlockTrailLogger.TRIGGERS);
+        sim.register(new ScoreSeriesLogger(
+                Path.of("data", stem + "_scores.csv"), Params.TURNS / 8),
+                ScoreSeriesLogger.TRIGGERS);
+        sim.register(new FrameGridLogger(dir.resolve(stem + "_grid.png"), span / 20, 4, 1),
+                FrameGridLogger.TRIGGERS);
+        sim.replay(label, WARMUP, WARMUP + span);
+        System.out.println("replayed " + labelFile + " -> " + dir.resolve(stem + "_grid.png"));
+    }
+
+    public static void oldMain(String[] args) throws IOException {
         System.out.println("=== label replay check ===");
         boolean all = true;
         for (int uncontrolled : new int[]{8, 64, 256}) {
