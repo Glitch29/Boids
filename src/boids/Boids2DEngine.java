@@ -34,6 +34,13 @@ public class Boids2DEngine implements Engine {
     /**
      * Advance one tick, returning a new state and leaving the argument untouched.
      * <p>
+     * Boids are advanced in index order rather than all at once, each deciding against
+     * the positions its predecessors have already reached this tick. A simultaneous
+     * update is symmetric, and under a symmetric update two boids that ever arrive at the
+     * same position and heading are thereafter permanently identical: same neighbours,
+     * same decision, forever. Sequencing breaks that symmetry, because the earlier boid
+     * has already moved by the time the later one looks.
+     * <p>
      * The play area's compulsory turn is applied here rather than folded into the
      * decision layer, so a boid facing a wall has its choice removed rather than
      * discouraged.
@@ -42,37 +49,44 @@ public class Boids2DEngine implements Engine {
      */
     @Override
     public Sim.State tick(Sim.State state) {
-        MovementControl.Movement movement = new MovementControl.Movement(state.x, state.y, state.h, state.tick);
         int n = state.n;
-        int[] x = new int[n];
-        int[] y = new int[n];
-        int[] h = new int[n];
 
-        flocking.calculate(movement);
-        for (PsyboidOverride override : state.psyboidOverrides) {
-            override.calculate(movement);
-        }
-        collision.calculate(movement);
+        // Copies, mutated in place as each boid takes its turn. The argument's arrays are
+        // never written to: a state that has been handed out is immutable, and the search
+        // relies on being able to re-advance the same state any number of times.
+        int[] x = state.x.clone();
+        int[] y = state.y.clone();
+        int[] h = state.h.clone();
+
+        MovementControl.Movement movement = new MovementControl.Movement(x, y, h, state.tick);
 
         int score = 0;
         long[] boidScore = new long[n];
         for (int i = 0; i < n; i++) {
-            h[i] = Math.floorMod(state.h[i] + movement.movement[i], Params.TURNS);
+            flocking.calculate(movement, i);
+            for (PsyboidOverride override : state.psyboidOverrides) {
+                override.calculate(movement, i);
+            }
+            collision.calculate(movement, i);
+
+            int heading = Math.floorMod(h[i] + movement.movement[i], Params.TURNS);
 
             // Turn is applied before translation, so a boid moves along its new heading.
-            int px = state.x[i] + map.stepX(h[i]);
-            int py = state.y[i] + map.stepY(h[i]);
+            int px = x[i] + map.stepX(heading);
+            int py = y[i] + map.stepY(heading);
 
             // The collision layer only ever hands back a turn whose whole segment stays
             // in play, so this cannot fire unless a boid was started somewhere dead.
             if (!map.traversable(px, py)) {
                 throw new IllegalStateException(String.format(
                         "boid %d left the play area at tick %d: (%d, %d) heading %d",
-                        i, state.tick, px, py, h[i]));
+                        i, state.tick, px, py, heading));
             }
             int scored = map.score(px, py);
             score += scored;
             boidScore[i] = state.boidScore[i] + scored;
+
+            h[i] = heading;
             x[i] = px;
             y[i] = py;
         }
@@ -129,12 +143,10 @@ public class Boids2DEngine implements Engine {
     class Collision implements MovementControl {
 
         @Override
-        public void calculate(Movement movement) {
+        public void calculate(Movement movement, int i) {
             BoidArray boids = movement.boids;
-            for (int i = 0; i < boids.n(); i++) {
-                movement.movement[i] = map.constrainTurn(
-                        boids.x()[i], boids.y()[i], boids.h()[i], movement.movement[i]);
-            }
+            movement.movement[i] = map.constrainTurn(
+                    boids.x()[i], boids.y()[i], boids.h()[i], movement.movement[i]);
         }
     }
 }

@@ -9,7 +9,9 @@ public enum PresetScenarioParameter implements ScenarioParameter{
     PLINKO ("plinko.png", 40f, 20),
     WORMWAY ("wormway.png", 40f, 20),
     ROUNDABOUT ("roundabout.png", 40f, 20),
-    OUTLOOPED ("outlooped.png", 40f, 20);
+    OUTLOOPED ("outlooped.png", 40f, 20),
+    DAB ("dab.png", 40f, 4),
+    BERT ("bert.png", 40f, 4);
 
     private final String filename;
     private final float r;

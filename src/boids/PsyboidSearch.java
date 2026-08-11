@@ -41,12 +41,34 @@ public final class PsyboidSearch {
      *                   earned in its n-th second counts for {@code alpha^n}
      */
     public record Config(int[] branches, int lookahead, double alpha,
-                         int maxDelay, int duration, int segments, int psyboid) {
+                         int maxDelay, int duration, int segments, int psyboid,
+                         OverridePlan plan) {
+
+        /** A sampled search: overrides are drawn at random from the ranges given. */
+        public Config(int[] branches, int lookahead, double alpha,
+                      int maxDelay, int duration, int segments, int psyboid) {
+            this(branches, lookahead, alpha, maxDelay, duration, segments, psyboid, null);
+        }
 
         /** Steers {@link Sim#PSYBOID} unless told otherwise. */
         public Config(int[] branches, int lookahead, double alpha,
                       int maxDelay, int duration, int segments) {
             this(branches, lookahead, alpha, maxDelay, duration, segments, Sim.PSYBOID);
+        }
+
+        /**
+         * An enumerated search: every branch is a distinct choice from {@code plan}, so
+         * the tree is exhaustive at each level rather than a sample of it.
+         */
+        public Config(int depth, int lookahead, double alpha, int psyboid, OverridePlan plan) {
+            this(filled(depth, plan.size()), lookahead, alpha,
+                    plan.interval(), plan.durationHi(), 1, psyboid, plan);
+        }
+
+        private static int[] filled(int depth, int width) {
+            int[] out = new int[depth];
+            java.util.Arrays.fill(out, width);
+            return out;
         }
 
         public Config {
@@ -55,6 +77,12 @@ public final class PsyboidSearch {
                 if (branches[i] < 1) throw new IllegalArgumentException("branches must be positive");
                 if (i > 0 && branches[i] > branches[i - 1]) {
                     throw new IllegalArgumentException("branches must be non-increasing");
+                }
+                // An enumerated level narrower than the plan would silently drop choices,
+                // and one wider would ask for branches that do not exist.
+                if (plan != null && branches[i] != plan.size()) {
+                    throw new IllegalArgumentException("enumerated branches must all equal "
+                            + plan.size() + ", was " + branches[i]);
                 }
             }
             if (lookahead % SECOND != 0) {
@@ -85,8 +113,16 @@ public final class PsyboidSearch {
             return (lookahead + splitSpacing()) / (double) splitSpacing();
         }
 
-        /** Ticks between consecutive splits: exactly the span an override can occupy. */
-        public int splitSpacing() { return maxDelay + duration; }
+        /**
+         * Ticks between consecutive commits.
+         * <p>
+         * For a sampled search this is the span an override can occupy, delay plus
+         * duration. An enumerated plan instead sets the interval directly and lets
+         * overrides run past it, so that no tick falls outside every commit's reach.
+         */
+        public int splitSpacing() {
+            return plan != null ? plan.interval() : maxDelay + duration;
+        }
 
         public String describe() {
             StringBuilder sb = new StringBuilder();
@@ -245,12 +281,22 @@ public final class PsyboidSearch {
         return best;
     }
 
-    /** Tops the node up to at least {@code wanted} children. Safe to call repeatedly. */
+    /**
+     * Tops the node up to at least {@code wanted} children. Safe to call repeatedly.
+     * <p>
+     * Under an enumerated plan the children are the plan's branches in its own fixed
+     * order, so topping up resumes exactly where it left off and a node built across two
+     * calls is identical to one built in a single call.
+     */
     private void ensureChildren(Node node, int wanted) {
+        PsyboidOverride[][] enumerated = config.plan() == null ? null
+                : config.plan().branches((int) node.state.tick, config.psyboid());
+
         while (node.children.size() < wanted) {
-            PsyboidOverride[] overrides = Sim.segmentedOverride(
-                    (int) node.state.tick, config.maxDelay, config.duration,
-                    config.segments, config.psyboid(), rng);
+            PsyboidOverride[] overrides = enumerated != null
+                    ? enumerated[node.children.size()]
+                    : Sim.segmentedOverride((int) node.state.tick, config.maxDelay,
+                            config.duration, config.segments, config.psyboid(), rng);
 
             Sim.State branched = new Sim.State(node.state.n, node.state.x, node.state.y,
                     node.state.h, node.state.tick, node.state.score, node.state.boidScore,

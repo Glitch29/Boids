@@ -1,11 +1,13 @@
 package boids;
 
+import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -720,6 +722,340 @@ public final class SimTest {
     }
 
     /**
+     * How much search does a psyboid on this map actually need?
+     * <p>
+     * Holds the override shape and the lookahead fixed and varies only the root width of
+     * an {@code Nx1x1x1} tree, so the whole curve is a function of one number. Every width
+     * runs the same seeds with the same boid steered, which makes the comparison paired:
+     * the variation between seeds on a map this sparse dwarfs the variation between
+     * widths, and only the paired difference can see through it.
+     */
+    public static void computeCurve(PresetScenarioParameter preset, int[] widths, int commits,
+                                    long[] seeds, int maxDelay, int duration, int segments,
+                                    int lookahead, double alpha) throws IOException {
+        Engine engine = new Boids2DEngine(preset);
+        int boids = preset.flockSize();
+        int spacing = maxDelay + duration;
+        int span = commits * spacing;
+
+        System.out.printf("%s  %d boids  override %d segment(s), %d ticks (%.0fs) "
+                        + "in a %d tick (%.0fs) window, spacing %d%n",
+                preset.name(), boids, segments, duration, duration / 8.0,
+                maxDelay, maxDelay / 8.0, spacing);
+        System.out.printf("lookahead %d (%.0fs), alpha %.2f, %d commits = %d ticks, %d seeds%n%n",
+                lookahead, lookahead / 8.0, alpha, commits, span, seeds.length);
+
+        // Control is independent of the search, so it is computed once per seed and reused.
+        double[] controlFlock = new double[seeds.length];
+        double[] controlPsy = new double[seeds.length];
+        for (int s = 0; s < seeds.length; s++) {
+            Sim.State root = warmedRoot(engine, seeds[s]);
+            Sim.State plain = plainRun(engine, root, span);
+            controlFlock[s] = 100.0 * plain.score / boids / span;
+            controlPsy[s] = 100.0 * plain.boidScore[(int) (seeds[s] % boids)] / span;
+        }
+        System.out.printf("control: flock %.3f%%   steered-boid-unsteered %.3f%%%n%n",
+                mean(controlFlock), mean(controlPsy));
+
+        System.out.println("    N   budget    flock   psyboid    others   psy s.e.   "
+                + "vs N=" + widths[0] + "     secs");
+
+        double[] baseline = null;
+        for (int width : widths) {
+            int[] branches = new int[]{width, 1, 1, 1};
+            double[] flock = new double[seeds.length];
+            double[] psy = new double[seeds.length];
+            double[] others = new double[seeds.length];
+
+            long started = System.nanoTime();
+            for (int s = 0; s < seeds.length; s++) {
+                int psyboid = (int) (seeds[s] % boids);
+                PsyboidSearch.Config config = new PsyboidSearch.Config(
+                        branches, lookahead, alpha, maxDelay, duration, segments, psyboid);
+
+                Sim.State root = warmedRoot(engine, seeds[s]);
+                PsyboidSearch search = new PsyboidSearch(engine, config, root, seeds[s]);
+                for (int c = 0; c < commits; c++) search.commit();
+                Sim.State canonical = search.canonical();
+
+                flock[s] = 100.0 * canonical.score / boids / span;
+                psy[s] = 100.0 * canonical.boidScore[psyboid] / span;
+                others[s] = 100.0 * (canonical.score - canonical.boidScore[psyboid])
+                        / (boids - 1) / span;
+            }
+            double secs = (System.nanoTime() - started) / 1e9;
+            if (baseline == null) baseline = psy.clone();
+
+            // Paired against the narrowest tree: same seeds, same steered boid, so the
+            // per-seed difference cancels everything except the extra search.
+            double[] gain = new double[seeds.length];
+            for (int s = 0; s < seeds.length; s++) gain[s] = psy[s] - baseline[s];
+
+            System.out.printf("%5d %8.0f  %6.3f%%  %6.3f%%  %6.3f%%   %6.3f   %+6.3f%%  %7.1f%n",
+                    width, new PsyboidSearch.Config(branches, lookahead, alpha,
+                            maxDelay, duration, segments, 0).budget(),
+                    mean(flock), mean(psy), mean(others), stderr(psy), mean(gain), secs);
+        }
+    }
+
+    /**
+     * The same measurement as {@link #computeCurve}, but with the override choices
+     * enumerated instead of sampled, so the result can be read against that curve.
+     */
+    public static void planRun(PresetScenarioParameter preset, OverridePlan plan, int depth,
+                               int lookahead, double alpha, int commits, long[] seeds)
+            throws IOException {
+        Engine engine = new Boids2DEngine(preset);
+        int boids = preset.flockSize();
+
+        PsyboidSearch.Config shape = new PsyboidSearch.Config(depth, lookahead, alpha, 0, plan);
+        int spacing = shape.splitSpacing();
+        int span = commits * spacing;
+
+        System.out.printf("%s  %d boids  enumerated plan: %s%n", preset.name(), boids,
+                plan.describe());
+        System.out.printf("  delays [0, %d) step %d  durations [%d, %d] step %d  directions %s%n",
+                plan.interval(), plan.delayStep(), plan.durationLo(), plan.durationHi(),
+                plan.durationStep(), java.util.Arrays.toString(plan.directions()));
+        System.out.printf("  shape %s  lookahead %d (%.0fs)  alpha %.2f  budget %.0f%n",
+                shape.describe(), lookahead, lookahead / 8.0, alpha, shape.budget());
+        System.out.printf("  commit interval %d, %d commits = %d ticks, %d seeds%n%n",
+                spacing, commits, span, seeds.length);
+
+        double[] flock = new double[seeds.length];
+        double[] psy = new double[seeds.length];
+        double[] others = new double[seeds.length];
+        double[] cFlock = new double[seeds.length];
+        double[] cPsy = new double[seeds.length];
+
+        long started = System.nanoTime();
+        for (int s = 0; s < seeds.length; s++) {
+            int psyboid = (int) (seeds[s] % boids);
+            PsyboidSearch.Config config =
+                    new PsyboidSearch.Config(depth, lookahead, alpha, psyboid, plan);
+
+            Sim.State root = warmedRoot(engine, seeds[s]);
+            Sim.State plain = plainRun(engine, root, span);
+            cFlock[s] = 100.0 * plain.score / boids / span;
+            cPsy[s] = 100.0 * plain.boidScore[psyboid] / span;
+
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, seeds[s]);
+            for (int c = 0; c < commits; c++) search.commit();
+            Sim.State canonical = search.canonical();
+
+            flock[s] = 100.0 * canonical.score / boids / span;
+            psy[s] = 100.0 * canonical.boidScore[psyboid] / span;
+            others[s] = 100.0 * (canonical.score - canonical.boidScore[psyboid])
+                    / (boids - 1) / span;
+        }
+        double secs = (System.nanoTime() - started) / 1e9;
+
+        System.out.println("            mean      s.e.");
+        System.out.printf("flock     %7.3f%%   %6.3f%n", mean(flock), stderr(flock));
+        System.out.printf("psyboid   %7.3f%%   %6.3f%n", mean(psy), stderr(psy));
+        System.out.printf("others    %7.3f%%   %6.3f%n", mean(others), stderr(others));
+        System.out.printf("control   %7.3f%%   %6.3f   (steered boid unsteered %.3f%%)%n",
+                mean(cFlock), stderr(cFlock), mean(cPsy));
+        System.out.printf("%npsy/others %.2fx   total %.0fs (%.1fs per seed)%n",
+                mean(psy) / mean(others), secs, secs / seeds.length);
+
+        System.out.print("\nper seed psyboid: ");
+        for (double v : psy) System.out.printf("%.2f ", v);
+        System.out.println();
+    }
+
+    /**
+     * Does an unsteered flock ever score on this map?
+     * <p>
+     * A map whose control rate is exactly zero makes any score at all evidence of
+     * interference, which removes a whole class of false positive. Reports the warm-up
+     * separately because it is unsteered too: score earned there is discarded by the
+     * reset, but a map where it happens has not really achieved the property.
+     */
+    public static void controlCheck(PresetScenarioParameter preset, int seedCount, int ticks)
+            throws IOException {
+        Engine engine = new Boids2DEngine(preset);
+        int boids = preset.flockSize();
+
+        int scoringSeeds = 0, warmupSeeds = 0;
+        long worst = 0, total = 0;
+        List<Long> offenders = new ArrayList<>();
+
+        for (long seed = 0; seed < seedCount; seed++) {
+            Sim.State s = engine.init(seed);
+            while (s.tick < WARMUP) s = engine.tick(s);
+            if (s.score > 0) warmupSeeds++;
+
+            s = new Sim.State(s.n, s.x, s.y, s.h, s.tick, 0L, new long[s.n], s.label);
+            s = plainRun(engine, s, ticks);
+
+            total += s.score;
+            if (s.score > 0) {
+                scoringSeeds++;
+                worst = Math.max(worst, s.score);
+                if (offenders.size() < 25) offenders.add(seed);
+            }
+        }
+
+        System.out.printf("%n%s control: %d seeds x %d ticks, %d boids "
+                        + "(%,d boid-ticks measured)%n",
+                preset.name(), seedCount, ticks, boids, (long) seedCount * ticks * boids);
+        System.out.printf("  seeds scoring after warm-up : %d / %d%n", scoringSeeds, seedCount);
+        System.out.printf("  seeds scoring during warm-up: %d / %d%n", warmupSeeds, seedCount);
+        System.out.printf("  mean occupancy              : %.4f%%%n",
+                100.0 * total / boids / ticks / seedCount);
+        System.out.printf("  worst single seed           : %d boid-ticks (%.4f%%)%n",
+                worst, 100.0 * worst / boids / ticks);
+        if (!offenders.isEmpty()) System.out.println("  first offenders: " + offenders);
+    }
+
+    private static double mean(double[] v) {
+        double t = 0;
+        for (double d : v) t += d;
+        return t / v.length;
+    }
+
+    private static double stderr(double[] v) {
+        if (v.length < 2) return 0;
+        double m = mean(v), var = 0;
+        for (double d : v) var += (d - m) * (d - m);
+        return Math.sqrt(var / (v.length - 1) / v.length);
+    }
+
+    /**
+     * Builds a batch of candidate cases: one searched timeline per seed, each reduced to a
+     * single rendered frame.
+     * <p>
+     * Which boid is steered varies from case to case, so a reader cannot carry an answer
+     * from one to the next. Everything that would give a case away — the psyboid, the tick
+     * the frame was taken at, what each boid scored — goes to a build file rather than to
+     * the console, so the batch can be generated and looked at without being spoiled.
+     */
+    public static void caseSet(PresetScenarioParameter preset, OverridePlan plan, int depth,
+                               int lookahead, double alpha, int commits, long[] seeds,
+                               int frameFrom, int frameTo, long pickSeed, Path dir)
+            throws IOException {
+        Engine engine = new Boids2DEngine(preset);
+        int boids = preset.flockSize();
+        Boids2DRenderer renderer = new Boids2DRenderer(preset.mapPath(), 2);
+
+        Path build = dir.resolve(".build");
+        Files.createDirectories(build);
+
+        Random pick = new Random(pickSeed);
+        StringBuilder answers = new StringBuilder();
+        answers.append("# ").append(preset.name()).append(" case batch\n\n");
+        answers.append(String.format("map %s, turning radius %.0f, %d boids%n",
+                preset.mapPath(), preset.turningRadius(), boids));
+        answers.append("override plan: ").append(plan.describe()).append('\n');
+        answers.append(String.format("  delays [0, %d) step %d, durations [%d, %d] step %d, "
+                        + "directions %s%n",
+                plan.interval(), plan.delayStep(), plan.durationLo(), plan.durationHi(),
+                plan.durationStep(), java.util.Arrays.toString(plan.directions())));
+
+        for (int c = 0; c < seeds.length; c++) {
+            long seed = seeds[c];
+            int psyboid = pick.nextInt(boids);
+            int frameTick = frameFrom + pick.nextInt(frameTo - frameFrom + 1);
+
+            PsyboidSearch.Config config =
+                    new PsyboidSearch.Config(depth, lookahead, alpha, psyboid, plan);
+            int span = commits * config.splitSpacing();
+
+            if (c == 0) {
+                answers.append(String.format("search: shape %s, lookahead %d (%.0fs), "
+                                + "alpha %.2f, budget %.0f, %d commits of %d = %d ticks%n",
+                        config.describe(), lookahead, lookahead / 8.0, alpha, config.budget(),
+                        commits, config.splitSpacing(), span));
+                answers.append(String.format("frames drawn from ticks [%d, %d]%n%n",
+                        frameFrom, frameTo));
+                answers.append("case  seed  psyboid  frame   flock  psyboid   others  "
+                        + "control   rank\n");
+            }
+
+            Sim.State root = warmedRoot(engine, seed);
+            PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+            for (int i = 0; i < commits; i++) search.commit();
+
+            Sim.State canonical = search.canonical();
+            Sim.State control = plainRun(engine, root, span);
+            Sim.State frame = PsyboidSearch.replay(engine, canonical.label, WARMUP, frameTick);
+
+            String name = String.format("case_%02d", c + 1);
+            ImageIO.write(renderer.render(frame), "png", dir.resolve(name + ".png").toFile());
+            Files.writeString(build.resolve(name + "_label.txt"), canonical.label);
+
+            answers.append(String.format(
+                    "%4s  %4d  %7d  %5d  %5.2f%%  %6.2f%%  %6.2f%%  %6.2f%%   %d/%d%n",
+                    name.substring(5), seed, psyboid, frameTick,
+                    100.0 * canonical.score / boids / span,
+                    100.0 * canonical.boidScore[psyboid] / span,
+                    100.0 * (canonical.score - canonical.boidScore[psyboid]) / (boids - 1) / span,
+                    100.0 * control.score / boids / span,
+                    rankOf(canonical, psyboid), boids));
+
+            System.out.printf("  %s.png%n", name);
+        }
+
+        Files.writeString(build.resolve("answers.md"), answers.toString());
+        System.out.println("-> " + dir + "  (answers in " + build + ")");
+    }
+
+    /**
+     * Checks the sequential update did what it was meant to and nothing else.
+     * <p>
+     * Three properties, in order of how quietly they would break things. A state handed
+     * out must never be written to, or the search corrupts the tree it is standing on.
+     * Advancing the same state twice must give the same answer, or nothing replays. And
+     * no two boids may end a tick sharing a position and heading, which is the fusion the
+     * sequencing was introduced to prevent.
+     */
+    public static void sequentialCheck(PresetScenarioParameter preset, long seed, int ticks)
+            throws IOException {
+        Engine engine = new Boids2DEngine(preset);
+        Sim.State root = engine.init(seed);
+        int n = root.n;
+
+        int[] x0 = root.x.clone(), y0 = root.y.clone(), h0 = root.h.clone();
+        Sim.State a = engine.tick(root);
+        Sim.State b = engine.tick(root);
+
+        boolean untouched = Arrays.equals(x0, root.x) && Arrays.equals(y0, root.y)
+                && Arrays.equals(h0, root.h);
+        boolean idempotent = Arrays.equals(a.x, b.x) && Arrays.equals(a.y, b.y)
+                && Arrays.equals(a.h, b.h) && a.score == b.score;
+
+        System.out.printf("%s seed %d, %d boids, %d ticks%n", preset.name(), seed, n, ticks);
+        System.out.println("  argument state untouched by tick : " + untouched);
+        System.out.println("  re-advancing gives same result   : " + idempotent);
+
+        // A coincidence is only fatal if it persists: two boids at the same position and
+        // heading under a symmetric update can never separate again, so what matters is
+        // not whether pairs touch but whether any pair is still welded at the end.
+        int coincidences = 0, worstRun = 0;
+        int[] running = new int[n * n];
+        Sim.State s = root;
+        for (int t = 0; t < ticks; t++) {
+            s = engine.tick(s);
+            for (int i = 0; i < n; i++) {
+                for (int j = i + 1; j < n; j++) {
+                    boolean same = s.x[i] == s.x[j] && s.y[i] == s.y[j] && s.h[i] == s.h[j];
+                    if (same) {
+                        coincidences++;
+                        running[i * n + j]++;
+                        worstRun = Math.max(worstRun, running[i * n + j]);
+                    } else {
+                        running[i * n + j] = 0;
+                    }
+                }
+            }
+        }
+        System.out.printf("  coincident pair-ticks            : %d%n", coincidences);
+        System.out.printf("  longest unbroken coincidence     : %d ticks%n", worstRun);
+        System.out.println("  no escapes                       : true (tick throws otherwise)");
+    }
+
+    /**
      * The same map and the same search at several flock sizes, each reduced to one picture
      * and two numbers.
      * <p>
@@ -904,12 +1240,8 @@ public final class SimTest {
     }
 
     public static void main(String[] args) throws IOException {
-        PresetScenarioParameter preset = PresetScenarioParameter.OUTLOOPED;
-        int commits = args.length > 0 ? Integer.parseInt(args[0]) : 250;
-
-        kernelReport(preset);
-        flockSizes(preset, new int[]{256, 2, 2, 2, 1, 1, 1, 1},
-                commits, new int[]{10, 20, 30, 40}, 0L, 7);
+        kernelReport(PresetScenarioParameter.BERT);
+        controlCheck(PresetScenarioParameter.BERT, 300, 8000);
         if (true) return;
         System.out.println("Nothing runs by default. Call one of:");
         System.out.println("  longRun(preset, branches, lookahead, alpha, commits, seed, psyboid, tag)");

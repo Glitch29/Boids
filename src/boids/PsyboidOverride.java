@@ -50,9 +50,10 @@ public class PsyboidOverride implements MovementControl {
     }
 
     @java.lang.Override
-    public void calculate(Movement movement) {
+    public void calculate(Movement movement, int i) {
+        if (i != psyboid) return;
         if (movement.boids.tick() >= onset && movement.boids.tick() < onset + duration) {
-            movement.movement[psyboid] = direction;
+            movement.movement[i] = direction;
         }
     }
 }
