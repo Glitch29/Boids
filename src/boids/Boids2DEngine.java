@@ -67,6 +67,14 @@ public class Boids2DEngine implements Engine {
             for (PsyboidOverride override : state.psyboidOverrides) {
                 override.calculate(movement, i);
             }
+
+            // One step of turn, whoever proposed it. Every control already respects this,
+            // but constrainTurn indexes a three-row table by the proposal, so a stray value
+            // would fail deep inside the navigation map rather than here. Clamping makes
+            // the limit an invariant rather than a convention, and makes it structural
+            // that a steered boid gets exactly the choice an unsteered one does.
+            movement.movement[i] = Math.max(-1, Math.min(1, movement.movement[i]));
+
             collision.calculate(movement, i);
 
             int heading = Math.floorMod(h[i] + movement.movement[i], Params.TURNS);

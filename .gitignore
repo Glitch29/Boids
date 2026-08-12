@@ -20,3 +20,6 @@ analysis/
 # OS
 .DS_Store
 Thumbs.db
+
+# Upload packet: assembled from source and case output, not versioned.
+packet/

@@ -85,9 +85,7 @@ public final class PsyboidSearch {
                             + plan.size() + ", was " + branches[i]);
                 }
             }
-            if (lookahead % SECOND != 0) {
-                throw new IllegalArgumentException("lookahead must be whole seconds");
-            }
+            if (lookahead < 0) throw new IllegalArgumentException("lookahead must not be negative");
         }
 
         /**
@@ -168,12 +166,21 @@ public final class PsyboidSearch {
      */
     private String label;
 
+    /** This search's row in the journal; its label is kept current on every commit. */
+    private final SearchJournal.Entry journal;
+
+    /**
+     * Registers with {@link SearchJournal} on construction, so a search cannot run without
+     * its canonical line being recorded. There is no opt-in to forget and no call site to
+     * miss: replaying a saved label costs milliseconds, re-running a search costs minutes.
+     */
     public PsyboidSearch(Engine engine, Config config, Sim.State start, long seed) {
         this.engine = engine;
         this.config = config;
         this.rng = new Random(seed);
         this.root = new Node(start, null);
         this.label = start.label;
+        this.journal = SearchJournal.open(config, seed, start.label);
     }
 
     /**
@@ -255,6 +262,7 @@ public final class PsyboidSearch {
         }
         label = label + "|" + describe(best.overrides);
         root = best;
+        journal.record(label);
     }
 
     /**
@@ -317,8 +325,11 @@ public final class PsyboidSearch {
         double weight = config.alpha;
         double total = 0;
 
-        for (int second = 0; second < config.lookahead / SECOND; second++) {
-            s = advance(s, SECOND);
+        // Whole seconds where the lookahead allows, then whatever is left. A lookahead
+        // that is not a round number of seconds is legitimate — short overrides want a
+        // short horizon — and the alternative was silently dropping the remainder.
+        for (int elapsed = 0; elapsed < config.lookahead; elapsed += SECOND) {
+            s = advance(s, Math.min(SECOND, config.lookahead - elapsed));
             total += weight * (s.score - previous);
             previous = s.score;
             weight *= config.alpha;
