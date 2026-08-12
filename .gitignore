@@ -23,3 +23,6 @@ Thumbs.db
 
 # Upload packet: assembled from source and case output, not versioned.
 packet/
+
+# Session transcripts: kept locally and mirrored to Drive, never committed.
+transcripts/

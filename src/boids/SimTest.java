@@ -1244,6 +1244,73 @@ public final class SimTest {
         }
     }
 
+    /**
+     * A first look at an unfamiliar map: excess score across dilution, flock size and
+     * search budget, all at a fixed measured span.
+     * <p>
+     * Every cell runs the same number of ticks, so a psyboid acting a fifth of the time and
+     * one acting most of the time are compared over the same stretch of simulation rather
+     * than the same number of decisions. Control is measured per cell from the same warmed
+     * root, which is what makes the excess column meaningful — the baseline moves with
+     * flock size and seed, and quoting flock occupancy alone would hide that.
+     */
+    public static void landscape(PresetScenarioParameter preset, int[] boidCounts,
+                                 int[][] shapes, String[] shapeNames, int[] maxDelays,
+                                 int duration, int segments, int lookahead, double alpha,
+                                 int span, int warmup, long[] seeds) throws IOException {
+        System.out.printf("%s: %d flock sizes x %d shapes x %d dilutions, "
+                        + "%d seeds, %d ticks each%n%n",
+                preset.name(), boidCounts.length, shapes.length, maxDelays.length,
+                seeds.length, span);
+        System.out.printf("%-6s %-22s %-8s %8s %8s %8s %8s %9s %7s %6s%n",
+                "boids", "shape", "dilution", "budget", "flock", "psyboid", "others",
+                "control", "excess", "rank");
+
+        for (int boids : boidCounts) {
+            ScenarioParameter scenario = withFlockSize(preset, boids);
+            Engine engine = new Boids2DEngine(scenario);
+
+            for (int s = 0; s < shapes.length; s++) {
+                for (int maxDelay : maxDelays) {
+                    int spacing = maxDelay + duration;
+                    int commits = span / spacing;
+                    String tag = maxDelay <= 8 ? "low" : maxDelay <= 32 ? "medium" : "high";
+                    SearchJournal.context(String.format("%s n%d landscape %s %s",
+                            preset.name(), boids, shapeNames[s], tag));
+
+                    double flock = 0, psy = 0, others = 0, ctl = 0, rank = 0;
+                    double budget = 0;
+                    long started = System.nanoTime();
+                    for (long seed : seeds) {
+                        int psyboid = (int) Math.floorMod(seed * 7919L + s, boids);
+                        PsyboidSearch.Config config = new PsyboidSearch.Config(shapes[s],
+                                lookahead, alpha, maxDelay, duration, segments, psyboid);
+                        budget = config.budget();
+
+                        Sim.State root = warmedRoot(engine, seed, warmup);
+                        PsyboidSearch search = new PsyboidSearch(engine, config, root, seed);
+                        for (int c = 0; c < commits; c++) search.commit();
+                        Sim.State end = search.canonical();
+                        Sim.State control = plainRun(engine, root, commits * spacing);
+                        int ticks = commits * spacing;
+
+                        flock += 100.0 * end.score / boids / ticks / seeds.length;
+                        psy += 100.0 * end.boidScore[psyboid] / ticks / seeds.length;
+                        others += 100.0 * (end.score - end.boidScore[psyboid])
+                                / (boids - 1) / ticks / seeds.length;
+                        ctl += 100.0 * control.score / boids / ticks / seeds.length;
+                        rank += rankOf(end, psyboid) / (double) seeds.length;
+                    }
+                    System.out.printf("%-6d %-22s %-8s %8.0f %7.2f%% %7.2f%% %7.2f%% "
+                                    + "%8.2f%% %+6.2f%% %4.1f  (%.0fs)%n",
+                            boids, shapeNames[s], tag, budget, flock, psy, others, ctl,
+                            flock - ctl, rank, (System.nanoTime() - started) / 1e9);
+                }
+            }
+            SearchJournal.flush();
+        }
+    }
+
     /** One row of {@code data/searches.tsv}, enough to replay the line it records. */
     private record JournalRow(String context, long seed, int psyboid, int spacing,
                               int commits, String label) {}
@@ -1801,8 +1868,15 @@ public final class SimTest {
                     .add(Integer.parseInt(f[3]));
         }
 
+        // Map-relative features are taken about the image centre. On a map with an
+        // obstruction there and n-fold rotational symmetry, that is the natural origin:
+        // a boid's radius says how far out it is and its polar angle says which lobe it
+        // is in, neither of which any flock-relative feature can express.
+        double ox = map.width() / 2.0, oy = map.height() / 2.0;
+
         StringBuilder csv = new StringBuilder(
-                "dilution,seed,tick,boid,zonedist,inzone,centdist,headdev,nndist\n");
+                "dilution,seed,tick,boid,zonedist,inzone,centdist,headdev,nndist,"
+                        + "ahead,pillardist,radial,tangential,cos2t,sin2t\n");
         for (JournalRow run : readJournal(Path.of("data", "searches.tsv"), context)) {
             String dilution = run.context().substring(run.context().lastIndexOf(' ') + 1);
             if (!ticks.containsKey(dilution + "/" + run.seed())) continue;
@@ -1835,11 +1909,35 @@ public final class SimTest {
                     }
 
                     int zd = zone[s.x[i] + s.y[i] * map.width()];
-                    csv.append(String.format("%s,%d,%d,%d,%d,%d,%.2f,%.1f,%.2f%n",
+
+                    // Where this boid sits relative to the flock's own direction of
+                    // travel. Distance from the centroid cannot tell a leader from a
+                    // straggler; this can, and a herding psyboid should be out in front.
+                    double offX = s.x[i] - cx, offY = s.y[i] - cy;
+                    double offLen = Math.hypot(offX, offY);
+                    double ahead = (offLen < 1e-9 || m < 1e-9) ? 0
+                            : (offX * hx + offY * hy) / (offLen * m);
+
+                    // Polar about the pillar. radial: +1 heading straight out, -1 straight
+                    // in. tangential: signed, so it separates the two orbit directions.
+                    double px = s.x[i] - ox, py = s.y[i] - oy;
+                    double pr = Math.hypot(px, py);
+                    double bhx = Params.COS[s.h[i]], bhy = Params.SIN[s.h[i]];
+                    double radial = pr < 1e-9 ? 0 : (px * bhx + py * bhy) / pr;
+                    double tangential = pr < 1e-9 ? 0 : (px * bhy - py * bhx) / pr;
+
+                    // Doubled angle, so the two halves of a 180-degree-symmetric map are
+                    // the same place. Raw theta would split one lobe across the seam.
+                    double theta = Math.atan2(py, px);
+
+                    csv.append(String.format(
+                            "%s,%d,%d,%d,%d,%d,%.2f,%.1f,%.2f,%.4f,%.2f,%.4f,%.4f,%.4f,%.4f%n",
                             dilution, run.seed(), tick, i,
                             zd == Integer.MAX_VALUE ? 9999 : zd,
                             map.score(s.x[i], s.y[i]) > 0 ? 1 : 0,
-                            Math.hypot(s.x[i] - cx, s.y[i] - cy), dev, nn));
+                            offLen, dev, nn,
+                            ahead, pr, radial, tangential,
+                            Math.cos(2 * theta), Math.sin(2 * theta)));
                 }
             }
             System.out.printf("  %s seed %d%n", dilution, run.seed());
@@ -2146,7 +2244,8 @@ public final class SimTest {
     public static void holdoutTest(PresetScenarioParameter preset, int boids, long[] seeds,
                                    int[] branches, int lookahead, double alpha, int maxDelay,
                                    int duration, int segments, int commits, int warmup,
-                                   int[] counts, String dilution, long pickSeed)
+                                   int[] counts, String dilution, long pickSeed,
+                                   Path leverageCsv, Path geometryCsv)
             throws IOException {
         ScenarioParameter scenario = withFlockSize(preset, boids);
         Engine engine = new Boids2DEngine(scenario);
@@ -2161,8 +2260,7 @@ public final class SimTest {
         // for it only bought an unchecked cast that failed at runtime.
         Map<String, double[][]> train = new java.util.LinkedHashMap<>();
         Map<String, Integer> psyOf = new java.util.HashMap<>();
-        loadFeatureCsv(Path.of("data", "leverage.csv"), Path.of("data", "geometry.csv"),
-                dilution, boids, train, psyOf);
+        loadFeatureCsv(leverageCsv, geometryCsv, dilution, boids, train, psyOf);
         Map<String, List<String>> byRun = new java.util.LinkedHashMap<>();
         for (String k : train.keySet()) {
             byRun.computeIfAbsent(k.substring(0, k.indexOf('/')), x -> new ArrayList<>()).add(k);
@@ -3273,6 +3371,16 @@ picks, never in what is available to it.
     }
 
     public static void main(String[] args) throws IOException {
+        // 67 commits of 160 = 10,720 ticks, matching the run length that turned hamburger's
+        // high dilution from 60% into 4-of-4. Seeds 3200+ are untouched by the fit.
+        holdoutTest(PresetScenarioParameter.PLINKO, 10,
+                new long[]{3200, 3201, 3202, 3203, 3204, 3205},
+                new int[]{256, 2, 2, 2, 1, 1, 1, 1}, SEARCH_LOOKAHEAD, 0.85,
+                16 * PsyboidSearch.SECOND, SEARCH_DURATION, SEARCH_SEGMENTS, 67, 500,
+                new int[]{60, 120, 200}, "high", 20260826L,
+                Path.of("data", "plinko-leverage.csv"), Path.of("data", "plinko-geometry.csv"));
+        if (true) return;
+
         // Do the maps on disk still reproduce the shipped photographs? Only the map file
         // and the movement rules can break this, and both have been edited since some of
         // these cases were built.
