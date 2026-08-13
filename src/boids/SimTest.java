@@ -1311,6 +1311,90 @@ public final class SimTest {
         }
     }
 
+    /**
+     * Occupancy over binned (x, y, heading), psyboid against everyone else.
+     * <p>
+     * The regression asks whether any feature is linearly informative. This asks a weaker
+     * and more forgiving question: is there anywhere the psyboid stands, facing any
+     * particular way, that the others do not? A pattern too lumpy for a linear model to
+     * express would still show up as a cell it visits far more than its share.
+     * <p>
+     * Every tick is counted, not only the sampled instants, so the picture is the run
+     * rather than a sample of it.
+     */
+    public static void occupancyHeatmap(PresetScenarioParameter preset, int boids,
+                                        String context, int warmup, int spatialBins,
+                                        int headingBins, int stride) throws IOException {
+        ScenarioParameter scenario = withFlockSize(preset, boids);
+        Engine engine = new Boids2DEngine(scenario);
+        NavMap map = NavMapBuilder.buildFromPng(scenario.mapPath(),
+                Math.round(scenario.turningRadius()));
+
+        int cells = spatialBins * spatialBins * headingBins;
+        double[] psy = new double[cells];
+        double[] oth = new double[cells];
+        long psyN = 0, othN = 0;
+
+        for (JournalRow run : readJournal(Path.of("data", "searches.tsv"), context)) {
+            int span = run.commits() * run.spacing();
+            Sim.State s = engine.init(run.seed());
+            while (s.tick < warmup) s = engine.tick(s);
+            s = new Sim.State(s.n, s.x, s.y, s.h, s.tick, 0L, new long[s.n], run.label(),
+                    PsyboidSearch.overridesOf(run.label()));
+
+            for (int t = 0; t < span; t++) {
+                s = engine.tick(s);
+                if (t % stride != 0) continue;
+                for (int i = 0; i < boids; i++) {
+                    int bx = Math.min(spatialBins - 1, s.x[i] * spatialBins / map.width());
+                    int by = Math.min(spatialBins - 1, s.y[i] * spatialBins / map.height());
+                    int bh = s.h[i] * headingBins / Params.TURNS;
+                    int cell = (bx * spatialBins + by) * headingBins + bh;
+                    if (i == run.psyboid()) { psy[cell]++; psyN++; }
+                    else { oth[cell]++; othN++; }
+                }
+            }
+            System.out.printf("  seed %d done%n", run.seed());
+        }
+
+        // Chi-square of the psyboid's distribution against the others', treating the
+        // others as the expected shape.
+        double chi = 0;
+        int used = 0;
+        for (int c = 0; c < cells; c++) {
+            double expected = oth[c] / othN * psyN;
+            if (expected < 5) continue;
+            chi += (psy[c] - expected) * (psy[c] - expected) / expected;
+            used++;
+        }
+        System.out.printf("%n%d cells (%dx%d spatial x %d heading), %d with enough data%n",
+                cells, spatialBins, spatialBins, headingBins, used);
+        System.out.printf("chi-square %.0f on ~%d df — %.2f per cell (1.0 means no structure)%n",
+                chi, used - 1, chi / Math.max(1, used - 1));
+
+        System.out.printf("%n%-24s %8s %8s %7s%n", "cell (x,y,heading)", "psyboid", "expected", "ratio");
+        Integer[] order = new Integer[cells];
+        for (int c = 0; c < cells; c++) order[c] = c;
+        final double[] p = psy, o = oth;
+        final long pn = psyN, on = othN;
+        java.util.Arrays.sort(order, (a, b) -> Double.compare(
+                ratio(p[b], o[b], pn, on), ratio(p[a], o[a], pn, on)));
+        int shown = 0;
+        for (int c : order) {
+            double expected = oth[c] / othN * psyN;
+            if (expected < 20 || shown >= 8) continue;
+            System.out.printf("x%d y%d h%-18s %8.0f %8.1f %6.2fx%n",
+                    (c / headingBins) / spatialBins, (c / headingBins) % spatialBins,
+                    (c % headingBins) + "/" + headingBins, psy[c], expected, psy[c] / expected);
+            shown++;
+        }
+    }
+
+    private static double ratio(double psy, double oth, long psyN, long othN) {
+        double expected = oth / othN * psyN;
+        return expected < 20 ? 0 : psy / expected;
+    }
+
     /** One row of {@code data/searches.tsv}, enough to replay the line it records. */
     private record JournalRow(String context, long seed, int psyboid, int spacing,
                               int commits, String label) {}
@@ -2696,6 +2780,21 @@ picks, never in what is available to it.
                                     String configBlock, String reservations,
                                     Path packetDir, Path buildDir, long pickSeed)
             throws IOException {
+        holdoutCases(preset, boids, seeds, photos, warmup, lookahead, alpha, fitDilution,
+                runContext, firstCase, minRatio, scale, clue, configBlock, reservations,
+                packetDir, buildDir, pickSeed,
+                Path.of("data", "leverage.csv"), Path.of("data", "geometry.csv"));
+    }
+
+    /** As above, reading the fit from named feature files rather than the default pair. */
+    public static void holdoutCases(PresetScenarioParameter preset, int boids, long[] seeds,
+                                    int photos, int warmup, int lookahead, double alpha,
+                                    String fitDilution, String runContext, int firstCase,
+                                    double minRatio, int scale, String clue,
+                                    String configBlock, String reservations,
+                                    Path packetDir, Path buildDir, long pickSeed,
+                                    Path leverageCsv, Path geometryCsv)
+            throws IOException {
         ScenarioParameter scenario = withFlockSize(preset, boids);
         Engine engine = new Boids2DEngine(scenario);
         Boids2DRenderer renderer = new Boids2DRenderer(scenario.mapPath(), scale);
@@ -2710,8 +2809,7 @@ picks, never in what is available to it.
         // Coefficients from the fitting runs only; these seeds are not among them.
         Map<String, double[][]> train = new java.util.LinkedHashMap<>();
         Map<String, Integer> psyOf = new java.util.HashMap<>();
-        loadFeatureCsv(Path.of("data", "leverage.csv"), Path.of("data", "geometry.csv"),
-                fitDilution, boids, train, psyOf);
+        loadFeatureCsv(leverageCsv, geometryCsv, fitDilution, boids, train, psyOf);
         Map<String, List<String>> byRun = new java.util.LinkedHashMap<>();
         for (String k : train.keySet()) {
             byRun.computeIfAbsent(k.substring(0, k.indexOf('/')), x -> new ArrayList<>()).add(k);
@@ -2775,11 +2873,18 @@ picks, never in what is available to it.
             for (int i = 1; i < boids; i++) if (p[i] > p[top]) top = i;
             for (int i = 0; i < boids; i++)
                 if (i != top && (second < 0 || p[i] > p[second])) second = i;
-            double ratio = p[top] / p[second];
-            boolean ok = top == row.psyboid() && ratio >= minRatio;
 
-            System.out.printf("  seed %d: picks %s (p=%.3f) over %s (p=%.3f), ratio %.1fx -> %s%n",
-                    seed, COLOUR_NAMES[top], p[top], COLOUR_NAMES[second], p[second], ratio,
+            // The probability ratio saturates: summed log-odds over a hundred-odd frames
+            // reach magnitudes where p(top) rounds to 1 and the ratio reports arithmetic
+            // rather than confidence. The margin is the same quantity before the
+            // temperature blows it up — the gap in weighted mean-z between the top two,
+            // which stays on a human scale however many photographs there are.
+            double margin = (logit[top] - logit[second]) / temp;
+            double ratio = p[top] / p[second];
+            boolean ok = top == row.psyboid() && margin >= minRatio;
+
+            System.out.printf("  seed %d: picks %s over %s, margin %.3f (p=%.4f, ratio %.3g) -> %s%n",
+                    seed, COLOUR_NAMES[top], COLOUR_NAMES[second], margin, p[top], ratio,
                     ok ? "ACCEPT" : "REJECT");
             if (!ok) continue;
 
@@ -3371,15 +3476,41 @@ picks, never in what is available to it.
     }
 
     public static void main(String[] args) throws IOException {
-        // 67 commits of 160 = 10,720 ticks, matching the run length that turned hamburger's
-        // high dilution from 60% into 4-of-4. Seeds 3200+ are untouched by the fit.
-        holdoutTest(PresetScenarioParameter.PLINKO, 10,
-                new long[]{3200, 3201, 3202, 3203, 3204, 3205},
-                new int[]{256, 2, 2, 2, 1, 1, 1, 1}, SEARCH_LOOKAHEAD, 0.85,
-                16 * PsyboidSearch.SECOND, SEARCH_DURATION, SEARCH_SEGMENTS, 67, 500,
-                new int[]{60, 120, 200}, "high", 20260826L,
-                Path.of("data", "plinko-leverage.csv"), Path.of("data", "plinko-geometry.csv"));
+        holdoutCasesPlinko();
         if (true) return;
+    }
+
+    private static void holdoutCasesPlinko() throws IOException {
+        holdoutCases(PresetScenarioParameter.PLINKO, 10,
+                new long[]{3200, 3201, 3202, 3203, 3204, 3205}, 120, 500,
+                SEARCH_LOOKAHEAD, 0.85, "high", "PLINKO n10 holdout high", 22, 0.0, 2,
+                "Psyboid points away from the flock and drifts to its edge",
+                """
+                | Dilution | high (psyboid steering ~20% of ticks) |
+                | Overrides | 3 segments, 32 ticks (4s), max delay 128 ticks (16s) |
+                | Commit interval | 160 ticks |
+                | Search | 256x2x2x2x1x1x1x1, lookahead 80, alpha 0.85 |""",
+                """
+                - Plinko's scoring zone is 50.5% of the play area and control runs near 50%,
+                  so being in the zone means nothing here. Roughly half the flock always is.
+                - The psyboid ranks 7th of 10 by score on average and last in three runs of
+                  ten. Guessing the highest scorer is worse than chance; guessing the lowest
+                  would do better. This is the strongest score camouflage measured on any
+                  map so far.
+                - The clue is orientation, not position. Heading deviation carries a
+                  coefficient of +2.6, roughly double its weight on any other map, while
+                  map position (distance from the central pillar, angle folded by the map's
+                  180-degree symmetry) carries essentially none.
+                - **Per frame the signal is weak**: the psyboid sits about 0.44 standard
+                  deviations out on heading deviation and is the most extreme boid in only
+                  23% of frames against a 10% baseline. It is identifiable only by averaging
+                  across many photographs, which is the intended asymmetry but also means a
+                  reader working by eye should be expected to fail.
+                - Accepted on margin rather than probability ratio. Summed log-odds over 120
+                  frames saturate: p(top) rounds to 1.0 and the ratio reports arithmetic
+                  overflow rather than confidence.""",
+                Path.of("packet", "cases"), Path.of("cases", ".build"), 20260827L,
+                Path.of("data", "plinko-leverage.csv"), Path.of("data", "plinko-geometry.csv"));
 
         // Do the maps on disk still reproduce the shipped photographs? Only the map file
         // and the movement rules can break this, and both have been edited since some of
