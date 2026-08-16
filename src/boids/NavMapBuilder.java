@@ -88,7 +88,8 @@ public final class NavMapBuilder {
      */
     private static int[][] segmentOffsets(int[] stepX, int[] stepY) {
         int[][] path = new int[stepX.length][];
-        for (int h = 0; h < stepX.length; h++) {
+        int half = stepX.length / 2;
+        for (int h = 0; h < half; h++) {
             int dx = stepX[h];
             int dy = stepY[h];
             int steps = Math.max(Math.abs(dx), Math.abs(dy));
@@ -97,6 +98,23 @@ public final class NavMapBuilder {
             for (int k = 1; k <= steps; k++) {
                 offsets[(k - 1) * 2] = round((double) k * dx / steps);
                 offsets[(k - 1) * 2 + 1] = round((double) k * dy / steps);
+            }
+            path[h] = offsets;
+        }
+        // The far half is the near half walked backwards, so a segment covers the same
+        // pixels whichever way it is flown. Sampling each heading independently does not
+        // give that: the samples exclude the origin and include the destination, and
+        // round() breaks .5 ties away from zero, so the path bulges away from whichever
+        // end it started at. 24 of the 64 headings hit such a tie.
+        for (int h = half; h < stepX.length; h++) {
+            int[] fwd = path[h - half];
+            int steps = fwd.length / 2;
+            int dx = stepX[h - half], dy = stepY[h - half];
+            int[] offsets = new int[steps * 2];
+            for (int k = 1; k <= steps; k++) {
+                int j = steps - k;                       // forward sample index, 0 = origin
+                offsets[(k - 1) * 2] = (j == 0 ? 0 : fwd[(j - 1) * 2]) - dx;
+                offsets[(k - 1) * 2 + 1] = (j == 0 ? 0 : fwd[(j - 1) * 2 + 1]) - dy;
             }
             path[h] = offsets;
         }

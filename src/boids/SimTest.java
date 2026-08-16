@@ -11,10 +11,13 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.Random;
 
@@ -1393,6 +1396,1268 @@ public final class SimTest {
     private static double ratio(double psy, double oth, long psyN, long othN) {
         double expected = oth / othN * psyN;
         return expected < 20 ? 0 : psy / expected;
+    }
+
+    /**
+     * When did the override actually change anything, and what came of it?
+     * <p>
+     * An override is <em>nominally</em> active for its whole duration, but most of that
+     * time it asks for the turn the flocking rules were going to take anyway, or asks for
+     * one the collision veto refuses. What matters causally is the far smaller set of
+     * ticks where the psyboid's heading genuinely differs from what it would have been —
+     * found here by advancing every state twice, once as it happened and once with the
+     * overrides stripped, and comparing.
+     * <p>
+     * Around each such tick the two timelines are then run forward independently, which
+     * answers the question the leader argument turns on: would this boid have reached the
+     * scoring zone anyway, and would anyone else?
+     */
+    public static void deviationReport(PresetScenarioParameter preset, int boids, String label,
+                                       int warmup, int span, int psyboid, int horizon)
+            throws IOException {
+        ScenarioParameter scenario = withFlockSize(preset, boids);
+        Engine engine = new Boids2DEngine(scenario);
+        NavMap map = NavMapBuilder.buildFromPng(scenario.mapPath(),
+                Math.round(scenario.turningRadius()));
+
+        Sim.State s = engine.init(PsyboidSearch.seedOf(label));
+        while (s.tick < warmup) s = engine.tick(s);
+        s = new Sim.State(s.n, s.x, s.y, s.h, s.tick, 0L, new long[s.n], label,
+                PsyboidSearch.overridesOf(label));
+
+        List<int[]> deviations = new ArrayList<>();   // {tick, turn actually taken, turn otherwise}
+        List<Sim.State> before = new ArrayList<>();
+
+        for (int t = 0; t < span; t++) {
+            Sim.State actual = engine.tick(s);
+            Sim.State plain = engine.tick(unsteered(s));
+            if (actual.h[psyboid] != plain.h[psyboid]) {
+                deviations.add(new int[]{(int) s.tick,
+                        Math.floorMod(actual.h[psyboid] - s.h[psyboid], Params.TURNS),
+                        Math.floorMod(plain.h[psyboid] - s.h[psyboid], Params.TURNS)});
+                before.add(s);
+            }
+            s = actual;
+        }
+
+        System.out.printf("%s seed %d, psyboid %d (%s): %d ticks, "
+                        + "%d with an effective deviation (%.1f%%)%n",
+                preset.name(), PsyboidSearch.seedOf(label), psyboid, hex(psyboid, boids),
+                span, deviations.size(), 100.0 * deviations.size() / span);
+
+        // Group consecutive deviations: one manoeuvre, not a dozen separate events.
+        List<int[]> episodes = new ArrayList<>();     // {firstTick, lastTick, indexOfFirst}
+        for (int i = 0; i < deviations.size(); i++) {
+            int start = deviations.get(i)[0], startIdx = i;
+            while (i + 1 < deviations.size() && deviations.get(i + 1)[0] <= deviations.get(i)[0] + 4) i++;
+            episodes.add(new int[]{start, deviations.get(i)[0], startIdx});
+        }
+        System.out.printf("grouped into %d manoeuvre(s)%n%n", episodes.size());
+
+        System.out.printf("%-8s %-8s %10s %10s %10s %10s   %s%n", "tick", "ticks",
+                "psy actual", "psy if not", "flock act", "flock if", "first to score");
+        for (int[] ep : episodes) {
+            Sim.State root = before.get(ep[2]);
+            Sim.State a = root, b = unsteered(root);
+            long psyA = 0, psyB = 0, flockA = 0, flockB = 0;
+            int firstA = -1, firstB = -1;
+            int tickA = -1, tickB = -1;
+
+            for (int t = 0; t < horizon; t++) {
+                a = engine.tick(a);
+                b = engine.tick(b);
+                for (int i = 0; i < boids; i++) {
+                    if (map.score(a.x[i], a.y[i]) > 0) {
+                        if (i == psyboid) psyA++;
+                        flockA++;
+                        if (firstA < 0) { firstA = i; tickA = t; }
+                    }
+                    if (map.score(b.x[i], b.y[i]) > 0) {
+                        if (i == psyboid) psyB++;
+                        flockB++;
+                        if (firstB < 0) { firstB = i; tickB = t; }
+                    }
+                }
+            }
+            System.out.printf("%-8d %-8d %10d %10d %10d %10d   actual %s@%d / without %s@%d%n",
+                    ep[0], ep[1] - ep[0] + 1, psyA, psyB, flockA, flockB,
+                    firstA < 0 ? "none" : COLOUR_NAMES[Math.min(firstA, 9)], tickA,
+                    firstB < 0 ? "none" : COLOUR_NAMES[Math.min(firstB, 9)], tickB);
+        }
+    }
+
+    /**
+     * A decision point: a directed gate, crossed when a boid passes from the green side
+     * to the blue side within the gate's span.
+     */
+    private record Gate(String name, int greenX, int blueX, int y0, int y1) {
+        /** True when the step from {@code (px,py)} to {@code (x,y)} crosses green to blue. */
+        boolean crossed(int px, int py, int x, int y) {
+            boolean inSpan = (py >= y0 - 3 && py <= y1 + 3) || (y >= y0 - 3 && y <= y1 + 3);
+            if (!inSpan) return false;
+            return greenX > blueX ? (px > blueX && x <= blueX) : (px < blueX && x >= blueX);
+        }
+    }
+
+    private static final Gate[] DAB_GATES = {
+            new Gate("gate-A", 186, 185, 179, 189),     // upper middle, crossed westward
+            new Gate("gate-B", 81, 82, 183, 190),       // left, crossed eastward
+            new Gate("gate-S", 311, 310, 273, 280),     // bottom right, into the scoring loop
+    };
+
+    /**
+     * One boid, no neighbours, steered only by the walls and whatever overrides it is given.
+     * <p>
+     * With a flock of one the flocking rules contribute nothing — no neighbour survives the
+     * range test, so the desired direction is zero and the boid holds its heading — which
+     * leaves {@link NavMap#constrainTurn} as the only thing steering it. The path is
+     * therefore a property of the corridor alone, and is exactly reproducible.
+     *
+     * @return every {@code {tick, x, y, heading}} until the state repeats or the budget runs out
+     */
+    private static List<int[]> traceRoute(Engine engine, int x0, int y0, int d0,
+                                          List<int[]> overrides, int maxTicks,
+                                          List<String> crossings) {
+        PsyboidOverride[] ov = new PsyboidOverride[overrides.size()];
+        for (int i = 0; i < ov.length; i++) {
+            int[] o = overrides.get(i);
+            ov[i] = new PsyboidOverride(o[0], o[1], o[2], 0);
+        }
+        Sim.State s = new Sim.State(1, new int[]{x0}, new int[]{y0}, new int[]{d0},
+                0L, 0L, new long[1], "route", ov);
+
+        List<int[]> path = new ArrayList<>();
+        path.add(new int[]{0, x0, y0, d0});
+
+        for (int t = 1; t <= maxTicks; t++) {
+            int px = s.x[0], py = s.y[0];
+            s = engine.tick(s);
+            path.add(new int[]{t, s.x[0], s.y[0], s.h[0]});
+
+            for (Gate g : DAB_GATES) {
+                if (g.crossed(px, py, s.x[0], s.y[0])) {
+                    crossings.add(g.name() + "@" + t + " (" + s.x[0] + "," + s.y[0] + ")");
+                }
+            }
+
+            // A circuit is done when the boid is back where it began and pointing the way
+            // it began. Position alone is not enough: every route through the outer loop
+            // passes this point twice, once outbound heading roughly east and once
+            // inbound heading roughly west, and only the second is a return. Waiting for
+            // an exact state repeat instead runs on through extra main-loop laps until the
+            // pixel happens to line up.
+            if (t > 5 && Math.hypot(s.x[0] - x0, s.y[0] - y0) < 4) {
+                int turn = Math.abs(Math.floorMod(s.h[0] - d0 + Params.TURNS / 2,
+                        Params.TURNS) - Params.TURNS / 2);
+                if (turn <= 8) break;
+            }
+        }
+        return path;
+    }
+
+    /**
+     * Net turns about {@code (cx, cy)} while the path is inside {@code region}.
+     * <p>
+     * Screen coordinates put y downwards, so a positive result is <b>clockwise as drawn</b>.
+     * Summing signed angle rather than counting crossings means a route that enters,
+     * doubles back and leaves contributes what it actually swept.
+     */
+    private static double winding(List<int[]> path, double cx, double cy,
+                                  java.util.function.BiPredicate<Integer, Integer> region) {
+        double total = 0;
+        int[] prev = null;
+        for (int[] p : path) {
+            if (p[0] < 0) continue;
+            if (!region.test(p[1], p[2])) { prev = null; continue; }
+            if (prev != null) {
+                double ax = prev[1] - cx, ay = prev[2] - cy;
+                double bx = p[1] - cx, by = p[2] - cy;
+                total += Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
+            }
+            prev = p;
+        }
+        return total / (2 * Math.PI);
+    }
+
+    /**
+     * Draws a traced route over its play area.
+     * <p>
+     * Coloured blue through red by time, because on a map where a route can double back
+     * through the same corridor the direction of travel is the whole question and a
+     * single-colour line cannot answer it. A white dot marks the start, black the end, and
+     * rings mark gate crossings.
+     */
+    private static void drawRoute(ScenarioParameter scenario, List<int[]> path,
+                                  List<int[]> gateMarks, Path out, int scale)
+            throws IOException {
+        BufferedImage src = javax.imageio.ImageIO.read(scenario.mapPath().toFile());
+        int w = src.getWidth() * scale, h = src.getHeight() * scale;
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int rgb = src.getRGB(x / scale, y / scale) & 0xFFFFFF;
+                img.setRGB(x, y, rgb == 0x000000 ? 0x000000
+                        : rgb == 0xFF7F27 ? 0xF7E0CC : 0xE6E6E6);
+            }
+        }
+
+        Graphics2D g = img.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setStroke(new java.awt.BasicStroke(Math.max(1.6f, scale * 0.9f),
+                java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+
+        List<int[]> pts = new ArrayList<>();
+        for (int[] p : path) if (p[0] >= 0) pts.add(p);
+        for (int i = 1; i < pts.size(); i++) {
+            double t = (i - 1) / (double) Math.max(1, pts.size() - 2);
+            g.setColor(new Color((int) (32 + 200 * t), (int) (64 * (1 - t)),
+                    (int) (255 - 235 * t)));
+            int[] a = pts.get(i - 1), b = pts.get(i);
+            // A step that jumps the width of the map is the loop closing, not travel.
+            if (Math.hypot(b[1] - a[1], b[2] - a[2]) > 20) continue;
+            g.drawLine(a[1] * scale, a[2] * scale, b[1] * scale, b[2] * scale);
+        }
+
+        g.setStroke(new java.awt.BasicStroke(Math.max(1.5f, scale * 0.8f)));
+        for (int[] m : gateMarks) {
+            g.setColor(new Color(0x00, 0x90, 0x30));
+            int r = 5 * scale;
+            g.drawOval(m[0] * scale - r, m[1] * scale - r, 2 * r, 2 * r);
+        }
+        int r = 3 * scale;
+        g.setColor(Color.WHITE);
+        g.fillOval(pts.get(0)[1] * scale - r, pts.get(0)[2] * scale - r, 2 * r, 2 * r);
+        g.setColor(Color.BLACK);
+        g.drawOval(pts.get(0)[1] * scale - r, pts.get(0)[2] * scale - r, 2 * r, 2 * r);
+        int[] last = pts.get(pts.size() - 1);
+        g.fillOval(last[1] * scale - r, last[2] * scale - r, 2 * r, 2 * r);
+        g.dispose();
+
+        if (out.getParent() != null) Files.createDirectories(out.getParent());
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
+    /**
+     * The edges, named by the routes that traverse them, in canonical order.
+     * <p>
+     * X is the exception: it splits off CE and merges into BC, no route uses it, and it
+     * runs back through A's corridor the opposite way. Reachable but so unlikely that it
+     * was not in the original list — and leaving it out was what scattered A's
+     * reverse-heading states across other edges, since forward propagation had to give
+     * them some label and none of the nine fitted.
+     */
+    private static final String[] EDGES =
+            {"ABCDE", "ADE", "A", "BC", "DE", "BCDE", "BD", "CE", "ABD", "X"};
+
+    /**
+     * Builds the {@code (x, y, heading) -> edge} map and writes it beside the routes.
+     * <p>
+     * Two stages. The annotated map divides the play area into red and blue regions, and
+     * within one region a single edge owns one half of the compass — east/west for red at
+     * headings 16 and 48, north/south for blue at 0 and 32 — so every state inside a region
+     * can be labelled outright. Which edge that is comes from the recorded routes: whichever
+     * subset of A..E runs through a region-and-half names it, which is a derivation rather
+     * than an assumption and fails loudly if the regions and the routes disagree.
+     * <p>
+     * The white remainder is the junctions. A state there is labelled by what it runs into:
+     * follow it forward until it reaches a labelled region, and it belongs to that edge.
+     * Where a junction holds four edges at once, direction alone separates them, because
+     * each state can only reach one of the four going forward.
+     */
+    public static void buildEdgeMap(PresetScenarioParameter preset, Path annotated, Path outDir)
+            throws IOException {
+        NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
+                Math.round(preset.turningRadius()));
+        int w = map.width(), h = map.height(), turns = Params.TURNS;
+        BufferedImage ann = javax.imageio.ImageIO.read(annotated.toFile());
+        final int RED = 0xED1C24, BLUE = 0x00A2E8;
+
+        // ---- regions ----
+        int[] region = new int[w * h];
+        Arrays.fill(region, -1);
+        List<Boolean> isRed = new ArrayList<>();
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int rgb = ann.getRGB(x, y) & 0xFFFFFF;
+                if ((rgb != RED && rgb != BLUE) || region[x + y * w] >= 0) continue;
+                int id = isRed.size();
+                isRed.add(rgb == RED);
+                ArrayDeque<int[]> q = new ArrayDeque<>();
+                q.add(new int[]{x, y});
+                region[x + y * w] = id;
+                while (!q.isEmpty()) {
+                    int[] p = q.poll();
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            int nx = p[0] + dx, ny = p[1] + dy;
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                            if ((ann.getRGB(nx, ny) & 0xFFFFFF) != rgb) continue;
+                            if (region[nx + ny * w] >= 0) continue;
+                            region[nx + ny * w] = id;
+                            q.add(new int[]{nx, ny});
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- which edge owns each (region, half), read off the routes ----
+        Map<String, Set<String>> routesIn = new java.util.LinkedHashMap<>();
+        for (String name : EDGES) { /* placeholder to fix iteration order */ }
+        for (String route : new String[]{"A", "B", "C", "D", "E"}) {
+            List<String> rows = Files.readAllLines(outDir.resolve("route_" + route + ".csv"));
+            for (int i = 1; i < rows.size(); i++) {
+                String[] v = rows.get(i).split(",");
+                int x = Integer.parseInt(v[1]), y = Integer.parseInt(v[2]), d = Integer.parseInt(v[3]);
+                int id = region[x + y * w];
+                if (id < 0) continue;
+                routesIn.computeIfAbsent(key(id, isRed.get(id), d), k -> new java.util.TreeSet<>())
+                        .add(route);
+            }
+        }
+        Map<String, Integer> edgeOf = new java.util.LinkedHashMap<>();
+        List<String> unnamed = new ArrayList<>();
+        for (var e : routesIn.entrySet()) {
+            String label = String.join("", e.getValue());
+            int idx = Arrays.asList(EDGES).indexOf(label);
+            if (idx < 0) unnamed.add(e.getKey() + " -> " + label);
+            else edgeOf.put(e.getKey(), idx);
+        }
+        System.out.printf("%d region-halves matched to edges, %d unrecognised%n",
+                edgeOf.size(), unnamed.size());
+        for (String u : unnamed) System.out.println("  unrecognised: " + u);
+
+        // No route runs X, so it cannot be named from the traces. It is instead the
+        // complement of A: in each of the three regions A occupies, whichever half A does
+        // not own is X.
+        int aIdx = Arrays.asList(EDGES).indexOf("A"), xIdx = Arrays.asList(EDGES).indexOf("X");
+        for (int id = 0; id < isRed.size(); id++) {
+            String[] halves = isRed.get(id) ? new String[]{"W", "E"} : new String[]{"S", "N"};
+            for (int k = 0; k < 2; k++) {
+                Integer owner = edgeOf.get(id + "/" + halves[k]);
+                if (owner == null || owner != aIdx) continue;
+                String other = id + "/" + halves[1 - k];
+                Integer already = edgeOf.get(other);
+                System.out.printf("  region %d: %s is A, so %s is X%s%n", id,
+                        halves[k], halves[1 - k],
+                        already == null ? "" : " (was " + EDGES[already] + ")");
+                edgeOf.put(other, xIdx);
+            }
+        }
+
+        // ---- seed, then flood the white junctions ----
+        byte[] edge = new byte[w * h * turns];
+        Arrays.fill(edge, (byte) -1);
+        int seeded = 0, live = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (map.oob(x, y)) continue;
+                int id = region[x + y * w];
+                for (int d = 0; d < turns; d++) {
+                    if (!map.alive(x, y, d)) continue;
+                    live++;
+                    if (id < 0) continue;
+                    Integer idx = edgeOf.get(key(id, isRed.get(id), d));
+                    if (idx == null) continue;
+                    edge[(x + y * w) * turns + d] = idx.byteValue();
+                    seeded++;
+                }
+            }
+        }
+
+        int[] reach = new int[w * h * turns];        // bitmask of edges reachable first
+        for (int idx = 0; idx < EDGES.length; idx++) {
+            ArrayDeque<Integer> q = new ArrayDeque<>();
+            boolean[] seen = new boolean[w * h * turns];
+            for (int s = 0; s < edge.length; s++) {
+                if (edge[s] == idx) { seen[s] = true; q.add(s); }
+            }
+            while (!q.isEmpty()) {
+                int s = q.poll();
+                int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+                int px = x - map.stepX(d), py = y - map.stepY(d);
+                if (px < 0 || py < 0 || px >= w || py >= h || map.oob(px, py)) continue;
+                for (int t = -1; t <= 1; t++) {
+                    int pd = Math.floorMod(d - t, turns);
+                    if (!map.alive(px, py, pd)) continue;
+                    if (map.constrainTurn(px, py, pd, t) != t) continue;
+                    int p = (px + py * w) * turns + pd;
+                    if (edge[p] >= 0 || seen[p]) continue;     // stop at labelled states
+                    seen[p] = true;
+                    reach[p] |= (1 << idx);
+                    q.add(p);
+                }
+            }
+        }
+
+        // A state that can still reach both outcomes of a decision has not taken it yet, so
+        // it belongs to the edge leading in. The three splits come straight from the order
+        // the routes visit their edges: ABCDE parts into BC and ADE, ADE into A and DE,
+        // BCDE into BD and CE.
+        // A state that can still reach both branches of a split has not taken it. The last
+        // two are branches that leave an edge partway along rather than at its end, so the
+        // edge itself appears in the reachable set alongside what peels off it.
+        Map<Integer, Integer> inboundOf = Map.of(
+                (1 << 3) | (1 << 1), 0,      // {BC, ADE}  -> ABCDE
+                (1 << 2) | (1 << 4), 1,      // {A, DE}    -> ADE
+                (1 << 6) | (1 << 7), 5,      // {BD, CE}   -> BCDE
+                (1 << 7) | (1 << 9), 7,      // {CE, X}    -> CE, where X peels off
+                (1 << 1) | (1 << 4), 1);     // {ADE, DE}  -> ADE
+
+        int filled = 0, atSplit = 0, ambiguous = 0, orphan = 0;
+        Map<String, Integer> residue = new java.util.TreeMap<>();
+        for (int s = 0; s < edge.length; s++) {
+            int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+            if (map.oob(x, y) || !map.alive(x, y, d) || edge[s] >= 0) continue;
+            int mask = reach[s];
+            if (mask == 0) { orphan++; continue; }
+            if (Integer.bitCount(mask) == 1) {
+                edge[s] = (byte) Integer.numberOfTrailingZeros(mask);
+                filled++;
+            } else if (inboundOf.containsKey(mask)) {
+                edge[s] = inboundOf.get(mask).byteValue();
+                atSplit++;
+            } else {
+                ambiguous++;
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < EDGES.length; i++) {
+                    if ((mask & (1 << i)) != 0) sb.append(sb.length() > 0 ? "+" : "").append(EDGES[i]);
+                }
+                residue.merge(sb.toString(), 1, Integer::sum);
+            }
+        }
+        System.out.printf("%d live states: %d seeded, %d filled from junctions, "
+                + "%d resolved at splits, %d ambiguous, %d unreachable%n",
+                live, seeded, filled, atSplit, ambiguous, orphan);
+        for (var e : residue.entrySet()) {
+            System.out.printf("  still ambiguous: reaches %-24s %d states%n", e.getKey(), e.getValue());
+        }
+
+        // At a merge the outbound edge belongs only to states both inbound edges can reach.
+        // Forward propagation alone cannot see this: the stretch just past one inbound edge
+        // leads into the merge and gets the merge's label, even where the other inbound
+        // edge could never have delivered a boid there. Processed in dependency order,
+        // since ABCDE's inbound ABD is itself a merge product.
+        // Only true merges: two inbound edges, one outbound. X joins BC, but ABCDE reaches
+        // BC through the exit-1 decision rather than a merge, so requiring both sources
+        // there wrongly hands the whole first stretch of BC back to ABCDE.
+        boolean[] mergeResidue = new boolean[w * h * turns];
+        int[][] merges = {{3, 4, 5}, {2, 6, 8}, {8, 7, 0}};   // {in1, in2, out}
+        for (int[] m : merges) {
+            boolean[][] from = new boolean[2][];
+            for (int k = 0; k < 2; k++) {
+                boolean[] seen = new boolean[w * h * turns];
+                ArrayDeque<Integer> q = new ArrayDeque<>();
+                for (int s = 0; s < edge.length; s++) if (edge[s] == m[k]) q.add(s);
+                while (!q.isEmpty()) {
+                    int s = q.poll();
+                    int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+                    for (int t = -1; t <= 1; t++) {
+                        if (map.constrainTurn(x, y, d, t) != t) continue;
+                        int nd = Math.floorMod(d + t, turns);
+                        int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h || map.oob(nx, ny)) continue;
+                        if (!map.alive(nx, ny, nd)) continue;
+                        int n = (nx + ny * w) * turns + nd;
+                        if (edge[n] != m[2] || seen[n]) continue;
+                        seen[n] = true;
+                        q.add(n);
+                    }
+                }
+                from[k] = seen;
+            }
+            int moved1 = 0, moved2 = 0, orphaned = 0;
+            for (int s = 0; s < edge.length; s++) {
+                if (edge[s] != m[2]) continue;
+                boolean a = from[0][s], b = from[1][s];
+                if (a && b) continue;
+                if (a) { edge[s] = (byte) m[0]; moved1++; }
+                else if (b) { edge[s] = (byte) m[1]; moved2++; }
+                else { orphaned++; mergeResidue[s] = true; }
+            }
+            System.out.printf("merge %s+%s -> %s: %d states reassigned to %s, %d to %s, "
+                            + "%d reachable from neither%n",
+                    EDGES[m[0]], EDGES[m[1]], EDGES[m[2]], moved1, EDGES[m[0]],
+                    moved2, EDGES[m[1]], orphaned);
+        }
+
+        // Is a state one a boid could actually be in? Being alive only means it has a
+        // viable future, not that anything can deliver a boid to it. Peeling live states
+        // with no live predecessor, repeatedly, leaves the recurrent core — where a boid
+        // ends up and stays. Anything peeled is reachable only by starting there, which
+        // after a warm-up means never.
+        int[] indeg = new int[w * h * turns];
+        boolean[] alive = new boolean[w * h * turns];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (map.oob(x, y)) continue;
+                for (int d = 0; d < turns; d++) {
+                    if (!map.alive(x, y, d)) continue;
+                    alive[(x + y * w) * turns + d] = true;
+                }
+            }
+        }
+        for (int s = 0; s < alive.length; s++) {
+            if (!alive[s]) continue;
+            int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+            for (int t = -1; t <= 1; t++) {
+                if (map.constrainTurn(x, y, d, t) != t) continue;
+                int nd = Math.floorMod(d + t, turns);
+                int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h || map.oob(nx, ny)) continue;
+                if (!map.alive(nx, ny, nd)) continue;
+                indeg[(nx + ny * w) * turns + nd]++;
+            }
+        }
+        // Peeled in layers, so it is visible how much of the answer a purely local check
+        // gives. Layer 1 is the states with no live predecessor at all — decidable in
+        // constant time from the navmap. Every later layer is only unreachable because
+        // everything upstream of it was, which no local test can see.
+        boolean[] transient_ = new boolean[w * h * turns];
+        boolean[] indegZero = new boolean[w * h * turns];
+        List<Integer> layer = new ArrayList<>();
+        for (int s = 0; s < alive.length; s++) {
+            if (alive[s] && indeg[s] == 0) { layer.add(s); indegZero[s] = true; }
+        }
+        int peeled = 0, round = 0, firstLayer = layer.size();
+        StringBuilder layers = new StringBuilder();
+        while (!layer.isEmpty()) {
+            round++;
+            List<Integer> next = new ArrayList<>();
+            for (int s : layer) {
+                if (transient_[s]) continue;
+                transient_[s] = true;
+                peeled++;
+                int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+                for (int t = -1; t <= 1; t++) {
+                    if (map.constrainTurn(x, y, d, t) != t) continue;
+                    int nd = Math.floorMod(d + t, turns);
+                    int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || map.oob(nx, ny)) continue;
+                    if (!map.alive(nx, ny, nd)) continue;
+                    int n = (nx + ny * w) * turns + nd;
+                    if (--indeg[n] == 0 && !transient_[n]) next.add(n);
+                }
+            }
+            if (round <= 8) layers.append(String.format(" %d:%d", round, layer.size()));
+            layer = next;
+        }
+        System.out.printf("%nunreachable found in %d peeling rounds;%s ...%n", round, layers);
+        System.out.printf("  local check (no live predecessor) finds %d of %d — %.1f%%%n",
+                firstLayer, peeled, 100.0 * firstLayer / peeled);
+
+        // Can in-degree zero be read straight off the navmap? Every predecessor of
+        // (x,y,d) lies at the same pixel one step back, and step[d+32] = -step[d], so the
+        // segment that would arrive here is the same pixels as the reverse step from here.
+        // If that holds in the rasterisation, "no live predecessor" is just "the reverse
+        // step is not passable" — one bit lookup, no search.
+        int antipodal = 0;
+        for (int d = 0; d < turns; d++) {
+            if (map.stepX(d) == -map.stepX((d + turns / 2) % turns)
+                    && map.stepY(d) == -map.stepY((d + turns / 2) % turns)) antipodal++;
+        }
+        System.out.printf("  step vectors antipodal for %d of %d headings%n", antipodal, turns);
+
+        // The real question is infinite predecessors, i.e. membership in the core: an
+        // infinite backward trajectory is an infinite forward one under reversed time, and
+        // reversed time is the heading flipped by half a turn. Does alive() on the flipped
+        // heading just answer it?
+        String[] flipName = {"alive(d+32)", "any of d+31,32,33", "all of d+31,32,33",
+                             "alive(d+32) && passable(d+32)",
+                             "flip, move, alive(d+32)", "flip, move, gated",
+                             "flip, move, any d+31,32,33", "flip, move, all d+31,32,33"};
+        System.out.printf("%n  against the core (%d of %d live states have infinite predecessors):%n",
+                live - peeled, live);
+        for (int v = 0; v < flipName.length; v++) {
+            int predictedCore = 0, falsePos = 0, falseNeg = 0;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (map.oob(x, y)) continue;
+                    for (int d = 0; d < turns; d++) {
+                        int s = (x + y * w) * turns + d;
+                        if (!alive[s]) continue;
+                        int back = (d + turns / 2) % turns;
+                        boolean predicted;
+                        if (v == 0) {
+                            predicted = map.alive(x, y, back);
+                        } else if (v == 1) {
+                            predicted = map.alive(x, y, (back + turns - 1) % turns)
+                                    || map.alive(x, y, back)
+                                    || map.alive(x, y, (back + 1) % turns);
+                        } else if (v == 2) {
+                            predicted = map.alive(x, y, (back + turns - 1) % turns)
+                                    && map.alive(x, y, back)
+                                    && map.alive(x, y, (back + 1) % turns);
+                        } else if (v == 3) {
+                            predicted = map.alive(x, y, back) && map.passable(x, y, back);
+                        } else {
+                            // Flip a half turn, take one step, then look at where you land.
+                            int px = x + map.stepX(back), py = y + map.stepY(back);
+                            if (px < 0 || py < 0 || px >= w || py >= h || map.oob(px, py)) {
+                                predicted = false;
+                            } else if (v == 4) {
+                                predicted = map.alive(px, py, back);
+                            } else if (v == 5) {
+                                predicted = map.passable(x, y, back) && map.alive(px, py, back);
+                            } else if (v == 6) {
+                                predicted = map.alive(px, py, (back + turns - 1) % turns)
+                                        || map.alive(px, py, back)
+                                        || map.alive(px, py, (back + 1) % turns);
+                            } else {
+                                predicted = map.alive(px, py, (back + turns - 1) % turns)
+                                        && map.alive(px, py, back)
+                                        && map.alive(px, py, (back + 1) % turns);
+                            }
+                        }
+                        boolean actual = !transient_[s];
+                        if (predicted) predictedCore++;
+                        if (predicted != actual) { if (predicted) falsePos++; else falseNeg++; }
+                    }
+                }
+            }
+            System.out.printf("  %-30s predicts %6d in core; %5d wrong (%d false pos, %d false neg)%n",
+                    flipName[v], predictedCore, falsePos + falseNeg, falsePos, falseNeg);
+        }
+
+        // Where do the flip-move-alive disagreements sit? A wrapped heading would pile
+        // them onto a few headings; a rasterisation tie would spread them.
+        int[] errByHeading = new int[turns];
+        int errs = 0, errsWithAsymSegment = 0, asymTotal = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (map.oob(x, y)) continue;
+                for (int d = 0; d < turns; d++) {
+                    int s = (x + y * w) * turns + d;
+                    if (!alive[s]) continue;
+                    int back = (d + turns / 2) % turns;
+                    int px = x + map.stepX(back), py = y + map.stepY(back);
+                    boolean inPlay = px >= 0 && py >= 0 && px < w && py < h && !map.oob(px, py);
+                    boolean predicted = inPlay && map.alive(px, py, back);
+                    // Does the same physical segment agree when swept the other way?
+                    boolean asym = inPlay && map.passable(x, y, back) != map.passable(px, py, d);
+                    if (asym) asymTotal++;
+                    if (predicted != !transient_[s]) {
+                        errs++;
+                        errByHeading[d]++;
+                        if (asym) errsWithAsymSegment++;
+                    }
+                }
+            }
+        }
+        System.out.printf("%n  flip-move-alive errors by heading (%d total):%n  ", errs);
+        for (int d = 0; d < turns; d++) {
+            System.out.printf("%5d", errByHeading[d]);
+            if (d % 16 == 15) System.out.print("\n  ");
+        }
+        System.out.printf("%n  segments that disagree when swept in reverse: %d "
+                        + "(%d of the %d errors sit on one)%n",
+                asymTotal, errsWithAsymSegment, errs);
+
+        String[] variantName = {"reverse step, no gate", "reverse step, gated",
+                                "true predecessor", "arriving segment only"};
+        for (int v = 0; v < 4; v++) {
+            int predictedUnreachable = 0, falsePos = 0, falseNeg = 0;
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (map.oob(x, y)) continue;
+                    for (int d = 0; d < turns; d++) {
+                        if (!map.alive(x, y, d)) continue;
+                        boolean hasPred;
+                        if (v < 2) {
+                            // Flip 180, step once, then allow a turn of -1/0/+1 and ask
+                            // whether any of those states is navigable.
+                            int back = (d + turns / 2) % turns;
+                            int px = x + map.stepX(back), py = y + map.stepY(back);
+                            hasPred = false;
+                            if (v == 1 && !map.passable(x, y, back)) {
+                                // gated: the reverse step itself must be clear
+                            } else if (px >= 0 && py >= 0 && px < w && py < h && !map.oob(px, py)) {
+                                for (int t = -1; t <= 1; t++) {
+                                    if (map.alive(px, py, Math.floorMod(back + t, turns))) hasPred = true;
+                                }
+                            }
+                        } else if (v == 2) {
+                            // What the dynamics actually require, for reference.
+                            int px = x - map.stepX(d), py = y - map.stepY(d);
+                            hasPred = false;
+                            if (px >= 0 && py >= 0 && px < w && py < h && !map.oob(px, py)) {
+                                for (int t = -1; t <= 1; t++) {
+                                    int pd = Math.floorMod(d + t, turns);
+                                    if (map.alive(px, py, pd) && map.constrainTurn(px, py, pd, -t) == -t) {
+                                        hasPred = true;
+                                    }
+                                }
+                            }
+                        } else {
+                            // Collapsed form: all three predecessors need the same clear
+                            // segment, and each is then alive for free.
+                            int px = x - map.stepX(d), py = y - map.stepY(d);
+                            hasPred = px >= 0 && py >= 0 && px < w && py < h
+                                    && !map.oob(px, py) && map.passable(px, py, d);
+                        }
+                        boolean predicted = !hasPred;
+                        boolean actual = indegZero[(x + y * w) * turns + d];
+                        if (predicted) predictedUnreachable++;
+                        if (predicted != actual) { if (predicted) falsePos++; else falseNeg++; }
+                    }
+                }
+            }
+            System.out.printf("  %-22s predicts %6d; %5d wrong (%d false pos, %d false neg)%n",
+                    variantName[v], predictedUnreachable, falsePos + falseNeg, falsePos, falseNeg);
+        }
+
+        int resid = 0, residTransient = 0, ambigTransient = 0, ambigTotal = 0;
+        for (int s = 0; s < alive.length; s++) {
+            if (mergeResidue[s]) { resid++; if (transient_[s]) residTransient++; }
+            if (alive[s] && edge[s] < 0) { ambigTotal++; if (transient_[s]) ambigTransient++; }
+        }
+        System.out.printf("%nrecurrent core: %d of %d live states; %d peeled as unreachable%n",
+                live - peeled, live, peeled);
+        System.out.printf("  merge residue      %6d states, %d of them unreachable (%s)%n",
+                resid, residTransient, resid == residTransient ? "all" : "NOT all");
+        System.out.printf("  still unlabelled   %6d states, %d of them unreachable (%s)%n",
+                ambigTotal, ambigTransient, ambigTotal == ambigTransient ? "all" : "NOT all");
+
+        // ---- validate against the routes ----
+        int checked = 0, wrong = 0;
+        Map<String, Integer> failures = new java.util.TreeMap<>();
+        List<String> examples = new ArrayList<>();
+        for (String route : new String[]{"A", "B", "C", "D", "E"}) {
+            List<String> rows = Files.readAllLines(outDir.resolve("route_" + route + ".csv"));
+            for (int i = 1; i < rows.size(); i++) {
+                String[] v = rows.get(i).split(",");
+                int t = Integer.parseInt(v[0]);
+                int x = Integer.parseInt(v[1]), y = Integer.parseInt(v[2]), d = Integer.parseInt(v[3]);
+                if (map.oob(x, y) || !map.alive(x, y, d)) continue;
+                byte idx = edge[(x + y * w) * turns + d];
+                checked++;
+                if (idx >= 0 && EDGES[idx].contains(route)) continue;
+                wrong++;
+                boolean inRegion = region[x + y * w] >= 0;
+                failures.merge(route + " on " + (idx < 0 ? "unassigned" : EDGES[idx])
+                        + (inRegion ? " (seeded)" : " (junction)"), 1, Integer::sum);
+                if (examples.size() < 10) {
+                    examples.add(String.format("  %s t=%d (%d,%d,d=%d) -> %s %s", route, t, x, y, d,
+                            idx < 0 ? "unassigned" : EDGES[idx], inRegion ? "seeded" : "junction"));
+                }
+            }
+        }
+        System.out.printf("validation: %d route states checked, %d wrong%n", checked, wrong);
+        for (var e : failures.entrySet()) System.out.printf("  %-32s %d%n", e.getKey(), e.getValue());
+        examples.forEach(System.out::println);
+
+        int[] perEdge = new int[EDGES.length];
+        for (byte b : edge) if (b >= 0) perEdge[b]++;
+        System.out.printf("%n%-8s %9s%n", "edge", "states");
+        for (int i = 0; i < EDGES.length; i++) System.out.printf("%-8s %9d%n", EDGES[i], perEdge[i]);
+
+        // The order each route meets its edges. If the map is right this reproduces the
+        // stated circuits exactly, which checks the labelling and the claimed edge order
+        // against each other rather than either against itself.
+        System.out.println();
+        int[] palette = {0xE41A1C, 0x377EB8, 0x4DAF4A, 0x984EA3, 0xFF7F00,
+                0xA65628, 0xF781BF, 0x00CED1, 0x999999, 0x000000};
+        for (String route : new String[]{"A", "B", "C", "D", "E"}) {
+            List<String> rows = Files.readAllLines(outDir.resolve("route_" + route + ".csv"));
+            List<int[]> path = new ArrayList<>();
+            StringBuilder seq = new StringBuilder();
+            int runStart = 0, prev = -2;
+            for (int i = 1; i < rows.size(); i++) {
+                String[] v = rows.get(i).split(",");
+                int t = Integer.parseInt(v[0]);
+                int x = Integer.parseInt(v[1]), y = Integer.parseInt(v[2]), d = Integer.parseInt(v[3]);
+                path.add(new int[]{t, x, y, d});
+                int idx = (map.oob(x, y) || !map.alive(x, y, d)) ? -1 : edge[(x + y * w) * turns + d];
+                if (idx != prev) {
+                    if (prev != -2) seq.append(prev < 0 ? "?" : EDGES[prev])
+                            .append('[').append(runStart).append('-').append(t - 1).append("] ");
+                    prev = idx;
+                    runStart = t;
+                }
+            }
+            seq.append(prev < 0 ? "?" : EDGES[prev]).append('[').append(runStart).append("-end]");
+            System.out.printf("route %s: %s%n", route, seq);
+
+            BufferedImage img = javax.imageio.ImageIO.read(preset.mapPath().toFile());
+            int scale = 2;
+            BufferedImage out = new BufferedImage(w * scale, h * scale, BufferedImage.TYPE_INT_RGB);
+            for (int y = 0; y < h * scale; y++) {
+                for (int x = 0; x < w * scale; x++) {
+                    int rgb = img.getRGB(x / scale, y / scale) & 0xFFFFFF;
+                    out.setRGB(x, y, rgb == 0x000000 ? 0x000000
+                            : rgb == 0xFF7F27 ? 0xF7E0CC : 0xE6E6E6);
+                }
+            }
+            Graphics2D g = out.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setStroke(new java.awt.BasicStroke(2.4f, java.awt.BasicStroke.CAP_ROUND,
+                    java.awt.BasicStroke.JOIN_ROUND));
+            for (int i = 1; i < path.size(); i++) {
+                int[] a = path.get(i - 1), b = path.get(i);
+                if (Math.hypot(b[1] - a[1], b[2] - a[2]) > 20) continue;
+                int idx = (map.oob(b[1], b[2]) || !map.alive(b[1], b[2], b[3]))
+                        ? -1 : edge[(b[1] + b[2] * w) * turns + b[3]];
+                g.setColor(new Color(idx < 0 ? 0x000000 : palette[idx]));
+                g.drawLine(a[1] * scale, a[2] * scale, b[1] * scale, b[2] * scale);
+            }
+            g.dispose();
+            javax.imageio.ImageIO.write(out, "png",
+                    outDir.resolve("edges_" + route + ".png").toFile());
+        }
+        System.out.println();
+        for (int i = 0; i < EDGES.length; i++) {
+            System.out.printf("  %-6s #%06X%n", EDGES[i], palette[i]);
+        }
+
+        // Pixelwise view: one hue per edge, chosen by whichever edge owns the most headings
+        // at that pixel, desaturated by half for every further edge sharing it. So a pixel
+        // used by a single edge reads as its pure colour and a four-way crossing reads
+        // almost grey, which makes the shared stretches obvious at a glance.
+        BufferedImage px = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        int[] shared = new int[6];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (map.oob(x, y)) { px.setRGB(x, y, 0x000000); continue; }
+                int[] tally = new int[EDGES.length];
+                int liveHere = 0;
+                for (int d = 0; d < turns; d++) {
+                    if (!map.alive(x, y, d)) continue;
+                    liveHere++;
+                    byte idx = edge[(x + y * w) * turns + d];
+                    if (idx >= 0) tally[idx]++;
+                }
+                if (liveHere == 0) { px.setRGB(x, y, 0x202020); continue; }
+                // Hue comes from a fixed priority — the first edge in canonical order
+                // present at this pixel. Choosing by whichever edge owned the most headings
+                // made the colour flip between neighbouring pixels over a one-heading
+                // difference, which drowned the region boundaries in noise.
+                int best = -1, distinct = 0;
+                for (int i = 0; i < tally.length; i++) {
+                    if (tally[i] == 0) continue;
+                    distinct++;
+                    if (best < 0) best = i;
+                }
+                if (best < 0) { px.setRGB(x, y, 0x606060); continue; }
+                shared[Math.min(distinct, shared.length - 1)]++;
+                float sat = (float) Math.pow(0.5, distinct - 1);
+                px.setRGB(x, y, Color.HSBtoRGB(best / (float) EDGES.length, sat, 0.98f));
+            }
+        }
+        BufferedImage big = new BufferedImage(w * 2, h * 2, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < h * 2; y++) {
+            for (int x = 0; x < w * 2; x++) big.setRGB(x, y, px.getRGB(x / 2, y / 2));
+        }
+        javax.imageio.ImageIO.write(big, "png", outDir.resolve("edgemap.png").toFile());
+        System.out.printf("%npixels carrying n edges:");
+        for (int i = 1; i < shared.length; i++) System.out.printf("  %d:%d", i, shared[i]);
+        System.out.println();
+        for (int i = 0; i < EDGES.length; i++) {
+            System.out.printf("  %-6s hue %.2f  #%06X%n", EDGES[i], i / (float) EDGES.length,
+                    Color.HSBtoRGB(i / (float) EDGES.length, 1f, 0.98f) & 0xFFFFFF);
+        }
+
+        Files.createDirectories(outDir);
+        Files.write(outDir.resolve("edgemap.bin"), edge);
+        StringBuilder doc = new StringBuilder();
+        doc.append("edge map for ").append(preset.mapPath()).append('\n');
+        doc.append("byte per state, index = (x + y*").append(w).append(")*")
+                .append(turns).append(" + heading\n");
+        doc.append("value -1 = not navigable or unassigned; otherwise:\n");
+        for (int i = 0; i < EDGES.length; i++) doc.append("  ").append(i).append(" = ")
+                .append(EDGES[i]).append('\n');
+        Files.writeString(outDir.resolve("edgemap.txt"), doc.toString());
+        System.out.println("\n-> " + outDir.resolve("edgemap.bin"));
+    }
+
+    private static String key(int region, boolean red, int d) {
+        String half = red ? ((d > 16 && d < 48) ? "W" : "E") : ((d > 0 && d < 32) ? "S" : "N");
+        return region + "/" + half;
+    }
+
+    /**
+     * Which edge of the route graph each navigable {@code (x, y, heading)} belongs to.
+     * <p>
+     * An edge is a stretch between two vertices, and a vertex is where routes part or
+     * join. So a state's edge is fixed by what it can still reach and what could have
+     * reached it: from a state on the inbound edge of a decision point both outcomes are
+     * still available, while a state past the decision can only reach the one it committed
+     * to. The reverse holds at merges.
+     * <p>
+     * Reachability is taken in the state graph — successors of {@code (x, y, h)} are the
+     * turns that survive the wall veto — and is truncated at the marker lines, so what is
+     * computed is the set of markers reachable <em>first</em> rather than eventually.
+     * Without that truncation every state upstream reaches everything and nothing
+     * separates.
+     */
+    public static void edgeMap(PresetScenarioParameter preset, Path annotated, Path outDir)
+            throws IOException {
+        NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
+                Math.round(preset.turningRadius()));
+        int w = map.width(), h = map.height(), turns = Params.TURNS;
+        int states = w * h * turns;
+
+        BufferedImage ann = javax.imageio.ImageIO.read(annotated.toFile());
+        // Marker lines, in the order used for the signature bits.
+        int[] markerColour = {0xED1C24, 0xFFAEC9, 0xC3C3C3};
+        String[] markerName = {"red", "rose", "silver"};
+
+        // Each colour has two separate lines; split them so the six are distinguishable.
+        List<List<int[]>> lines = new ArrayList<>();
+        List<String> lineNames0 = new ArrayList<>();
+        List<String> lineNames = lineNames0;
+        for (int c = 0; c < markerColour.length; c++) {
+            List<int[]> px = new ArrayList<>();
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if ((ann.getRGB(x, y) & 0xFFFFFF) == markerColour[c] && !map.oob(x, y)) {
+                        px.add(new int[]{x, y});
+                    }
+                }
+            }
+            // Split into connected components. Sorting by x+y and cutting at the largest
+            // gap fails whenever two lines occupy overlapping diagonals, which the silver
+            // pair does: their x+y ranges interleave and the cut lands mid-line.
+            Set<Long> pool = new HashSet<>();
+            for (int[] p : px) pool.add(((long) p[0] << 20) | p[1]);
+            int part = 0;
+            while (!pool.isEmpty()) {
+                long seed = pool.iterator().next();
+                ArrayDeque<Long> q = new ArrayDeque<>();
+                q.add(seed);
+                pool.remove(seed);
+                List<int[]> blob = new ArrayList<>();
+                while (!q.isEmpty()) {
+                    long k = q.poll();
+                    int bx = (int) (k >> 20), by = (int) (k & 0xFFFFF);
+                    blob.add(new int[]{bx, by});
+                    for (int dy = -1; dy <= 1; dy++) {
+                        for (int dx = -1; dx <= 1; dx++) {
+                            long nk = ((long) (bx + dx) << 20) | (by + dy);
+                            if (pool.remove(nk)) q.add(nk);
+                        }
+                    }
+                }
+                lines.add(blob);
+                lineNames.add(markerName[c] + "-" + (++part));
+            }
+        }
+
+        // dabnt walls cut the rose lines into fragments, so components alone over-count
+        // the markers. Fragments sharing an axis and position are one line.
+        List<List<int[]>> merged = new ArrayList<>();
+        List<String> mergedNames = new ArrayList<>();
+        List<int[]> mergedAxis = new ArrayList<>();
+        for (int i = 0; i < lines.size(); i++) {
+            List<int[]> blob = lines.get(i);
+            int minX = Integer.MAX_VALUE, maxX = -1, minY = Integer.MAX_VALUE, maxY = -1;
+            for (int[] p : blob) {
+                minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+                minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
+            }
+            boolean vertical = (maxX - minX) < (maxY - minY);
+            int at = vertical ? minX : minY;
+            int found = -1;
+            for (int j = 0; j < merged.size(); j++) {
+                if (mergedAxis.get(j)[0] == (vertical ? 1 : 0) && mergedAxis.get(j)[1] == at
+                        && mergedNames.get(j).startsWith(lineNames.get(i).split("-")[0])) {
+                    found = j;
+                }
+            }
+            if (found < 0) {
+                merged.add(new ArrayList<>(blob));
+                mergedNames.add(lineNames.get(i).split("-")[0] + "@" + at);
+                mergedAxis.add(new int[]{vertical ? 1 : 0, at});
+            } else {
+                merged.get(found).addAll(blob);
+            }
+        }
+        lines = merged;
+        lineNames = mergedNames;
+        for (int i = 0; i < lines.size(); i++) {
+            System.out.printf("  %-9s %3d navigable px%n", lineNames.get(i), lines.get(i).size());
+        }
+
+        // A marker is a line the boid steps across, not a pixel it lands on: the lines are
+        // one pixel wide and a step covers nearly four, so occupancy misses almost every
+        // crossing. Each line becomes a span, and a transition is tested against it.
+        int[][] span = new int[lines.size()][];      // {vertical? 1 : 0, at, lo, hi}
+        for (int i = 0; i < lines.size(); i++) {
+            List<int[]> px = lines.get(i);
+            int minX = Integer.MAX_VALUE, maxX = -1, minY = Integer.MAX_VALUE, maxY = -1;
+            for (int[] p : px) {
+                minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]);
+                minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
+            }
+            boolean vertical = (maxX - minX) < (maxY - minY);
+            span[i] = vertical ? new int[]{1, minX, minY, maxY} : new int[]{0, minY, minX, maxX};
+            System.out.printf("  %-9s %s at %d, spanning %d-%d%n", lineNames.get(i),
+                    vertical ? "vertical" : "horizontal", span[i][1], span[i][2], span[i][3]);
+        }
+
+        // Reverse BFS from each marker. Seeds are the states a marker-crossing step leaves
+        // from; expansion stops at any step that crosses any marker, so what accumulates is
+        // the set of markers reachable first.
+        int[] signature = new int[states];
+        for (int m = 0; m < lines.size(); m++) {
+            ArrayDeque<Integer> queue = new ArrayDeque<>();
+            boolean[] seen = new boolean[states];
+
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (map.oob(x, y)) continue;
+                    for (int d = 0; d < turns; d++) {
+                        if (!map.alive(x, y, d)) continue;
+                        for (int t = -1; t <= 1; t++) {
+                            if (map.constrainTurn(x, y, d, t) != t) continue;
+                            int nd = Math.floorMod(d + t, turns);
+                            int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
+                            if (crosses(span[m], x, y, nx, ny)) {
+                                int s = (x + y * w) * turns + d;
+                                if (!seen[s]) { seen[s] = true; signature[s] |= (1 << m); queue.add(s); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            while (!queue.isEmpty()) {
+                int s = queue.poll();
+                int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+                int px = x - map.stepX(d), py = y - map.stepY(d);
+                if (px < 0 || py < 0 || px >= w || py >= h || map.oob(px, py)) continue;
+                boolean blocked = false;
+                for (int[] sp : span) if (crosses(sp, px, py, x, y)) blocked = true;
+                if (blocked) continue;
+                for (int t = -1; t <= 1; t++) {
+                    int pd = Math.floorMod(d - t, turns);
+                    if (!map.alive(px, py, pd)) continue;
+                    if (map.constrainTurn(px, py, pd, t) != t) continue;
+                    int p = (px + py * w) * turns + pd;
+                    if (seen[p]) continue;
+                    seen[p] = true;
+                    signature[p] |= (1 << m);
+                    queue.add(p);
+                }
+            }
+        }
+
+        // Backward half of the same rule. At a merge, a state reachable from both inbound
+        // edges is on the outbound one; reachable from only one, it is still on that one.
+        // Forward BFS from where each marker-crossing lands, stopping at markers again.
+        int[] behind = new int[states];
+        for (int m = 0; m < lines.size(); m++) {
+            ArrayDeque<Integer> queue = new ArrayDeque<>();
+            boolean[] seen = new boolean[states];
+
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (map.oob(x, y)) continue;
+                    for (int d = 0; d < turns; d++) {
+                        if (!map.alive(x, y, d)) continue;
+                        for (int t = -1; t <= 1; t++) {
+                            if (map.constrainTurn(x, y, d, t) != t) continue;
+                            int nd = Math.floorMod(d + t, turns);
+                            int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h || map.oob(nx, ny)) continue;
+                            if (!crosses(span[m], x, y, nx, ny)) continue;
+                            int s = (nx + ny * w) * turns + nd;
+                            if (!seen[s]) { seen[s] = true; behind[s] |= (1 << m); queue.add(s); }
+                        }
+                    }
+                }
+            }
+
+            while (!queue.isEmpty()) {
+                int s = queue.poll();
+                int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+                for (int t = -1; t <= 1; t++) {
+                    if (map.constrainTurn(x, y, d, t) != t) continue;
+                    int nd = Math.floorMod(d + t, turns);
+                    int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || map.oob(nx, ny)) continue;
+                    if (!map.alive(nx, ny, nd)) continue;
+                    boolean blocked = false;
+                    for (int[] sp : span) if (crosses(sp, x, y, nx, ny)) blocked = true;
+                    if (blocked) continue;
+                    int n = (nx + ny * w) * turns + nd;
+                    if (seen[n]) continue;
+                    seen[n] = true;
+                    behind[n] |= (1 << m);
+                    queue.add(n);
+                }
+            }
+        }
+
+        // An edge is a (behind, ahead) pair: what could have led here, and what is still
+        // reachable. Either alone merges distinct stretches that share an outlook.
+        Map<Long, Integer> counts = new java.util.LinkedHashMap<>();
+        Map<Long, Map<String, Integer>> byRoute = new java.util.LinkedHashMap<>();
+        int live = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (map.oob(x, y)) continue;
+                for (int d = 0; d < turns; d++) {
+                    if (!map.alive(x, y, d)) continue;
+                    live++;
+                    int s = (x + y * w) * turns + d;
+                    counts.merge(((long) behind[s] << 8) | signature[s], 1, Integer::sum);
+                }
+            }
+        }
+        for (String name : new String[]{"A", "B", "C", "D", "E"}) {
+            Path f = outDir.resolve("route_" + name + ".csv");
+            if (!Files.exists(f)) continue;
+            List<String> rows = Files.readAllLines(f);
+            for (int i = 1; i < rows.size(); i++) {
+                String[] v = rows.get(i).split(",");
+                int x = Integer.parseInt(v[1]), y = Integer.parseInt(v[2]), d = Integer.parseInt(v[3]);
+                if (map.oob(x, y) || !map.alive(x, y, d)) continue;
+                int s = (x + y * w) * turns + d;
+                byRoute.computeIfAbsent(((long) behind[s] << 8) | signature[s],
+                        k -> new java.util.TreeMap<>()).merge(name, 1, Integer::sum);
+            }
+        }
+
+        System.out.printf("%n%d live states, %d (behind, ahead) classes, "
+                + "%d of them visited by a route%n", live, counts.size(), byRoute.size());
+        System.out.printf("%n%-24s %-24s %8s   %s%n", "behind", "ahead", "states", "routes");
+        List<Long> keys = new ArrayList<>(byRoute.keySet());
+        keys.sort((p, q) -> counts.get(q) - counts.get(p));
+        for (long k : keys) {
+            System.out.printf("%-24s %-24s %8d   %s%n",
+                    describeMarkers((int) (k >> 8), lineNames),
+                    describeMarkers((int) (k & 0xFF), lineNames),
+                    counts.get(k), byRoute.get(k));
+        }
+    }
+
+    private static String describeMarkers(int mask, List<String> names) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < names.size(); i++) {
+            if ((mask & (1 << i)) != 0) sb.append(sb.length() > 0 ? "+" : "").append(names.get(i));
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
+    }
+
+    /**
+     * Does the step from {@code (px,py)} to {@code (x,y)} cross a marker line?
+     *
+     * @param span {@code {vertical?, at, lo, hi}} — the line's axis, position and extent
+     */
+    private static boolean crosses(int[] span, int px, int py, int x, int y) {
+        boolean vertical = span[0] == 1;
+        int a = vertical ? px : py, b = vertical ? x : y;
+        if ((a < span[1]) == (b < span[1])) return false;      // both sides, no crossing
+        int lo = vertical ? Math.min(py, y) : Math.min(px, x);
+        int hi = vertical ? Math.max(py, y) : Math.max(px, x);
+        return hi >= span[2] && lo <= span[3];
+    }
+
+    /** The tick at which a route crosses the scoring-loop gate, or -1 if it never does. */
+    private static int gateTick(Engine engine, int x0, int y0, int d0, List<int[]> overrides) {
+        List<String> cross = new ArrayList<>();
+        traceRoute(engine, x0, y0, d0, overrides, 4000, cross);
+        for (String c : cross) {
+            if (c.startsWith("gate-S")) {
+                return Integer.parseInt(c.substring(c.indexOf('@') + 1, c.indexOf(' ')));
+            }
+        }
+        return -1;
+    }
+
+    /** Traces all five circuits and writes each to its own file. */
+    public static void traceDabRoutes(PresetScenarioParameter preset, int x0, int y0, int d0,
+                                      Path outDir) throws IOException {
+        Engine engine = new Boids2DEngine(withFlockSize(preset, 1));
+        Files.createDirectories(outDir);
+        int second = PsyboidSearch.SECOND;
+
+        System.out.printf("%s from (%d, %d) heading %d%n%n", preset.name(), x0, y0, d0);
+
+        NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
+                Math.round(preset.turningRadius()));
+        // Outer loop is the lavender of the annotation; the scoring loop is the map's own
+        // orange. Centroids of each serve as the pivot for measuring which way round a
+        // route goes.
+        BufferedImage ann = javax.imageio.ImageIO.read(
+                Path.of("areas", "dab_annotated.png").toFile());
+        double lx = 0, ly = 0, ln = 0, sx = 0, sy = 0, sn = 0;
+        for (int y = 0; y < ann.getHeight(); y++) {
+            for (int x = 0; x < ann.getWidth(); x++) {
+                int rgb = ann.getRGB(x, y) & 0xFFFFFF;
+                if (rgb == 0xC8BFE7) { lx += x; ly += y; ln++; }
+                if (rgb == 0xFF7F27) { sx += x; sy += y; sn++; }
+            }
+        }
+        final double lavX = lx / ln, lavY = ly / ln, scoX = sx / sn, scoY = sy / sn;
+        java.util.function.BiPredicate<Integer, Integer> inLavender =
+                (x, y) -> (ann.getRGB(x, y) & 0xFFFFFF) == 0xC8BFE7;
+        java.util.function.BiPredicate<Integer, Integer> inScoring =
+                (x, y) -> map.score(x, y) > 0;
+
+        // Exit 1 is gate-A (tick 22), exit 2 is gate-B (tick 122); the second override for
+        // B and D goes at whichever tick C and E reach the scoring gate.
+        // Exit 1 fires at 19 rather than 22 so that B and C finish within a tick of D and
+        // E. The scoring-loop branch is passed about three ticks before the gate line, so
+        // the second override starts five ticks early to still be running at the choice.
+        final int exit1 = 19, exit2 = 122;
+        int gateSofC = gateTick(engine, x0, y0, d0, List.of(new int[]{exit1, 4 * second, +1}));
+        int gateSofE = gateTick(engine, x0, y0, d0, List.of(new int[]{exit2, 4 * second, +1}));
+        System.out.printf("exit 1 at %d -> gate-S at %d;  exit 2 at %d -> gate-S at %d%n",
+                exit1, gateSofC, exit2, gateSofE);
+
+        record Plan(String name, List<int[]> overrides, String description) {}
+        List<Plan> plans = List.of(
+                new Plan("A", List.of(), "main loop anticlockwise, no score"),
+                new Plan("C", List.of(new int[]{exit1, 4 * second, +1}),
+                        "exit 1, anticlockwise outer, clockwise scoring"),
+                new Plan("E", List.of(new int[]{exit2, 4 * second, +1}),
+                        "exit 2, clockwise outer, clockwise scoring"),
+                new Plan("B", List.of(new int[]{exit1, 4 * second, +1},
+                        new int[]{gateSofC - 5, second, +1}),
+                        "exit 1, anticlockwise outer, anticlockwise scoring"),
+                new Plan("D", List.of(new int[]{exit2, 4 * second, +1},
+                        new int[]{gateSofE - 5, second, +1}),
+                        "exit 2, clockwise outer, anticlockwise scoring"));
+
+        System.out.printf("%n%-6s %7s %7s %7s %9s %9s   %s%n", "route", "ticks",
+                "closed", "scores", "outer", "scoring", "gates");
+        System.out.println("  (winding: positive = clockwise as drawn)");
+        for (Plan plan : plans) {
+            List<String> cross = new ArrayList<>();
+            List<int[]> r = traceRoute(engine, x0, y0, d0, plan.overrides(), 4000, cross);
+            int scoring = 0;
+            for (int[] p : r) if (p[0] >= 0 && map.score(p[1], p[2]) > 0) scoring++;
+
+            List<int[]> marks = new ArrayList<>();
+            for (String c : cross) {
+                String pos = c.substring(c.indexOf('(') + 1, c.indexOf(')'));
+                marks.add(new int[]{Integer.parseInt(pos.split(",")[0]),
+                        Integer.parseInt(pos.split(",")[1])});
+            }
+            System.out.printf("%-6s %7d %7s %7d %+9.2f %+9.2f   %s%n",
+                    plan.name(), r.size() - 1, r.get(r.size() - 1)[0] < 0 ? "yes" : "no",
+                    scoring, winding(r, lavX, lavY, inLavender),
+                    winding(r, scoX, scoY, inScoring), cross);
+            write(outDir.resolve("route_" + plan.name() + ".csv"), r);
+            drawRoute(withFlockSize(preset, 1), r, marks,
+                    outDir.resolve("route_" + plan.name() + ".png"), 2);
+        }
+        System.out.printf("%nouter-loop pivot (%.0f, %.0f), scoring pivot (%.0f, %.0f)%n",
+                lavX, lavY, scoX, scoY);
+        System.out.println("-> " + outDir);
+
+    }
+
+    private static void write(Path file, List<int[]> path) throws IOException {
+        StringBuilder sb = new StringBuilder("tick,x,y,d\n");
+        for (int[] p : path) {
+            if (p[0] < 0) continue;
+            sb.append(p[0]).append(',').append(p[1]).append(',')
+                    .append(p[2]).append(',').append(p[3]).append('\n');
+        }
+        Files.writeString(file, sb.toString());
     }
 
     /** One row of {@code data/searches.tsv}, enough to replay the line it records. */
@@ -3476,7 +4741,9 @@ picks, never in what is available to it.
     }
 
     public static void main(String[] args) throws IOException {
-        holdoutCasesPlinko();
+        traceDabRoutes(PresetScenarioParameter.DABNT, 270, 156, 32, Path.of("routes"));
+        buildEdgeMap(PresetScenarioParameter.DABNT,
+                Path.of("areas", "dabnt_annotated.png"), Path.of("routes"));
         if (true) return;
     }
 

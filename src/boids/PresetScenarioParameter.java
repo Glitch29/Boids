@@ -12,6 +12,7 @@ public enum PresetScenarioParameter implements ScenarioParameter{
     OUTLOOPED ("outlooped.png", 40f, 20),
     DAB ("dab.png", 40f, 4),
     BERT ("bert.png", 40f, 4),
+    DABNT ("dabnt.png", 40f, 4),
     DAISY ("daisy.png", 40f, 10),
     BLOSSOM ("blossom.png", 40f, 10);
 
