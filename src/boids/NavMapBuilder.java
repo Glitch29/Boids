@@ -4,6 +4,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 /**
  * Computes the viability kernel of a play area: every (position, heading) from which a
@@ -24,8 +25,15 @@ public final class NavMapBuilder {
 
     private static final int SCORE_ORANGE = 0xFF7F27;
 
-    /** {@code #000000} is out of bounds, anything else is traversable. */
+    /**
+     * {@code #000000} is out of bounds, anything else is traversable.
+     * <p>
+     * The path is resolved through {@link MapStore} first, so a caller naming a mutable
+     * PNG still gets the frozen version — a navmap built here can never belong to a map
+     * that has since been edited.
+     */
     public static NavMap buildFromPng(Path png, int radius) throws IOException {
+        png = MapStore.resolve(png);
         BufferedImage img = ImageIO.read(png.toFile());
         if (img == null) throw new IOException("not a readable image: " + png);
 
@@ -43,26 +51,110 @@ public final class NavMapBuilder {
         return build(oob, score, w, h, radius);
     }
 
+    /**
+     * Which direction of travel a state has to survive to count as navigable.
+     * <p>
+     * {@link #FORWARD} is the viability kernel proper: a boid here can keep flying
+     * forever. {@link #BIDIRECTIONAL} additionally requires that a boid could have got
+     * here, which is what makes every navigable state a state the simulation can actually
+     * exhibit rather than only one it can be placed in.
+     */
+    public enum Navigability {
+        /** Infinite future. Half the live states on a typical map have no possible past. */
+        FORWARD,
+        /** Infinite future and infinite past. The default, and what spawning wants. */
+        BIDIRECTIONAL
+    }
+
     public static NavMap build(boolean[] oob, int[] score, int width, int height, int radius) {
+        return build(oob, score, width, height, radius, Navigability.BIDIRECTIONAL);
+    }
+
+    public static NavMap build(boolean[] oob, int[] score, int width, int height, int radius,
+                               Navigability navigability) {
         int turns = Params.TURNS;
-        double speed = Params.speed(radius);
 
         int[] stepX = new int[turns];
         int[] stepY = new int[turns];
-        for (int h = 0; h < turns; h++) {
+        steps(radius, stepX, stepY);
+
+        int[][] path = segmentOffsets(stepX, stepY);
+        long[] passable = passable(oob, width, height, path);
+        long[] alive = kernel(oob, width, height, stepX, stepY, passable);
+        if (navigability == Navigability.BIDIRECTIONAL) {
+            restrictToArrivable(alive, passable, width, height, stepX, stepY);
+        }
+
+        return new NavMap(width, height, radius, oob, score, stepX, stepY, alive, passable);
+    }
+
+    /**
+     * Drops live states with no infinite past, in a single sweep.
+     * <p>
+     * No iteration is needed even though "has an infinite past" is a fixed-point property,
+     * because it can be read off the forward kernel directly. A boid's motion is
+     * {@code (turn + move)*}, so running it backwards is
+     * {@code (inverse_move + inverse_turn)*}; {@code inverse_turn} is a turn, and
+     * {@code inverse_move} is {@code flip + move + flip}. Flip commutes with turn and is
+     * its own inverse, so the chain collapses to {@code flip + move + (turn + move)*} —
+     * and {@code (turn + move)*} is exactly what {@code alive} already answers.
+     * <p>
+     * The surviving set is closed under the dynamics in both directions, so removing a
+     * state can never strand another: a successor of a state with an infinite past has one
+     * too, through its predecessor.
+     */
+    private static void restrictToArrivable(long[] alive, long[] passable, int width, int height,
+                                            int[] stepX, int[] stepY) {
+        int turns = Params.TURNS;
+        long[] arrivable = new long[alive.length];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                for (int h = 0; h < turns; h++) {
+                    int s = (x + y * width) * turns + h;
+                    if (!get(alive, s)) continue;
+                    int back = (h + turns / 2) % turns;
+                    if (!get(passable, (x + y * width) * turns + back)) continue;
+                    int px = x + stepX[back], py = y + stepY[back];
+                    if (px < 0 || py < 0 || px >= width || py >= height) continue;
+                    if (get(alive, (px + py * width) * turns + back)) set(arrivable, s);
+                }
+            }
+        }
+        System.arraycopy(arrivable, 0, alive, 0, alive.length);
+    }
+
+    /**
+     * The per-heading step vectors, built so the table has the symmetry of a square.
+     * <p>
+     * Only the first octant is computed from trigonometry; the second is its reflection in
+     * {@code y = x} and the other six are quarter-turn rotations of those. Deriving them
+     * rather than evaluating {@code cos} and {@code sin} at each heading independently is
+     * what makes the symmetry exact: {@code cos(2pi(16-h)/64)} and {@code sin(2pi h/64)}
+     * are the same number in mathematics but not necessarily in floating point, and a
+     * one-ulp disagreement is enough to round to a different pixel.
+     */
+    private static void steps(int radius, int[] stepX, int[] stepY) {
+        int turns = Params.TURNS, oct = turns / 8, quad = turns / 4;
+        double speed = Params.speed(radius);
+
+        for (int h = 0; h <= oct; h++) {                       // 0 to 45 degrees
             stepX[h] = round(speed * Params.COS[h]);
             stepY[h] = round(speed * Params.SIN[h]);
+        }
+        for (int h = oct + 1; h <= quad; h++) {                // reflect in y = x
+            stepX[h] = stepY[quad - h];
+            stepY[h] = stepX[quad - h];
+        }
+        for (int h = quad + 1; h < turns; h++) {               // rotate a quarter turn
+            stepX[h] = -stepY[h - quad];
+            stepY[h] = stepX[h - quad];
+        }
+        for (int h = 0; h < turns; h++) {
             if (stepX[h] == 0 && stepY[h] == 0) {
                 throw new IllegalArgumentException(
                         "turning radius " + radius + " gives a sub-pixel step at heading " + h);
             }
         }
-
-        int[][] path = segmentOffsets(stepX, stepY);
-        long[] passable = passable(oob, width, height, path);
-        long[] alive = kernel(oob, width, height, stepX, stepY, passable);
-
-        return new NavMap(width, height, radius, oob, score, stepX, stepY, alive, passable);
     }
 
     /**
@@ -87,38 +179,50 @@ public final class NavMapBuilder {
      * consecutive samples.
      */
     private static int[][] segmentOffsets(int[] stepX, int[] stepY) {
-        int[][] path = new int[stepX.length][];
-        int half = stepX.length / 2;
-        for (int h = 0; h < half; h++) {
-            int dx = stepX[h];
-            int dy = stepY[h];
-            int steps = Math.max(Math.abs(dx), Math.abs(dy));
-
-            int[] offsets = new int[steps * 2];
-            for (int k = 1; k <= steps; k++) {
-                offsets[(k - 1) * 2] = round((double) k * dx / steps);
-                offsets[(k - 1) * 2 + 1] = round((double) k * dy / steps);
-            }
-            path[h] = offsets;
-        }
-        // The far half is the near half walked backwards, so a segment covers the same
-        // pixels whichever way it is flown. Sampling each heading independently does not
-        // give that: the samples exclude the origin and include the destination, and
-        // round() breaks .5 ties away from zero, so the path bulges away from whichever
-        // end it started at. 24 of the 64 headings hit such a tie.
-        for (int h = half; h < stepX.length; h++) {
-            int[] fwd = path[h - half];
-            int steps = fwd.length / 2;
-            int dx = stepX[h - half], dy = stepY[h - half];
-            int[] offsets = new int[steps * 2];
-            for (int k = 1; k <= steps; k++) {
-                int j = steps - k;                       // forward sample index, 0 = origin
-                offsets[(k - 1) * 2] = (j == 0 ? 0 : fwd[(j - 1) * 2]) - dx;
-                offsets[(k - 1) * 2 + 1] = (j == 0 ? 0 : fwd[(j - 1) * 2 + 1]) - dy;
-            }
-            path[h] = offsets;
-        }
+        int turns = stepX.length, oct = turns / 8, quad = turns / 4;
+        int[][] path = new int[turns][];
+        for (int h = 0; h <= oct; h++) path[h] = octantPath(stepX[h], stepY[h]);
+        for (int h = oct + 1; h <= quad; h++) path[h] = transform(path[quad - h], true);
+        for (int h = quad + 1; h < turns; h++) path[h] = transform(path[h - quad], false);
         return path;
+    }
+
+    /**
+     * The pixels a step passes through, for a heading in the first octant.
+     * <p>
+     * A boid moves several pixels a tick, so checking only where it lands would let it
+     * jump a wall thinner than its stride.
+     * <p>
+     * Sampling is exact integer arithmetic and takes <em>both</em> candidates where the
+     * line passes exactly between two pixels. That tie rule is not fussiness: it is the
+     * only choice that makes a segment cover the same pixels in both directions of
+     * travel. Rounding a tie one way makes the path bulge away from whichever end it
+     * started at, so the same physical segment came out passable flown one way and blocked
+     * flown the other — which it did, on 2,262 segments of dabnt, until 2026-08-16.
+     * Taking both is also the conservative reading: a boid may not squeeze through a
+     * corner the line only grazes.
+     */
+    private static int[] octantPath(int dx, int dy) {
+        int[] offsets = new int[4 * dx];
+        int n = 0;
+        for (int k = 1; k <= dx; k++) {
+            int y = k * dy / dx;
+            int rem = k * dy - y * dx;
+            if (2 * rem <= dx) { offsets[n++] = k; offsets[n++] = y; }
+            if (2 * rem >= dx && rem != 0) { offsets[n++] = k; offsets[n++] = y + 1; }
+        }
+        return Arrays.copyOf(offsets, n);
+    }
+
+    /** Reflects a path in {@code y = x}, or rotates it a quarter turn. */
+    private static int[] transform(int[] path, boolean reflect) {
+        int[] out = new int[path.length];
+        for (int i = 0; i < path.length; i += 2) {
+            int x = path[i], y = path[i + 1];
+            out[i] = reflect ? y : -y;
+            out[i + 1] = x;
+        }
+        return out;
     }
 
     /** Whether every pixel of each heading's step from each pixel stays in play. */

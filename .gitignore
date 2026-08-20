@@ -26,3 +26,16 @@ packet/
 
 # Session transcripts: kept locally and mirrored to Drive, never committed.
 transcripts/
+
+# Map ingests. The frozen PNG and its metadata are committed, because they are what an
+# old label replays against and cannot be recovered once the source PNG moves on.
+# Everything else in an ingest folder is derived output and is not.
+/ingests/**
+!/ingests/**/
+!/ingests/*/map.png
+!/ingests/*/display.png
+!/ingests/*/meta.txt
+
+# The 'latest' pointer is a machine-local directory junction.
+areas/*/latest
+areas/*/latest.txt

@@ -66,6 +66,11 @@ public final class Boids2DRenderer implements Renderer{
      * And doing it once in the constructor beats re-reading the file on every frame.
      */
     private static BufferedImage buildBackground(Path source) throws IOException {
+        source = MapStore.resolve(source);
+        // Inside an ingest, prefer the display map: pixels no boid can occupy read as wall
+        // rather than as open floor a reader would expect to see something happen in.
+        Path shown = source.resolveSibling("display.png");
+        if (java.nio.file.Files.isRegularFile(shown)) source = shown;
         BufferedImage src = ImageIO.read(source.toFile());
         if (src == null) throw new IOException("not a readable image: " + source);
 

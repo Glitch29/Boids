@@ -32,6 +32,20 @@ public final class Params {
     public static final int TURNS = 64;
 
     /**
+     * Which set of movement rules a map was built under.
+     * <p>
+     * Bumped whenever a change alters what a navmap computes from the same pixels, so an
+     * ingest records the physics it was built with and a stale one is visible rather than
+     * merely wrong. Speed and turning resolution are derived here and fixed for a given
+     * version, so they need no separate record.
+     * <p>
+     * 1: original. 2: segment sweeps made symmetric under D_4 and under reversal, sampled
+     * in exact integer arithmetic taking both pixels at a tie; navigability requires an
+     * infinite past as well as an infinite future.
+     */
+    public static final int PHYSICS = 2;
+
+    /**
      * Distance covered per tick: the chord of the TURNS-gon of the given radius.
      * <p>
      * This is what actually determines how tightly a boid turns, so it must be
