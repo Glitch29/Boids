@@ -32,6 +32,9 @@ public final class NavMap {
     private final int[] stepX;
     private final int[] stepY;
 
+    /** The pixels each heading's step passes through; see {@link #stepPath}. */
+    private final int[][] path;
+
     /** Bitsets over {@code (x, y, heading)}; see {@link #index}. */
     private final long[] alive;
     private final long[] passable;
@@ -44,7 +47,7 @@ public final class NavMap {
     };
 
     NavMap(int width, int height, int radius, boolean[] oob, int[] score,
-           int[] stepX, int[] stepY, long[] alive, long[] passable) {
+           int[] stepX, int[] stepY, int[][] path, long[] alive, long[] passable) {
         this.width = width;
         this.height = height;
         this.radius = radius;
@@ -52,6 +55,7 @@ public final class NavMap {
         this.score = score;
         this.stepX = stepX;
         this.stepY = stepY;
+        this.path = path;
         this.alive = alive;
         this.passable = passable;
     }
@@ -62,6 +66,16 @@ public final class NavMap {
 
     public int stepX(int heading) { return stepX[heading]; }
     public int stepY(int heading) { return stepY[heading]; }
+
+    /**
+     * The pixels this heading's step passes through, as {@code x, y} offset pairs from the
+     * origin, excluding the origin and ending on the step itself.
+     * <p>
+     * This is the sample set {@link #passable} was built from, so it is exactly what the
+     * collision test sees. Anything reasoning about where a boid is <em>between</em> two
+     * ticks wants those samples rather than a second derivation of them.
+     */
+    public int[] stepPath(int heading) { return path[heading]; }
 
     public boolean oob(int x, int y) { return oob[x + y * width]; }
 
@@ -115,8 +129,100 @@ public final class NavMap {
         return alive(x + stepX[next], y + stepY[next], next);
     }
 
-    int index(int x, int y, int heading) {
+    public int index(int x, int y, int heading) {
         return (x + y * width) * Params.TURNS + heading;
+    }
+
+    /**
+     * Where a boid in {@code state} ends up having asked for {@code turn}, or -1 if there is
+     * nowhere legal to go.
+     * <p>
+     * The request goes through {@link #constrainTurn}, so this is the steered move: what a
+     * boid asking for that turn actually does, veto included.
+     */
+    public int successor(int state, int turn) {
+        int turns = Params.TURNS;
+        int d = state % turns, cell = state / turns, x = cell % width, y = cell / width;
+        int got = constrainTurn(x, y, d, turn);
+        int nd = Math.floorMod(d + got, turns);
+        int nx = x + stepX[nd], ny = y + stepY[nd];
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height || !alive(nx, ny, nd)) return -1;
+        return index(nx, ny, nd);
+    }
+
+    /**
+     * Every state reachable from {@code state} in one tick, listed once each.
+     * <p>
+     * Not the same as asking for each of the three turns in turn: the veto can answer two
+     * different requests with the same turn, so a bare sweep of the requests reports the same
+     * successor twice. That is harmless when the answer feeds a set, and quietly wrong when it
+     * feeds a count — a graph built that way is not symmetric with
+     * {@link #steeredPredecessors}, which does report each predecessor once.
+     *
+     * @param out filled with the successors; must hold at least three
+     * @return how many there are
+     */
+    public int steeredSuccessors(int state, int[] out) {
+        int n = 0;
+        for (int turn = -1; turn <= 1; turn++) {
+            int u = successor(state, turn);
+            if (u < 0) continue;
+            boolean seen = false;
+            for (int i = 0; i < n && !seen; i++) seen = out[i] == u;
+            if (!seen) out[n++] = u;
+        }
+        return n;
+    }
+
+    /**
+     * Every state that can reach {@code state} in one tick, whatever it asked for.
+     * <p>
+     * There are only ever three candidates, and finding them needs no search. Run the tick
+     * backwards: flip the heading, take the step, undo the turn, flip back. The flip works
+     * because the step table is antipodally exact — {@code step(d + TURNS/2)} is precisely
+     * {@code -step(d)} — so the move inverts on the integer lattice rather than approximately.
+     * That leaves one pixel and three headings, and only the turn is unknown.
+     * <p>
+     * Candidates are then confirmed forwards, because arriving at a live state from a live
+     * state is not enough on its own: the segment between them still has to be clear, and a
+     * turn the veto refuses is not a turn that was taken.
+     *
+     * @param out filled with the predecessors; must hold at least three
+     * @return how many there are
+     */
+    public int steeredPredecessors(int state, int[] out) {
+        int turns = Params.TURNS;
+        int d = state % turns, cell = state / turns, x = cell % width, y = cell / width;
+        int back = (d + turns / 2) % turns;                     // flip
+        int px = x + stepX[back], py = y + stepY[back];         // move
+        if (px < 0 || py < 0 || px >= width || py >= height) return 0;
+        int n = 0;
+        for (int t = -1; t <= 1; t++) {
+            int pd = Math.floorMod(back + t + turns / 2, turns);  // turn, then flip back
+            if (!alive(px, py, pd)) continue;
+            int p = index(px, py, pd);
+            for (int ask = -1; ask <= 1; ask++) {
+                if (successor(p, ask) == state) { out[n++] = p; break; }
+            }
+        }
+        return n;
+    }
+
+    /** The same, but only those that arrive here by steering straight. */
+    public int unsteeredPredecessors(int state, int[] out) {
+        int turns = Params.TURNS;
+        int d = state % turns, cell = state / turns, x = cell % width, y = cell / width;
+        int back = (d + turns / 2) % turns;
+        int px = x + stepX[back], py = y + stepY[back];
+        if (px < 0 || py < 0 || px >= width || py >= height) return 0;
+        int n = 0;
+        for (int t = -1; t <= 1; t++) {
+            int pd = Math.floorMod(back + t + turns / 2, turns);
+            if (!alive(px, py, pd)) continue;
+            int p = index(px, py, pd);
+            if (successor(p, 0) == state) out[n++] = p;
+        }
+        return n;
     }
 
     private static boolean get(long[] bits, int i) {

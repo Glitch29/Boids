@@ -85,7 +85,7 @@ public final class NavMapBuilder {
             restrictToArrivable(alive, passable, width, height, stepX, stepY);
         }
 
-        return new NavMap(width, height, radius, oob, score, stepX, stepY, alive, passable);
+        return new NavMap(width, height, radius, oob, score, stepX, stepY, path, alive, passable);
     }
 
     /**

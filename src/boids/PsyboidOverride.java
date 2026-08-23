@@ -1,11 +1,17 @@
 package boids;
 
 /**
- * A movement override installed on a timeline.
+ * A movement override installed on a timeline: one boid, one turn, held for a stretch.
  * <p>
- * Deliberately empty. The branching search does not exist yet, so nothing implements
- * this and nothing calls it; {@link Sim.State} carries it forward untouched. It exists now
- * so the timeline shape is right before there is anything to put in it.
+ * One of the three {@link MovementControl}s a tick runs through — the flocking rules, this,
+ * and the collision veto — so a steering override is not a special case in the engine but
+ * another voice choosing from the same three turns. It runs after flocking and before the
+ * veto, which is what makes an override a request rather than a guarantee: it can ask for a
+ * turn the map will not allow, and {@link NavMap#constrainTurn} still has the last word.
+ * <p>
+ * Anything else wanting to steer implements {@link MovementControl} the same way, and
+ * anything wanting to watch registers with {@link Sim#register} as a {@link SimObserver}.
+ * Neither needs a change here.
  */
 public class PsyboidOverride implements MovementControl {
     private final int onset;

@@ -1774,8 +1774,423 @@ public final class SimTest {
      * step away â€” one-step would shatter every path edge, since its interior steps within
      * itself and only its last point steps out.
      */
+    /** A decomposition's result, for analyses that want to run on top of one. */
+    record Labelling(NavMap map, int[] live, int liveCount, int[] edge, int edges) {}
+
+    /**
+     * Where a second boid would have to be to stop a boid on {@code from} taking the wrong
+     * way out of it.
+     */
+    /**
+     * Two pictures of how well the clock holds, per pixel.
+     * <p>
+     * The first asks whether time passes at the right rate: a state's successors should read
+     * one tick ahead and its predecessors one behind, so the gap between the two averages
+     * should be two. More than two is a stretch, less is a squeeze.
+     * <p>
+     * The second asks the same of unsteered travel alone, and takes the worst heading at each
+     * pixel rather than the average, because one bad step is enough to make a distance
+     * measured through that pixel wrong.
+     */
+    public static void tickField(PresetScenarioParameter preset, boolean horizontal, int line,
+                                 int lo, int hi, int dir) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
+                l.edges());
+        NavMap map = l.map();
+        int[] edge = l.edge();
+        int w = map.width(), h = map.height(), turns = Params.TURNS;
+        double[] tick = m.tick();
+        int[] length = m.length();
+
+        double[] spread = new double[w * h], slowest = new double[w * h];
+        boolean[] hasSpread = new boolean[w * h], hasSlowest = new boolean[w * h];
+        int[] count = new int[w * h];
+        int[] preds = new int[3], succs = new int[3];
+        java.util.Arrays.fill(slowest, Double.MAX_VALUE);
+
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i];
+            int home = edge[s];
+            if (home < 0) continue;
+            int cell = s / turns;
+
+            double sumP = 0, sumS = 0;
+            int nP = 0, nS = 0;
+            int np = map.steeredPredecessors(s, preds);
+            for (int k = 0; k < np; k++) {
+                int p = preds[k];
+                if (edge[p] < 0) continue;
+                sumP += tick[p] - (edge[p] != home ? length[edge[p]] : 0);
+                nP++;
+            }
+            int ns = map.steeredSuccessors(s, succs);
+            for (int k = 0; k < ns; k++) {
+                int u = succs[k];
+                if (edge[u] < 0) continue;
+                sumS += tick[u] + (edge[u] != home ? length[home] : 0);
+                nS++;
+            }
+            if (nP > 0 && nS > 0) {
+                spread[cell] += sumS / nS - sumP / nP;
+                count[cell]++;
+                hasSpread[cell] = true;
+            }
+
+            int straight = map.successor(s, 0);
+            if (straight >= 0 && edge[straight] >= 0) {
+                double ahead = tick[straight] + (edge[straight] != home ? length[home] : 0);
+                slowest[cell] = Math.min(slowest[cell], ahead - tick[s]);
+                hasSlowest[cell] = true;
+            }
+        }
+        for (int i = 0; i < w * h; i++) if (count[i] > 0) spread[i] /= count[i];
+
+        System.out.printf("%n=== %s @%s: how well the clock holds ===%n",
+                preset.name(), preset.ingest().hash());
+        report("successors minus predecessors (want 2)", spread, hasSpread, 2);
+        report("unsteered step, worst per pixel (want 1)", slowest, hasSlowest, 1);
+
+        Path a = preset.ingest().output("edges", "tick_rate.png");
+        Path b = preset.ingest().output("edges", "tick_unsteered.png");
+        NavMapRender.writeField(map, spread, hasSpread, 2, 0.25, 0xD2382C, 0x2F6FD0, 2, a);
+        NavMapRender.writeField(map, slowest, hasSlowest, 1, 0.25, 0xE8C21E, 0x35A853, 2, b);
+        System.out.printf("wrote %s%nwrote %s%n", a, b);
+    }
+
+    private static void report(String what, double[] value, boolean[] has, double centre) {
+        java.util.List<Double> all = new ArrayList<>();
+        for (int i = 0; i < value.length; i++) if (has[i]) all.add(value[i]);
+        java.util.Collections.sort(all);
+        if (all.isEmpty()) return;
+        System.out.printf("%-42s %d pixels%n", what, all.size());
+        double[] at = {0, 0.01, 0.25, 0.5, 0.75, 0.99, 1};
+        StringBuilder line = new StringBuilder("   ");
+        for (double q : at) {
+            int k = (int) Math.min(all.size() - 1, Math.round(q * (all.size() - 1)));
+            line.append(String.format("%s=%.2f  ", q == 0 ? "min" : q == 1 ? "max"
+                    : String.format("p%02d", (int) (q * 100)), all.get(k)));
+        }
+        int off = 0;
+        for (double v : all) if (Math.abs(v - centre) > 0.1) off++;
+        System.out.println(line + String.format("| %d pixels off by >0.1", off));
+    }
+
+    /**
+     * As-flown journeys of a fixed length, against what the clock says they should have been.
+     * <p>
+     * Short runs from a cold start rather than long ones from a settled flock, because a
+     * settled flock is a few orbits repeated and the point is to sample the whole map. Every
+     * boid contributes one journey, so the number of runs falls as the flock grows and the
+     * corpus stays the same size — which keeps the comparison between flock sizes fair rather
+     * than letting the crowded cases dominate on volume.
+     * <p>
+     * Flock size is the variable of interest. One boid is the unsteered dynamics on their own
+     * and should match the clock closely; more boids means more time spent doing what the
+     * flock wants rather than what the map affords, and the gap between flown and estimated is
+     * exactly the error a weighting scheme would have to model.
+     */
+    public static void corpus(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir, int[] flockSizes, int perSize, int ticks)
+            throws IOException {
+        corpus(preset, horizontal, line, lo, hi, dir, flockSizes, perSize, ticks,
+                EdgeWeights.Scheme.UNIFORM);
+    }
+
+    public static void corpus(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir, int[] flockSizes, int perSize, int ticks,
+                              EdgeWeights.Scheme scheme) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
+                l.edges(), scheme);
+        NavMap map = l.map();
+        int[] edge = l.edge();
+
+        System.out.printf("%n=== %s @%s: %d-tick journeys, weighting %s ===%n",
+                preset.name(), preset.ingest().hash(), ticks, scheme);
+        System.out.printf("  %s%n", EdgeMetric.lastSolve());
+        System.out.printf("%-7s %8s %9s %9s %10s %8s %9s%n", "boids", "journeys",
+                "mean", "sd", "sd/mean", "routes", "shortest");
+        List<Double> spreads = new ArrayList<>();
+        Path file = preset.ingest().output("corpus", "journeys_" + ticks + ".tsv");
+        StringBuilder rows = new StringBuilder("boids\tseed\tboid\tfx\tfy\tfd\ttx\tty\ttd"
+                + "\tfromEdge\ttoEdge\tfromTick\ttoTick\testimate\terror\tshortestWasBest\n");
+
+        // A route's estimate is the tick difference between the endpoints plus the lengths it
+        // crosses, and the difference alone can be most of an edge either way — a boid that
+        // goes right round and comes back to the edge it started on reads as almost a whole
+        // edge backwards until the lap it actually flew is added back. So the search has to
+        // reach at least that far, which is a bound on the estimate rather than on the sum.
+        double total = 0;
+        for (int len : m.length()) total += len;
+        double cap = ticks + total;
+        for (int boids : flockSizes) {
+            int runs = Math.max(1, perSize / boids);
+            Engine engine = new Boids2DEngine(withFlockSize(preset, boids));
+            List<Double> errors = new ArrayList<>();
+            long routeTotal = 0;
+            int unusable = 0, journeys = 0, shortestBest = 0;
+            for (long seed = 0; seed < runs; seed++) {
+                Sim.State s = engine.init(seed);
+                int[] x0 = s.x.clone(), y0 = s.y.clone(), h0 = s.h.clone();
+                for (int t = 0; t < ticks; t++) s = engine.tick(s);
+                for (int i = 0; i < s.n; i++) {
+                    if (!map.alive(x0[i], y0[i], h0[i]) || !map.alive(s.x[i], s.y[i], s.h[i])) {
+                        unusable++;
+                        continue;
+                    }
+                    int from = map.index(x0[i], y0[i], h0[i]);
+                    int to = map.index(s.x[i], s.y[i], s.h[i]);
+                    double[] candidates = EdgeDistance.between(edge, m, from, to, cap);
+                    if (candidates.length == 0) { unusable++; continue; }
+                    routeTotal += candidates.length;
+                    journeys++;
+                    double best = EdgeDistance.closest(candidates, ticks);
+                    // Is the best route also the shortest? Only worth trusting the shortest as
+                    // a stand-in for the best if it usually is, and picking the best of a dozen
+                    // candidates against the known answer flatters the estimator either way.
+                    double shortest = Double.MAX_VALUE;
+                    for (double v : candidates) shortest = Math.min(shortest, v);
+                    boolean shortestWins = Math.abs(shortest - best) < 1e-9;
+                    if (shortestWins) shortestBest++;
+                    errors.add(best - ticks);
+                    rows.append(boids).append('\t').append(seed).append('\t').append(i)
+                            .append('\t').append(x0[i]).append('\t').append(y0[i]).append('\t').append(h0[i])
+                            .append('\t').append(s.x[i]).append('\t').append(s.y[i]).append('\t').append(s.h[i])
+                            .append('\t').append(edge[from]).append('\t').append(edge[to])
+                            .append('\t').append(String.format("%.4f", m.tick()[from]))
+                            .append('\t').append(String.format("%.4f", m.tick()[to]))
+                            .append('\t').append(String.format("%.4f", best))
+                            .append('\t').append(String.format("%.4f", best - ticks))
+                            .append('\t').append(shortestWins).append('\n');
+                }
+            }
+            if (unusable > 0) System.out.printf("  (%d journeys unusable)%n", unusable);
+            if (errors.isEmpty()) { System.out.printf("%-7d  no usable journeys%n", boids); continue; }
+            // Mean and spread of the estimate itself, not of its error against the interval.
+            // A clock that runs uniformly fast or slow everywhere still measures one distance
+            // against another perfectly well, so only the spread is a fault; the mean just
+            // says what a tick turned out to be worth.
+            double sum = 0;
+            for (double e : errors) sum += e + ticks;
+            double mean = sum / errors.size();
+            double var = 0;
+            for (double e : errors) var += (e + ticks - mean) * (e + ticks - mean);
+            double sd = Math.sqrt(var / Math.max(1, errors.size() - 1));
+            System.out.printf("%-7d %8d %9.2f %9.3f %9.3f%% %8.1f %8.1f%%%n", boids, journeys,
+                    mean, sd, 100 * sd / mean, routeTotal / (double) journeys,
+                    100.0 * shortestBest / journeys);
+            spreads.add(100 * sd / mean);
+        }
+        double lo2 = Double.MAX_VALUE, hi2 = -Double.MAX_VALUE;
+        for (double v : spreads) { lo2 = Math.min(lo2, v); hi2 = Math.max(hi2, v); }
+        System.out.printf("  spread across flock sizes: %.3f%% to %.3f%% (range %.3f)%n",
+                lo2, hi2, hi2 - lo2);
+
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, rows.toString());
+        System.out.printf("%nwrote %s (%d journeys)%n", file,
+                rows.chars().filter(c -> c == '\n').count() - 1);
+    }
+
+    /** Canonical paths, edge lengths and per-state ticks for a decomposed map. */
+    public static void metric(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
+                l.edges());
+        int w = l.map().width(), turns = Params.TURNS;
+        System.out.printf("%n=== %s @%s: canonical metric ===%n",
+                preset.name(), preset.ingest().hash());
+        System.out.printf("%-5s %7s %9s  %s%n", "edge", "length", "states", "tick range");
+        for (int e = 0; e < l.edges(); e++) {
+            double min = Double.MAX_VALUE, max = -Double.MAX_VALUE;
+            int n = 0;
+            for (int i = 0; i < l.liveCount(); i++) {
+                int s = l.live()[i];
+                if (l.edge()[s] != e) continue;
+                n++;
+                min = Math.min(min, m.tick()[s]);
+                max = Math.max(max, m.tick()[s]);
+            }
+            System.out.printf("%-5d %7d %9d  %.2f to %.2f%n", e, m.length()[e], n, min, max);
+        }
+        System.out.printf("%nways through with slack: %d; with no route at all: %d%n", m.slack(), m.broken());
+        System.out.printf("local-ordering violations: %d of %d states, worst by %.3f ticks%n", m.band(), l.liveCount(), EdgeMetric.lastWorstBand());
+        System.out.printf("  spread: %s%n", EdgeMetric.lastBandSpread());
+        System.out.printf("worst step along a canonical path: %.4f ticks (want 1.0000 exactly)%n", m.step());
+        System.out.printf("mean squared error from one tick per transition: %.4f%n", m.cost());
+        System.out.printf("solve: %s%n", EdgeMetric.lastSolve());
+
+        // Lengths add: going once round any cycle of the edge graph must total the same
+        // whichever way it is measured, or a distance carried across a boundary is a lie.
+        System.out.printf("%ncycle check: %s%n", cycleCheck(l, m));
+    }
+
+    private static String where(int state, int w, int turns) {
+        if (state < 0) return "-";
+        int d = state % turns, cell = state / turns;
+        return "(" + cell % w + "," + cell / w + "," + d + ")";
+    }
+
+    /**
+     * Confirms the clock is consistent with the transitions that cross edge boundaries: for
+     * every such step the shifted tick must advance by exactly one.
+     */
+    private static String cycleCheck(Labelling l, EdgeMetric.Metric m) {
+        double worst = 0;
+        int checked = 0;
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i];
+            for (int t = -1; t <= 1; t++) {
+                int u = l.map().successor(s, t);
+                if (u < 0 || l.edge()[u] < 0 || l.edge()[u] == l.edge()[s]) continue;
+                double r = m.tick()[u] + m.length()[l.edge()[s]] - m.tick()[s] - 1;
+                worst = Math.max(worst, Math.abs(r));
+                checked++;
+            }
+        }
+        return String.format("%d boundary steps, worst tick error %.4f", checked, worst);
+    }
+
+    /**
+     * Leader positions at a fixed distance along the followed edge, rather than at whichever
+     * boundary the envelope happened to be cut on.
+     */
+    public static void slice(PresetScenarioParameter preset, boolean horizontal, int line,
+                             int lo, int hi, int dir, int from, int keep) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
+                l.edges());
+        EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
+                l.liveCount(), from, keep);
+        EdgeInfluence.Lead lead = EdgeInfluence.lead(l.map(), l.edge(), l.live(), l.liveCount(),
+                from, keep, preset.turningRadius(), env);
+
+        double first = Double.MAX_VALUE, last = -Double.MAX_VALUE;
+        for (int s : env.envelope()) {
+            if (l.edge()[s] != from || Double.isNaN(m.tick()[s])) continue;
+            first = Math.min(first, m.tick()[s]);
+            last = Math.max(last, m.tick()[s]);
+        }
+        System.out.printf("%n=== %s: edge %d spans ticks %.1f to %.1f inside the envelope, "
+                        + "edge length %d ===%n", preset.name(), from, first, last, m.length()[from]);
+        System.out.printf("%n%-8s %-10s %-6s %s%n", "tau", "followers", "edge", "leader band along that edge");
+        for (double tau = Math.ceil(first); tau <= last; tau += Math.max(1, (last - first) / 8)) {
+            EdgeSlice.Slice s = EdgeSlice.at(l.map(), l.edge(), m, lead, from, tau, true, l.edges());
+            if (s.followers() == 0) continue;
+            boolean firstRow = true;
+            for (EdgeSlice.Band b : s.bands()) {
+                System.out.printf("%-8.1f %-10s %-6d %.1f to %.1f  (width %.1f ticks, %d states)%n",
+                        firstRow ? tau : Double.NaN, firstRow ? String.valueOf(s.followers()) : "",
+                        b.edge(), b.lo(), b.hi(), b.width(), b.count());
+                firstRow = false;
+            }
+        }
+
+        double mid = Math.rint((first + last) / 2);
+        EdgeSlice.Slice s = EdgeSlice.at(l.map(), l.edge(), m, lead, from, mid, true, l.edges());
+        Path out = preset.ingest().output("edges", "leaders_at_tick.png");
+        NavMapRender.write(l.map(), s.states(), 0x101318, 0xFFFFFF, 2, out);
+        System.out.printf("%nat tau=%.0f: %d followers, %d leader states drawn%n",
+                mid, s.followers(), count(s.states()));
+        System.out.printf("wrote %s%n", out);
+    }
+
+    /** Sizes of the sets the leader search runs over, before running it. */
+    public static void envelopeReport(PresetScenarioParameter preset, boolean horizontal,
+                                      int line, int lo, int hi, int dir, int from, int keep)
+            throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        EdgeInfluence.Envelope e = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
+                l.liveCount(), from, keep);
+        System.out.printf("%n=== %s: edge %d, keeping exit %d ===%n", preset.name(), from, keep);
+        System.out.printf("critical %d, envelope %d, terminal %d, source %d, live %d%n",
+                e.critical(), e.envelope().length, e.terminal().length, e.source().length,
+                l.liveCount());
+        int missing = EdgeInfluence.unreachableTerminals(l.map(), e);
+        System.out.printf("terminals no source reaches: %d%s%n", missing,
+                missing == 0 ? "  (every terminal is on a route from a source)" : "  <-- PHASE GAP");
+        EdgeInfluence.SourceKinds k = EdgeInfluence.sourceKinds(l.map(), e);
+        System.out.printf("sources %d: %d have a steered predecessor, %d an unsteered one; "
+                        + "inside the envelope %d and %d%n", k.total(), k.withSteered(),
+                k.withUnsteered(), k.steeredInEnvelope(), k.unsteeredInEnvelope());
+
+        EdgeInfluence.Lead lead = EdgeInfluence.lead(l.map(), l.edge(), l.live(), l.liveCount(),
+                from, keep, preset.turningRadius(), e);
+        System.out.printf("%d of %d sources can be led out, %d of %d terminals could have "
+                        + "been led there%n", lead.sourcesLed(), e.source().length,
+                lead.terminalsLed(), e.terminal().length);
+        System.out.printf("leaders at a source that can finish: %d states%n",
+                count(lead.atSources()));
+        System.out.printf("leaders at a terminal that could have led: %d states%n",
+                count(lead.atTerminals()));
+
+        Path a = preset.ingest().output("edges", "leaders_source.png");
+        Path b = preset.ingest().output("edges", "leaders_terminal.png");
+        NavMapRender.write(l.map(), lead.atSources(), 0x101318, 0xFFFFFF, 2, a);
+        NavMapRender.write(l.map(), lead.atTerminals(), 0x101318, 0xFFFFFF, 2, b);
+        System.out.printf("wrote %s%nwrote %s%n", a, b);
+    }
+
+    private static int count(long[] bits) {
+        int c = 0;
+        for (long v : bits) c += Long.bitCount(v);
+        return c;
+    }
+
+    public static void influence(PresetScenarioParameter preset, boolean horizontal, int line,
+                                 int lo, int hi, int dir, int from, int keep) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        EdgeInfluence.Result r = EdgeInfluence.analyse(l.map(), l.edge(), l.live(),
+                l.liveCount(), from, keep, preset.turningRadius());
+
+        System.out.printf("%n=== %s @%s: holding edge %d away from anything but edge %d ===%n",
+                preset.name(), preset.ingest().hash(), from, keep);
+        System.out.printf("%d critical states (one straight tick commits them elsewhere)%n",
+                r.critical());
+        System.out.printf("%d of those a turn still saves: %d by left, %d by right%n",
+                r.rescuable(), r.byTurn()[0], r.byTurn()[1]);
+        System.out.printf("%d states a second boid could hold to induce one; %d of those are "
+                        + "navigable, which is %.1f%% of the %d navigable states on the map%n",
+                r.influenceCount(), r.navigable(),
+                100.0 * r.navigable() / Math.max(1, l.liveCount()), l.liveCount());
+
+        long[] reachable = new long[r.influence().length];
+        for (int y = 0; y < l.map().height(); y++) {
+            for (int x = 0; x < l.map().width(); x++) {
+                for (int d = 0; d < Params.TURNS; d++) {
+                    int at = (x + y * l.map().width()) * Params.TURNS + d;
+                    if ((r.influence()[at >>> 6] & (1L << (at & 63))) == 0) continue;
+                    if (l.map().alive(x, y, d)) reachable[at >>> 6] |= 1L << (at & 63);
+                }
+            }
+        }
+        // White for a pixel that works from every heading — the opposite reading to the red
+        // a navmap uses for a pixel that works from none.
+        Path dir1 = preset.ingest().output("edges", "influence.png");
+        NavMapRender.write(l.map(), r.influence(), 0x101318, 0xFFFFFF, 2, dir1);
+        Path dir2 = preset.ingest().output("edges", "influence_navigable.png");
+        NavMapRender.write(l.map(), reachable, 0x101318, 0xFFFFFF, 2, dir2);
+        System.out.printf("%d pixels induce a saving turn from every heading, %d of them "
+                        + "with every heading navigable%n",
+                allHeadings(l.map(), r.influence()), allHeadings(l.map(), reachable));
+        System.out.printf("wrote %s%nwrote %s%n", dir1, dir2);
+    }
+
     public static void decompose(PresetScenarioParameter preset, boolean horizontal,
                                  int line, int lo, int hi, int dir) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        describe(preset, horizontal, line, lo, hi, dir, l);
+    }
+
+    static Labelling labelFor(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir) throws IOException {
+        return label(preset, horizontal, line, lo, hi, dir);
+    }
+
+    private static Labelling label(PresetScenarioParameter preset, boolean horizontal,
+                                   int line, int lo, int hi, int dir) throws IOException {
         NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
                 Math.round(preset.turningRadius()));
         int w = map.width(), h = map.height(), turns = Params.TURNS, n = w * h * turns;
@@ -1860,9 +2275,45 @@ public final class SimTest {
         System.out.printf("after refinement: %d edges%n", edges);
         edges = splitOrbits(map, live, liveCount, succ, degree, pred, predDegree, edge, edges);
         System.out.printf("%nafter cutting orbits: %d edges%n", edges);
+        return new Labelling(map, live, liveCount, edge, edges);
+    }
 
-        report(preset, map, live, liveCount, edge, edges);
-        renderEdges(preset, map, live, liveCount, edge, edges, 3);
+    /** Everything a decomposition reports and draws, once the labelling exists. */
+    private static void describe(PresetScenarioParameter preset, boolean horizontal, int line,
+                                 int lo, int hi, int dir, Labelling l) throws IOException {
+        NavMap map = l.map();
+        int[] live = l.live(), edge = l.edge();
+        int liveCount = l.liveCount(), edges = l.edges();
+
+        EdgeStats stats = report(preset, map, live, liveCount, edge, edges);
+        EdgePairing pairing = renderEdges(preset, map, live, liveCount, edge, edges, 3);
+        EdgeNavigation.EdgeNav[] navs = EdgeNavigation.analyse(map, live, liveCount, edge, edges);
+        EdgeNavigation.report(navs);
+        int[] straightTo = new int[edges];
+        for (int e = 0; e < edges; e++) straightTo[e] = navs[e].straight().to();
+
+        EdgeNavigation.Properties props =
+                EdgeNavigation.classify(stats.scoring(), straightTo, stats.outTo(), edges);
+        System.out.printf("%nstable: %s%nscoring: %s%n",
+                which(props.stable()), which(props.scoring()));
+
+        List<EdgeGraphRender.Node> graph = new ArrayList<>();
+        for (int e = 0; e < edges; e++) {
+            if (stats.size()[e] == 0) continue;              // merged away, nothing to draw
+            EdgeNavigation.EdgeNav nav = navs[e];
+            graph.add(new EdgeGraphRender.Node(e, stats.size()[e], stats.scoring()[e],
+                    stats.reachesA()[e], stats.minX()[e], stats.maxX()[e],
+                    stats.minY()[e], stats.maxY()[e],
+                    pairing.inverse()[e], pairing.purity()[e], pairing.colourOf()[e],
+                    nav.inbound(), hold(nav.left()), hold(nav.straight()), hold(nav.right()),
+                    exits(nav), props.stable()[e], props.scoring()[e]));
+        }
+        String title = "%s @%s  gate %s=%d %s=[%d,%d] %s".formatted(preset.name(),
+                preset.ingest().hash(), horizontal ? "y" : "x", line,
+                horizontal ? "x" : "y", lo, hi,
+                dir == 0 ? "both ways" : dir > 0 ? "increasing" : "decreasing");
+        EdgeGraphRender.write(title, graph, stats.outTo(), EDGE_PALETTE,
+                preset.ingest().output("edges", "graph.html").getParent());
     }
 
     /** Strongly connected components of the gate-cut graph; each cycle-bearing one is an edge. */
@@ -2441,8 +2892,50 @@ public final class SimTest {
     }
 
     /** What the decomposition found, and how it lines up with what is already known. */
-    private static void report(PresetScenarioParameter preset, NavMap map, int[] live,
-                               int liveCount, int[] edge, int edges) throws IOException {
+    /** Pixels where every heading is in the set: stand here and facing does not matter. */
+    private static int allHeadings(NavMap map, long[] marked) {
+        int count = 0, w = map.width();
+        for (int y = 0; y < map.height(); y++) {
+            for (int x = 0; x < w; x++) {
+                if (map.oob(x, y)) continue;
+                boolean all = true;
+                for (int d = 0; d < Params.TURNS && all; d++) {
+                    int at = (x + y * w) * Params.TURNS + d;
+                    all = (marked[at >>> 6] & (1L << (at & 63))) != 0;
+                }
+                if (all) count++;
+            }
+        }
+        return count;
+    }
+
+    /** The edges a flag is set on, for the console. */
+    private static String which(boolean[] flag) {
+        StringBuilder b = new StringBuilder();
+        for (int e = 0; e < flag.length; e++) {
+            if (flag[e]) b.append(b.length() > 0 ? ", " : "").append(e);
+        }
+        return b.length() == 0 ? "none" : b.toString();
+    }
+
+    private static EdgeGraphRender.Hold hold(EdgeNavigation.Hold h) {
+        return new EdgeGraphRender.Hold(h.to(), h.pure());
+    }
+
+    private static List<EdgeGraphRender.Exit> exits(EdgeNavigation.EdgeNav nav) {
+        List<EdgeGraphRender.Exit> out = new ArrayList<>();
+        for (EdgeNavigation.Exit x : nav.exits()) {
+            out.add(new EdgeGraphRender.Exit(x.to(), x.minTicks(), x.maxTicks(), x.unreachable()));
+        }
+        return out;
+    }
+
+    /** What {@link #report} measured, kept so the graph view need not measure it again. */
+    private record EdgeStats(int[] size, int[] scoring, int[] reachesA,
+                             int[] minX, int[] maxX, int[] minY, int[] maxY, long[] outTo) {}
+
+    private static EdgeStats report(PresetScenarioParameter preset, NavMap map, int[] live,
+                                    int liveCount, int[] edge, int edges) throws IOException {
         int w = map.width(), turns = Params.TURNS;
         NavMap free = avoidScoring(preset);
         Engine solo = new Boids2DEngine(withFlockSize(preset, 1));
@@ -2488,6 +2981,7 @@ public final class SimTest {
             System.out.printf("%-5d %8d %8d %8d  x %3d-%3d y %3d-%3d   %s%n", e, size[e],
                     scoring[e], reachesA[e], minX[e], maxX[e], minY[e], maxY[e], to);
         }
+        return new EdgeStats(size, scoring, reachesA, minX, maxX, minY, maxY, outTo);
     }
 
     private static final int[] EDGE_PALETTE = {
@@ -2504,8 +2998,11 @@ public final class SimTest {
      * choice is dithered in 2x2 blocks, {@code (x/2 + y/2) % N}, so an overlap reads as a
      * weave of its constituents rather than as whichever edge happened to be drawn last.
      */
-    private static void renderEdges(PresetScenarioParameter preset, NavMap map, int[] live,
-                                    int liveCount, int[] edge, int edges, int scale)
+    /** How each edge pairs with the one that undoes it, and how the pairs share colours. */
+    private record EdgePairing(int[] inverse, double[] purity, int[] colourOf, int colours) {}
+
+    private static EdgePairing renderEdges(PresetScenarioParameter preset, NavMap map, int[] live,
+                                           int liveCount, int[] edge, int edges, int scale)
             throws IOException {
         int w = map.width(), hh = map.height(), turns = Params.TURNS;
 
@@ -2586,6 +3083,7 @@ public final class SimTest {
         Path out = preset.ingest().output("edges", "decomposition.png");
         javax.imageio.ImageIO.write(img, "png", out.toFile());
         System.out.printf("wrote %s%n", out);
+        return new EdgePairing(inverse, purity, colourOf, colours);
     }
 
     private static int countSelfInverse(int[] inverse) {
