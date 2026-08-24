@@ -14,6 +14,30 @@ public class Boids2DEngine implements Engine {
     private final int defaultFlockSize;
     private final MovementControl flocking;
     private final MovementControl collision;
+    private Trace trace;
+
+    /**
+     * A tap on what each boid decided, taken before the collision layer sees it.
+     * <p>
+     * Deliberately upstream of the veto. What a boid <em>wants</em> is a function of its
+     * neighbours alone, and that is the thing with momentum: a boid turning right goes on
+     * wanting to turn right until the flock around it changes. The turn it actually
+     * executes is that intention crossed with the wall in front of it, which mixes a
+     * property of the flock with a property of the map and so is a worse signal for
+     * either.
+     * <p>
+     * The arrangement passed in is live and mid-tick — the boids before {@code i} have
+     * moved and the ones after have not — which is precisely the arrangement {@code i}
+     * decided against. It must not be retained past the call.
+     */
+    public interface Trace {
+        void decided(long tick, int i, BoidArray boids, int want);
+    }
+
+    /** Installs a decision tap, or clears it with null. Off costs one null check a boid. */
+    public void trace(Trace trace) {
+        this.trace = trace;
+    }
 
     Boids2DEngine(ScenarioParameter parameters) throws IOException {
         turningRadius = parameters.turningRadius();
@@ -74,6 +98,8 @@ public class Boids2DEngine implements Engine {
             // the limit an invariant rather than a convention, and makes it structural
             // that a steered boid gets exactly the choice an unsteered one does.
             movement.movement[i] = Math.max(-1, Math.min(1, movement.movement[i]));
+
+            if (trace != null) trace.decided(state.tick, i, movement.boids, movement.movement[i]);
 
             collision.calculate(movement, i);
 

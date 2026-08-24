@@ -1795,8 +1795,8 @@ public final class SimTest {
     public static void tickField(PresetScenarioParameter preset, boolean horizontal, int line,
                                  int lo, int hi, int dir) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
-                l.edges());
+        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
         NavMap map = l.map();
         int[] edge = l.edge();
         int w = map.width(), h = map.height(), turns = Params.TURNS;
@@ -1900,9 +1900,15 @@ public final class SimTest {
     public static void corpus(PresetScenarioParameter preset, boolean horizontal, int line,
                               int lo, int hi, int dir, int[] flockSizes, int perSize, int ticks,
                               EdgeWeights.Scheme scheme) throws IOException {
+        corpus(preset, horizontal, line, lo, hi, dir, flockSizes, perSize, ticks, scheme, null);
+    }
+
+    public static void corpus(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir, int[] flockSizes, int perSize, int ticks,
+                              EdgeWeights.Scheme scheme, double[][] chain) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
-                l.edges(), scheme);
+        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
         NavMap map = l.map();
         int[] edge = l.edge();
 
@@ -1993,12 +1999,316 @@ public final class SimTest {
                 rows.chars().filter(c -> c == '\n').count() - 1);
     }
 
+    /**
+     * The same journeys, flown by a boid with no neighbours and only a habit.
+     * <p>
+     * The corpus is expensive in the way that matters: it needs the simulation, and the
+     * simulation needs the map, so an estimate of how far a boid travels cannot be had
+     * without running the thing being estimated. This replaces the flock with a three-state
+     * Markov chain over {left, straight, right} — the only thing carried forward from the
+     * corpus, and map-independent by construction. If the journeys it produces have the same
+     * mean and spread as the flown ones, then whatever the flock is doing to travel distance
+     * is captured by "boids do not change their minds often", and nothing about any
+     * particular map is needed to say how far one gets.
+     * <p>
+     * The chain runs on the intention, not on the executed turn: a boid that wants to keep
+     * turning into a wall goes on wanting it, and the map vetoes the move each tick without
+     * changing its mind. That matches how the chain was measured, and it is the only coupling
+     * to the map anywhere in the walk.
+     *
+     * @param chain    {@code [from][to]} over left, straight, right; rows need not be
+     *                 normalised. The first steering direction is drawn from its equilibrium,
+     *                 since a boid dropped into an established flock is not starting fresh
+     * @param journeys how many walks to fly, each from its own uniformly drawn live state
+     */
+    public static void synthetic(PresetScenarioParameter preset, boolean horizontal, int line,
+                                 int lo, int hi, int dir, double[][] chain, int journeys,
+                                 int ticks, long[] seeds, EdgeWeights.Scheme[] schemes)
+            throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        NavMap map = l.map();
+        int[] edge = l.edge();
+
+        double[][] step = new double[3][3];
+        for (int a = 0; a < 3; a++) {
+            double sum = 0;
+            for (int b = 0; b < 3; b++) sum += chain[a][b];
+            for (int b = 0; b < 3; b++) step[a][b] = chain[a][b] / sum;
+        }
+        double[] start = equilibrium(step);
+
+        System.out.printf("%n=== %s @%s: %d synthetic %d-tick journeys x %d seeds ===%n",
+                preset.name(), preset.ingest().hash(), journeys, ticks, seeds.length);
+        System.out.printf("  chain %s / %s / %s, equilibrium %.3f %.3f %.3f%n",
+                row(step[0]), row(step[1]), row(step[2]), start[0], start[1], start[2]);
+
+        // Flown once per seed and then measured by every clock, because the walk does not
+        // depend on the weighting -- only the reading of it does. That makes the comparison
+        // between schemes paired on the identical journeys, which is what makes a difference
+        // of a few hundredths of a percent mean anything at all.
+        int[][] from = new int[seeds.length][journeys], to = new int[seeds.length][journeys];
+        long vetoed = 0, requests = 0;
+        for (int s = 0; s < seeds.length; s++) {
+            Random rng = new Random(seeds[s]);
+            for (int j = 0; j < journeys; j++) {
+                int state = l.live()[rng.nextInt(l.liveCount())];
+                from[s][j] = state;
+                int want = draw(rng, start) - 1;
+                for (int t = 0; t < ticks; t++) {
+                    int next = map.successor(state, want);
+                    if (next < 0) break;
+                    // How often the map got its way instead. The one coupling between the
+                    // walk and the map, so worth reporting rather than assuming it is small.
+                    int turned = Math.floorMod(next % Params.TURNS - state % Params.TURNS,
+                            Params.TURNS);
+                    requests++;
+                    if ((turned == Params.TURNS - 1 ? -1 : turned) != want) vetoed++;
+                    state = next;
+                    want = draw(rng, step[want + 1]) - 1;
+                }
+                to[s][j] = state;
+            }
+        }
+        System.out.printf("  %.1f%% of steer requests were overruled by the map%n",
+                100.0 * vetoed / Math.max(1, requests));
+
+        System.out.printf("%-13s %6s %8s %9s %9s %10s %8s %9s%n", "scheme", "seed", "journeys",
+                "mean", "sd", "sd/mean", "routes", "shortest");
+        double[][] spread = new double[schemes.length][seeds.length];
+        for (int c = 0; c < schemes.length; c++) {
+            EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+                    l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), schemes[c]);
+            double total = 0;
+            for (int len : m.length()) total += len;
+            double cap = ticks + total;
+            for (int s = 0; s < seeds.length; s++) {
+                List<Double> estimates = new ArrayList<>();
+                long routeTotal = 0;
+                int unusable = 0, shortestBest = 0;
+                for (int j = 0; j < journeys; j++) {
+                    if (edge[from[s][j]] < 0 || edge[to[s][j]] < 0) { unusable++; continue; }
+                    double[] candidates = EdgeDistance.between(edge, m, from[s][j], to[s][j], cap);
+                    if (candidates.length == 0) { unusable++; continue; }
+                    routeTotal += candidates.length;
+                    double best = EdgeDistance.closest(candidates, ticks);
+                    double shortest = Double.MAX_VALUE;
+                    for (double v : candidates) shortest = Math.min(shortest, v);
+                    if (Math.abs(shortest - best) < 1e-9) shortestBest++;
+                    estimates.add(best);
+                }
+                double sum = 0;
+                for (double e : estimates) sum += e;
+                double mean = sum / estimates.size();
+                double var = 0;
+                for (double e : estimates) var += (e - mean) * (e - mean);
+                double sd = Math.sqrt(var / Math.max(1, estimates.size() - 1));
+                spread[c][s] = 100 * sd / mean;
+                System.out.printf("%-13s %6d %8d %9.2f %9.3f %9.3f%% %8.1f %8.1f%%%s%n",
+                        schemes[c], seeds[s], estimates.size(), mean, sd, spread[c][s],
+                        routeTotal / (double) estimates.size(),
+                        100.0 * shortestBest / estimates.size(),
+                        unusable > 0 ? "  (" + unusable + " unusable)" : "");
+            }
+        }
+
+        // Paired against the first scheme listed, seed by seed. Reported as a range as well as
+        // a mean, because a change worth adopting has to beat its own seed-to-seed wobble.
+        for (int c = 1; c < schemes.length; c++) {
+            double sum = 0, lo2 = Double.MAX_VALUE, hi2 = -Double.MAX_VALUE;
+            for (int s = 0; s < seeds.length; s++) {
+                double d = spread[c][s] - spread[0][s];
+                sum += d;
+                lo2 = Math.min(lo2, d);
+                hi2 = Math.max(hi2, d);
+            }
+            System.out.printf("  %s -> %s: sd/mean %+.4f points on average (%+.4f to %+.4f)%n",
+                    schemes[0], schemes[c], sum / seeds.length, lo2, hi2);
+        }
+    }
+
+    /** Where the chain settles, by iteration: general, so a non-symmetric chain works too. */
+    private static double[] equilibrium(double[][] step) {
+        double[] at = {1 / 3.0, 1 / 3.0, 1 / 3.0};
+        for (int pass = 0; pass < 10_000; pass++) {
+            double[] next = new double[3];
+            for (int a = 0; a < 3; a++)
+                for (int b = 0; b < 3; b++) next[b] += at[a] * step[a][b];
+            double move = 0;
+            for (int b = 0; b < 3; b++) move = Math.max(move, Math.abs(next[b] - at[b]));
+            at = next;
+            if (move < 1e-15) break;
+        }
+        return at;
+    }
+
+    private static int draw(Random rng, double[] weights) {
+        double r = rng.nextDouble(), at = 0;
+        for (int i = 0; i < weights.length; i++) {
+            at += weights[i];
+            if (r < at) return i;
+        }
+        return weights.length - 1;
+    }
+
+    private static String row(double[] p) {
+        return String.format("%.0f/%.0f/%.0f", 100 * p[0], 100 * p[1], 100 * p[2]);
+    }
+
+    /**
+     * Every steering decision the corpus flocks made, recorded where it changes.
+     * <p>
+     * The clock currently weights transitions between states. A boid is not a state
+     * though — it is a state plus a habit, because what it wanted last tick is most of
+     * what it will want this tick. If that is true the weights belong on
+     * {@code (state, last turn)} rather than on {@code state}, and this is the
+     * measurement that decides whether it is worth the sixty-fourfold... threefold
+     * expansion of the transition space.
+     * <p>
+     * Pre-veto throughout. The turn a boid executes is its intention crossed with the
+     * wall in front of it; only the intention is a property of the flock, and only the
+     * intention is the thing claimed to persist.
+     * <p>
+     * Rows are change points rather than ticks, since a decision that repeats for
+     * eleven ticks is one fact about the flock and not eleven. {@code held} carries the
+     * length of the run so nothing is lost by the compression, and {@code truncated}
+     * marks the runs still going when the sim ended — their true length is unknown and
+     * only bounded below, so averaging them in unmodified biases every run length down.
+     */
+    public static void steering(PresetScenarioParameter preset, int[] flockSizes, int perSize,
+                                int ticks) throws IOException {
+        Path file = preset.ingest().output("corpus", "steering_" + ticks + ".tsv");
+        Files.createDirectories(file.getParent());
+        // Built here rather than borrowed from the engine so that what counts a boid's
+        // neighbours is visibly the same class that acts on them, configured the same way.
+        MovementLogic rules = new MovementLogic(preset.turningRadius());
+
+        System.out.printf("%n=== %s @%s: %d-tick steering trace ===%n",
+                preset.name(), preset.ingest().hash(), ticks);
+        System.out.printf("%-6s %10s %9s %7s %7s %7s %8s %8s %8s%n", "boids", "decisions",
+                "changes", "left", "straight", "right", "hold", "run", "seen");
+
+        // Runs by direction, as a histogram rather than a list: bounded by the horizon,
+        // exact, and it makes the median as cheap as the mean.
+        long[][] runsBy = new long[3][ticks + 2];
+        long[][][] moves = new long[flockSizes.length][3][3];
+
+        try (BufferedWriter out = Files.newBufferedWriter(file)) {
+            out.write("boids\tseed\tboid\ttick\tx\ty\td\tturn\tseen\tclose\theld\ttruncated\n");
+            for (int f = 0; f < flockSizes.length; f++) {
+                int boids = flockSizes[f];
+                int runCount = Math.max(1, perSize / boids);
+                Boids2DEngine engine = new Boids2DEngine(withFlockSize(preset, boids));
+
+                byte[][] turn = new byte[boids][ticks];
+                int[][] seen = new int[boids][ticks], close = new int[boids][ticks];
+                int[][] px = new int[boids][ticks], py = new int[boids][ticks];
+                int[][] ph = new int[boids][ticks];
+                engine.trace((tick, i, arr, want) -> {
+                    int t = (int) tick;
+                    turn[i][t] = (byte) want;
+                    MovementLogic.Vision v = rules.vision(arr, i);
+                    seen[i][t] = v.seen();
+                    close[i][t] = v.close();
+                    px[i][t] = arr.x()[i];
+                    py[i][t] = arr.y()[i];
+                    ph[i][t] = arr.h()[i];
+                });
+
+                long[] byTurn = new long[3];
+                long changes = 0, held = 0, complete = 0, seenTotal = 0;
+                long[][] move = moves[f];
+                for (long seed = 0; seed < runCount; seed++) {
+                    Sim.State s = engine.init(seed);
+                    for (int t = 0; t < ticks; t++) s = engine.tick(s);
+
+                    for (int i = 0; i < boids; i++) {
+                        for (int t = 0; t < ticks; t++) {
+                            byTurn[turn[i][t] + 1]++;
+                            seenTotal += seen[i][t];
+                            if (t + 1 < ticks) move[turn[i][t] + 1][turn[i][t + 1] + 1]++;
+                        }
+                        int t = 0;
+                        while (t < ticks) {
+                            int run = 1;
+                            while (t + run < ticks && turn[i][t + run] == turn[i][t]) run++;
+                            boolean truncated = t + run >= ticks;
+                            if (t > 0) changes++;
+                            if (!truncated) { runsBy[turn[i][t] + 1][run]++; held += run; complete++; }
+                            out.write(boids + "\t" + seed + "\t" + i + "\t" + t + "\t"
+                                    + px[i][t] + "\t" + py[i][t] + "\t" + ph[i][t] + "\t"
+                                    + "LSR".charAt(turn[i][t] + 1) + "\t"
+                                    + seen[i][t] + "\t" + close[i][t] + "\t"
+                                    + run + "\t" + truncated + "\n");
+                            t += run;
+                        }
+                    }
+                }
+                engine.trace(null);
+                long decisions = (long) runCount * boids * ticks;
+                long steps = (long) runCount * boids * (ticks - 1);
+                System.out.printf("%-6d %10d %9d %6.1f%% %7.1f%% %6.1f%% %7.1f%% %8.2f %8.2f%n",
+                        boids, decisions, changes,
+                        100.0 * byTurn[0] / decisions, 100.0 * byTurn[1] / decisions,
+                        100.0 * byTurn[2] / decisions, 100.0 * (steps - changes) / steps,
+                        complete == 0 ? Double.NaN : held / (double) complete,
+                        seenTotal / (double) decisions);
+            }
+        }
+
+        // The whole question in one table: given what a boid wanted last tick, what does it
+        // want now? Momentum shows up as a heavy diagonal, and specifically as L->L and R->R
+        // being far above the share of L and R overall — a boid that is turning keeps turning.
+        System.out.printf("%n  tick-to-tick steering, %% of rows (L/S/R now, given L/S/R last)%n");
+        System.out.printf("  %-6s %17s %17s %17s%n", "boids", "was left", "was straight",
+                "was right");
+        for (int f = 0; f < flockSizes.length; f++) {
+            StringBuilder line = new StringBuilder(String.format("  %-6d", flockSizes[f]));
+            for (int a = 0; a < 3; a++) {
+                long total = moves[f][a][0] + moves[f][a][1] + moves[f][a][2];
+                for (int b = 0; b < 3; b++) {
+                    line.append(String.format(" %5.1f", total == 0 ? Double.NaN
+                            : 100.0 * moves[f][a][b] / total));
+                }
+                line.append("  ");
+            }
+            System.out.println(line);
+        }
+
+        System.out.printf("%n  completed runs of one steering direction (ticks)%n");
+        System.out.printf("  %-9s %9s %8s %8s %8s %8s%n", "direction", "runs", "mean",
+                "median", "p90", "max");
+        for (int a = 0; a < 3; a++) {
+            long n = 0, sum = 0;
+            int max = 0;
+            for (int r = 0; r < runsBy[a].length; r++) {
+                n += runsBy[a][r];
+                sum += runsBy[a][r] * (long) r;
+                if (runsBy[a][r] > 0) max = r;
+            }
+            if (n == 0) { System.out.printf("  %-9s %9d%n", "LSR".charAt(a), 0); continue; }
+            System.out.printf("  %-9s %9d %8.2f %8d %8d %8d%n", "LSR".charAt(a), n,
+                    sum / (double) n, quantile(runsBy[a], n, 0.5), quantile(runsBy[a], n, 0.9),
+                    max);
+        }
+        System.out.printf("%nwrote %s%n", file);
+    }
+
+    /** The smallest run length at or below which {@code q} of the mass sits. */
+    private static int quantile(long[] histogram, long n, double q) {
+        long want = (long) Math.ceil(q * n), at = 0;
+        for (int r = 0; r < histogram.length; r++) {
+            at += histogram[r];
+            if (at >= want) return r;
+        }
+        return histogram.length - 1;
+    }
+
     /** Canonical paths, edge lengths and per-state ticks for a decomposed map. */
     public static void metric(PresetScenarioParameter preset, boolean horizontal, int line,
                               int lo, int hi, int dir) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
-                l.edges());
+        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
         int w = l.map().width(), turns = Params.TURNS;
         System.out.printf("%n=== %s @%s: canonical metric ===%n",
                 preset.name(), preset.ingest().hash());
@@ -2060,8 +2370,8 @@ public final class SimTest {
     public static void slice(PresetScenarioParameter preset, boolean horizontal, int line,
                              int lo, int hi, int dir, int from, int keep) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetric.compute(l.map(), l.edge(), l.live(), l.liveCount(),
-                l.edges());
+        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
         EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
                 l.liveCount(), from, keep);
         EdgeInfluence.Lead lead = EdgeInfluence.lead(l.map(), l.edge(), l.live(), l.liveCount(),

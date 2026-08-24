@@ -30,6 +30,59 @@ public final class MovementLogic implements MovementControl{
         return Math.sqrt(a * a + b * b);
     }
 
+    /**
+     * How far away boid {@code j} is, or {@code -1} if boid {@code i} cannot see it.
+     * <p>
+     * The single definition of what a boid perceives, so that anything wanting to count
+     * neighbours counts the same ones the rules act on. Written once rather than twice
+     * because the two drifting apart would not fail — it would quietly answer a slightly
+     * different question than the one the dynamics answer.
+     */
+    private double perceived(BoidArray s, int i, int j, double hx, double hy) {
+        double dx = s.x()[j] - s.x()[i];
+        double dy = s.y()[j] - s.y()[i];
+        double d2 = dx * dx + dy * dy;
+        if (d2 == 0.0 || d2 > rFlock * rFlock) return -1;
+
+        double d = Math.sqrt(d2);
+
+        // dx*hx + dy*hy is d*cos(angle off the heading), so this drops anything
+        // in the rear blind arc.
+        return dx * hx + dy * hy < Params.COS_FOV * d ? -1 : d;
+    }
+
+    /**
+     * How many neighbours a boid can see, and how many of those are close enough to push
+     * back.
+     *
+     * @param close those within the separation radius, always a subset of {@code seen}.
+     *              Worth separating because the two regimes steer oppositely: a lone
+     *              neighbour out in the flocking annulus is approached, the same
+     *              neighbour inside separation is fled
+     */
+    public record Vision(int seen, int close) {}
+
+    /**
+     * What boid {@code i} can see in the given arrangement.
+     * <p>
+     * Takes the array rather than reading a simulation, so a caller inside a tick sees
+     * exactly what the boid saw: boids are advanced in index order, and by the time
+     * {@code i} decides, its predecessors have already moved.
+     */
+    public Vision vision(BoidArray s, int i) {
+        double hx = Params.COS[s.h()[i]];
+        double hy = Params.SIN[s.h()[i]];
+        int seen = 0, close = 0;
+        for (int j = 0; j < s.n(); j++) {
+            if (j == i) continue;
+            double d = perceived(s, i, j, hx, hy);
+            if (d < 0) continue;
+            seen++;
+            if (d < rSep) close++;
+        }
+        return new Vision(seen, close);
+    }
+
     @Override
     public void calculate(Movement movement, int i) {
         BoidArray s = movement.boids;
@@ -45,16 +98,11 @@ public final class MovementLogic implements MovementControl{
         for (int j = 0; j < s.n(); j++) {
             if (j == i) continue;
 
+            double d = perceived(s, i, j, hx, hy);
+            if (d < 0) continue;
+
             double dx = s.x()[j] - xi;
             double dy = s.y()[j] - yi;
-            double d2 = dx * dx + dy * dy;
-            if (d2 == 0.0 || d2 > rFlock * rFlock) continue;
-
-            double d = Math.sqrt(d2);
-
-            // dx*hx + dy*hy is d*cos(angle off the heading), so this drops anything
-            // in the rear blind arc.
-            if (dx * hx + dy * hy < Params.COS_FOV * d) continue;
 
             cohX += dx;
             cohY += dy;
