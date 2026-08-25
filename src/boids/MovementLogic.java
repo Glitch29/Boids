@@ -39,8 +39,21 @@ public final class MovementLogic implements MovementControl{
      * different question than the one the dynamics answer.
      */
     private double perceived(BoidArray s, int i, int j, double hx, double hy) {
-        double dx = s.x()[j] - s.x()[i];
-        double dy = s.y()[j] - s.y()[i];
+        return perceived(s.x()[i], s.y()[i], hx, hy, s.x()[j], s.y()[j]);
+    }
+
+    /**
+     * The same test against loose coordinates, for anything holding positions rather than a
+     * flock — a diagnostic drawing what a boid could see, say. Same definition, not a copy of
+     * it.
+     */
+    public double perceived(int xi, int yi, int hi, int xj, int yj) {
+        return perceived(xi, yi, Params.COS[hi], Params.SIN[hi], xj, yj);
+    }
+
+    private double perceived(int xi, int yi, double hx, double hy, int xj, int yj) {
+        double dx = xj - xi;
+        double dy = yj - yi;
         double d2 = dx * dx + dy * dy;
         if (d2 == 0.0 || d2 > rFlock * rFlock) return -1;
 

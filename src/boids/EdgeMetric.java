@@ -113,7 +113,7 @@ public final class EdgeMetric {
      * @param step      worst deviation from one tick per step along a canonical path
      * @param cost      mean squared deviation from one tick per transition, everywhere
      */
-    public record Metric(int[][] entryFrom, int[][] exitTo, int[] length, double[] tick,
+    public record Metric(int[][] entryFrom, int[][] exitTo, double[] length, double[] tick,
                          int slack, int broken, int band, double step, double cost) {}
 
     public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges) {
@@ -176,7 +176,10 @@ public final class EdgeMetric {
 
         // One length per edge: the longest of its shortest ways through. Anything shorter
         // would make some route impossible to fit; anything longer stretches them all.
-        int[] length = new int[edges];
+        // Whole ticks here because it is a count of graph steps; the fit refines it to a real
+        // number, and that refinement is the length everything downstream reads.
+        int[] estimate = new int[edges];
+        double[] length = new double[edges];
         int slack = 0, broken = 0;
         List<int[]> ends = new ArrayList<>();
         for (int e = 0; e < edges; e++) {
@@ -190,7 +193,7 @@ public final class EdgeMetric {
                     worst = Math.max(worst, d + 1);
                 }
             }
-            length[e] = worst;
+            estimate[e] = worst;
         }
         for (int e = 0; e < edges; e++) {
             for (int a = 0; a < edges; a++) {
@@ -198,7 +201,7 @@ public final class EdgeMetric {
                 for (int c = 0; c < edges; c++) {
                     if (exitTo[e][c] < 0) continue;
                     int d = reach.distance(e, entryFrom[e][a], exitTo[e][c]);
-                    if (d >= 0 && d + 1 < length[e]) slack++;
+                    if (d >= 0 && d + 1 < estimate[e]) slack++;
                 }
             }
         }
@@ -215,7 +218,7 @@ public final class EdgeMetric {
                 for (int c = 0; c < edges; c++) {
                     if (exitTo[e][c] < 0) continue;
                     int[] path = reach.path(e, entryFrom[e][a], exitTo[e][c]);
-                    if (path == null || path.length != length[e]) continue;
+                    if (path == null || path.length != estimate[e]) continue;
                     for (int i = 0; i < path.length; i++) {
                         Double had = claim.putIfAbsent(path[i], (double) i);
                         if (had != null && had != i) disputed.add(path[i]);
@@ -224,7 +227,7 @@ public final class EdgeMetric {
             }
             for (int a = 0; a < edges; a++) if (entryFrom[e][a] >= 0) claim.putIfAbsent(entryFrom[e][a], 0.0);
             for (int c = 0; c < edges; c++) {
-                if (exitTo[e][c] >= 0) claim.putIfAbsent(exitTo[e][c], (double) (length[e] - 1));
+                if (exitTo[e][c] >= 0) claim.putIfAbsent(exitTo[e][c], (double) (estimate[e] - 1));
             }
         }
         if (pinPaths) {
@@ -258,7 +261,10 @@ public final class EdgeMetric {
         // through it is 109 states long.
         double[] tick;
         if (pinPaths) {
-            tick = solve(map, edge, live, liveCount, length, ends);
+            // Path pinning works in whole steps by definition, so it takes the estimate and
+            // the fitted length is that estimate. It is off by default; see below.
+            for (int e = 0; e < edges; e++) length[e] = estimate[e];
+            tick = solve(map, edge, live, liveCount, estimate, ends);
         } else {
             int gauge = Integer.MAX_VALUE;
             for (int e = 0; e < edges; e++) {
@@ -266,7 +272,8 @@ public final class EdgeMetric {
                     if (entryFrom[e][a] >= 0) gauge = Math.min(gauge, entryFrom[e][a]);
                 }
             }
-            tick = solveJoint(map, edge, live, liveCount, edges, length, gauge, scheme, chain);
+            tick = solveJoint(map, edge, live, liveCount, edges, estimate, length, gauge,
+                    scheme, chain);
         }
         return new Metric(entryFrom, exitTo, length, tick, slack, broken,
                 bandViolations(map, edge, live, liveCount, length, tick),
@@ -386,22 +393,27 @@ public final class EdgeMetric {
      * never built. An explicit inversion would be the same answer; this is the same
      * computation with the zeros left out.
      */
-    private static double[] solveJoint(NavMap map, int[] edge, int[] live, int liveCount,
-                                       int edges, int[] length, int anchorState,
-                                       EdgeWeights.Scheme scheme, double[][] chain) {
+    /**
+     * The rows of the fit: one per transition, plus the way back from a request to its row.
+     *
+     * @param cross     per row, the edge being left if it leaves one, else -1
+     * @param rowOf     per {@code (live index, request + 1)}, the row that request lands on.
+     *                  Rows are per distinct successor, because two requests the veto collapses
+     *                  together are one transition and fitting it twice would weight it double
+     *                  — which is exactly why the way back cannot be recovered afterwards
+     * @param index     per state id, its live index, or -1
+     */
+    record Rows(int[] from, int[] to, int[] cross, boolean[] unsteered, int[] rowOf,
+                int[] index, int count) {}
+
+    static Rows rows(NavMap map, int[] edge, int[] live, int liveCount) {
         int[] index = new int[edge.length];
         Arrays.fill(index, -1);
         for (int i = 0; i < liveCount; i++) index[live[i]] = i;
 
-        // One row per transition: which two states, and which length if it crosses out.
         int[] fromOf = new int[liveCount * 3], toOf = new int[liveCount * 3];
         int[] crossOf = new int[liveCount * 3];
         boolean[] unsteered = new boolean[liveCount * 3];
-        // Which row each of the three requests lands on. The rows themselves are per distinct
-        // successor, because two requests the veto collapses together are one transition and
-        // fitting it twice would weight it double. A weighting that knows what was asked for
-        // still needs to get back from the request to the row, and it cannot be recovered
-        // afterwards precisely because of that collapsing.
         int[] rowOf = new int[liveCount * 3];
         Arrays.fill(rowOf, -1);
         int rows = 0;
@@ -426,12 +438,126 @@ public final class EdgeMetric {
                 for (int k = 0; k < ns; k++) if (succs[k] == u) rowOf[i * 3 + t + 1] = rowFor[k];
             }
         }
+        return new Rows(fromOf, toOf, crossOf, unsteered, rowOf, index, rows);
+    }
 
-        // A weight is how much a transition's residual counts. Applied as the square root,
-        // because the fit squares what it is given.
-        double[] w = scheme == EdgeWeights.Scheme.MOMENTUM
-                ? EdgeWeights.momentum(map, live, liveCount, index, rowOf, chain, rows)
-                : EdgeWeights.of(scheme, fromOf, toOf, unsteered, rows, liveCount);
+    /**
+     * A weight is how much a transition's residual counts. Applied as the square root by the
+     * caller, because the fit squares what it is given.
+     */
+    static double[] weights(NavMap map, int[] live, int liveCount, Rows r,
+                            EdgeWeights.Scheme scheme, double[][] chain) {
+        return scheme == EdgeWeights.Scheme.MOMENTUM
+                ? EdgeWeights.momentum(map, live, liveCount, r.index(), r.rowOf(), chain,
+                        r.count())
+                : EdgeWeights.of(scheme, r.from(), r.to(), r.unsteered(), r.count(), liveCount);
+    }
+
+    /**
+     * Where the clock's worst single-tick steps are, and what they have in common.
+     * <p>
+     * A transition whose weight is near zero contributes near nothing to the sum being
+     * minimised, so the two states it joins are all but unconstrained relative to each other
+     * and the gradient has almost nothing to say about where they go. That predicts the
+     * extremes sit on starved transitions rather than being spread evenly, and it is a
+     * different claim from a bug: a bug would put them anywhere.
+     * <p>
+     * Reported by weight decile so the two can be told apart. If the worst steps are flat
+     * across deciles the weighting is not the cause; if they pile up in the bottom decile it
+     * is conditioning, and the answer is a floor on the weights rather than a hunt.
+     */
+    public static void diagnose(NavMap map, int[] edge, int[] live, int liveCount, Metric m,
+                                EdgeWeights.Scheme scheme, double[][] chain) {
+        Rows r = rows(map, edge, live, liveCount);
+        double[] w = weights(map, live, liveCount, r, scheme, chain);
+        double[] tick = m.tick();
+        double[] length = m.length();
+        int rows = r.count();
+
+        double[] step = new double[rows];
+        for (int k = 0; k < rows; k++) {
+            step[k] = tick[live[r.to()[k]]] - tick[live[r.from()[k]]]
+                    + (r.cross()[k] >= 0 ? length[r.cross()[k]] : 0);
+        }
+
+        Integer[] order = new Integer[rows];
+        for (int k = 0; k < rows; k++) order[k] = k;
+        Arrays.sort(order, (x, y) -> Double.compare(w[x], w[y]));
+
+        System.out.printf("%n  worst single-tick step by weight decile, %s%n", scheme);
+        System.out.printf("  %-8s %11s %11s %9s %9s %9s %9s%n", "decile", "weight lo",
+                "weight hi", "mean |e|", "p99 |e|", "max |e|", "crossing");
+        for (int d = 0; d < 10; d++) {
+            int from = (int) ((long) d * rows / 10), to = (int) ((long) (d + 1) * rows / 10);
+            double sum = 0, worst = 0;
+            int crossing = 0;
+            double[] errs = new double[to - from];
+            for (int j = from; j < to; j++) {
+                double e = Math.abs(step[order[j]] - 1);
+                errs[j - from] = e;
+                sum += e;
+                worst = Math.max(worst, e);
+                if (r.cross()[order[j]] >= 0) crossing++;
+            }
+            Arrays.sort(errs);
+            System.out.printf("  %-8d %11.3g %11.3g %9.4f %9.4f %9.4f %8.2f%%%n", d,
+                    w[order[from]], w[order[to - 1]], sum / errs.length,
+                    errs[(int) (errs.length * 0.99)], worst,
+                    100.0 * crossing / errs.length);
+        }
+
+        Arrays.sort(order, (x, y) -> Double.compare(Math.abs(step[y] - 1), Math.abs(step[x] - 1)));
+        System.out.printf("  ten worst steps: ");
+        for (int j = 0; j < Math.min(10, rows); j++) {
+            System.out.printf("%.2f@w=%.2g%s ", step[order[j]], w[order[j]],
+                    r.cross()[order[j]] >= 0 ? "(x)" : "");
+        }
+        System.out.println();
+
+        // The fit chooses a length as a real number and it is then stored as a whole tick.
+        // Nothing inside an edge notices, because a length only enters where a boid leaves —
+        // but there it enters in full, so every crossing out of an edge inherits the whole
+        // rounding error at once. What the crossings imply the length should have been says
+        // how much of the worst steps is that and how much is the clock genuinely straining.
+        int edges = length.length;
+        double[] sum = new double[edges];
+        int[] seen = new int[edges];
+        for (int k = 0; k < rows; k++) {
+            int e = r.cross()[k];
+            if (e < 0) continue;
+            sum[e] += 1 - (step[k] - length[e]);
+            seen[e]++;
+        }
+        System.out.printf("  %-5s %8s %10s %9s %9s%n", "edge", "stored", "implied", "rounding",
+                "crossings");
+        double[] implied = new double[edges];
+        for (int e = 0; e < edges; e++) {
+            implied[e] = seen[e] > 0 ? sum[e] / seen[e] : length[e];
+            System.out.printf("  %-5d %8.3f %10.3f %+9.3f %9d%n", e, length[e], implied[e],
+                    implied[e] - length[e], seen[e]);
+        }
+        double roundedWorst = 0, impliedWorst = 0;
+        for (int k = 0; k < rows; k++) {
+            int e = r.cross()[k];
+            roundedWorst = Math.max(roundedWorst, Math.abs(step[k] - 1));
+            double asReal = e < 0 ? step[k] : step[k] - length[e] + implied[e];
+            impliedWorst = Math.max(impliedWorst, Math.abs(asReal - 1));
+        }
+        System.out.printf("  worst step with stored lengths %.3f, with implied lengths %.3f%n",
+                roundedWorst, impliedWorst);
+    }
+
+    private static double[] solveJoint(NavMap map, int[] edge, int[] live, int liveCount,
+                                       int edges, int[] estimate, double[] length,
+                                       int anchorState, EdgeWeights.Scheme scheme,
+                                       double[][] chain) {
+        Rows built = rows(map, edge, live, liveCount);
+        int[] index = built.index(), fromOf = built.from(), toOf = built.to();
+        int[] crossOf = built.cross();
+        boolean[] unsteered = built.unsteered();
+        int rows = built.count();
+
+        double[] w = weights(map, live, liveCount, built, scheme, chain);
         double[] root = new double[rows];
         for (int k = 0; k < rows; k++) root[k] = Math.sqrt(w[k]);
         double[] balance = EdgeWeights.imbalance(w, fromOf, toOf, rows, liveCount);
@@ -452,7 +578,7 @@ public final class EdgeMetric {
         int pinnedLengths = 0;
         for (int e = 0; e < edges; e++) {
             if (tree[e]) { held[liveCount + e] = true; x[liveCount + e] = 0; pinnedLengths++; }
-            else x[liveCount + e] = length[e];
+            else x[liveCount + e] = estimate[e];
         }
         if (index[anchorState] >= 0) held[index[anchorState]] = true;
 
@@ -488,8 +614,8 @@ public final class EdgeMetric {
         for (int i = 0; i < liveCount; i++) tick[live[i]] = x[i];
         double[] settled = new double[edges];
         for (int e = 0; e < edges; e++) settled[e] = x[liveCount + e];
-        regauge(edges, down, cls, settled, length, tick, edge, live, liveCount);
-        for (int e = 0; e < edges; e++) length[e] = (int) Math.round(settled[e]);
+        regauge(edges, down, cls, settled, estimate, tick, edge, live, liveCount);
+        System.arraycopy(settled, 0, length, 0, edges);
         // Regauging moves the lengths and drags the whole clock with them, which leaves the
         // absolute ticks somewhere arbitrary. Shifting them all back is free — nothing reads
         // an absolute tick, only differences — and it keeps the numbers legible.
@@ -832,7 +958,7 @@ public final class EdgeMetric {
      * violation is worth seeing rather than quietly clamping away.
      */
     private static int bandViolations(NavMap map, int[] edge, int[] live, int liveCount,
-                                      int[] length, double[] tick) {
+                                      double[] length, double[] tick) {
         int[] preds = new int[3], succs = new int[3];
         int bad = 0;
         worstBand = 0;
@@ -908,7 +1034,7 @@ public final class EdgeMetric {
 
     /** The worst a step along a canonical path deviates from advancing the clock by one. */
     private static double worstStep(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                                    int[] length, double[] tick, int[][] entryFrom,
+                                    double[] length, double[] tick, int[][] entryFrom,
                                     int[][] exitTo, Reach reach) {
         double worst = 0;
         for (int e = 0; e < edges; e++) {
@@ -932,7 +1058,7 @@ public final class EdgeMetric {
 
     /** Mean squared deviation from one tick per transition. */
     private static double cost(NavMap map, int[] edge, int[] live, int liveCount,
-                               int[] length, double[] tick) {
+                               double[] length, double[] tick) {
         double sum = 0;
         long n = 0;
         for (int i = 0; i < liveCount; i++) {

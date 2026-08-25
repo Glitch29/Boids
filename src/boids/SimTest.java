@@ -1794,14 +1794,22 @@ public final class SimTest {
      */
     public static void tickField(PresetScenarioParameter preset, boolean horizontal, int line,
                                  int lo, int hi, int dir) throws IOException {
+        tickField(preset, horizontal, line, lo, hi, dir, EdgeWeights.Scheme.UNIFORM, null,
+                "uniform");
+    }
+
+    /** @param tag names the written images, so one map's schemes do not overwrite each other */
+    public static void tickField(PresetScenarioParameter preset, boolean horizontal, int line,
+                                 int lo, int hi, int dir, EdgeWeights.Scheme scheme,
+                                 double[][] chain, String tag) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
         EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
-                l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
         NavMap map = l.map();
         int[] edge = l.edge();
         int w = map.width(), h = map.height(), turns = Params.TURNS;
         double[] tick = m.tick();
-        int[] length = m.length();
+        double[] length = m.length();
 
         double[] spread = new double[w * h], slowest = new double[w * h];
         boolean[] hasSpread = new boolean[w * h], hasSlowest = new boolean[w * h];
@@ -1846,16 +1854,76 @@ public final class SimTest {
         }
         for (int i = 0; i < w * h; i++) if (count[i] > 0) spread[i] /= count[i];
 
-        System.out.printf("%n=== %s @%s: how well the clock holds ===%n",
-                preset.name(), preset.ingest().hash());
+        System.out.printf("%n=== %s @%s: how well the clock holds, weighting %s ===%n",
+                preset.name(), preset.ingest().hash(), scheme);
+        System.out.printf("  %s%n", EdgeMetric.lastSolve());
         report("successors minus predecessors (want 2)", spread, hasSpread, 2);
         report("unsteered step, worst per pixel (want 1)", slowest, hasSlowest, 1);
+        advance(map, l, m);
 
-        Path a = preset.ingest().output("edges", "tick_rate.png");
-        Path b = preset.ingest().output("edges", "tick_unsteered.png");
+        Path a = preset.ingest().output("edges", "tick_rate_" + tag + ".png");
+        Path b = preset.ingest().output("edges", "tick_unsteered_" + tag + ".png");
         NavMapRender.writeField(map, spread, hasSpread, 2, 0.25, 0xD2382C, 0x2F6FD0, 2, a);
         NavMapRender.writeField(map, slowest, hasSlowest, 1, 0.25, 0xE8C21E, 0x35A853, 2, b);
         System.out.printf("wrote %s%nwrote %s%n", a, b);
+    }
+
+    /**
+     * How far the clock actually moves in one tick, over every transition there is.
+     * <p>
+     * The quantity the whole fit is trying to make equal to one, reported raw rather than as a
+     * residual. Its <em>mean</em> is the scale of the clock: at 0.98 a hundred ticks of flying
+     * read as ninety-eight, and no amount of internal consistency recovers that. Its
+     * <em>spread</em> is the other half — a clock that averages one but does it by running at
+     * 0.8 down one corridor and 1.2 down the next measures neither corridor.
+     * <p>
+     * Split by whether the boid was steering, because the two are not the same claim. Every
+     * state has exactly one unsteered successor and that is the transition a boid takes when
+     * nothing is pushing it, so the unsteered mean is the speed of ordinary travel; the
+     * steered figures include turns the map had to veto and paths hardly anything flies.
+     */
+    private static void advance(NavMap map, Labelling l, EdgeMetric.Metric m) {
+        double[] tick = m.tick();
+        double[] length = m.length();
+        int[] edge = l.edge();
+        List<Double> all = new ArrayList<>(), plain = new ArrayList<>();
+        int[] succs = new int[3];
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i];
+            int home = edge[s];
+            if (home < 0) continue;
+            int straight = map.successor(s, 0);
+            int ns = map.steeredSuccessors(s, succs);
+            for (int k = 0; k < ns; k++) {
+                int u = succs[k];
+                if (edge[u] < 0) continue;
+                double step = tick[u] - tick[s] + (edge[u] != home ? length[home] : 0);
+                all.add(step);
+                if (u == straight) plain.add(step);
+            }
+        }
+        step("clock advance per tick, every transition", all);
+        step("clock advance per tick, unsteered only", plain);
+    }
+
+    private static void step(String what, List<Double> values) {
+        if (values.isEmpty()) return;
+        java.util.Collections.sort(values);
+        double sum = 0;
+        for (double v : values) sum += v;
+        double mean = sum / values.size();
+        double var = 0;
+        for (double v : values) var += (v - mean) * (v - mean);
+        System.out.printf("%-42s %d transitions%n", what, values.size());
+        double[] at = {0, 0.01, 0.25, 0.5, 0.75, 0.99, 1};
+        StringBuilder line = new StringBuilder("   ");
+        for (double q : at) {
+            int k = (int) Math.min(values.size() - 1, Math.round(q * (values.size() - 1)));
+            line.append(String.format("%s=%.3f  ", q == 0 ? "min" : q == 1 ? "max"
+                    : String.format("p%02d", (int) (q * 100)), values.get(k)));
+        }
+        System.out.printf("%s%n   mean=%.4f  sd=%.4f%n", line,
+                mean, Math.sqrt(var / Math.max(1, values.size() - 1)));
     }
 
     private static void report(String what, double[] value, boolean[] has, double centre) {
@@ -1915,8 +1983,14 @@ public final class SimTest {
         System.out.printf("%n=== %s @%s: %d-tick journeys, weighting %s ===%n",
                 preset.name(), preset.ingest().hash(), ticks, scheme);
         System.out.printf("  %s%n", EdgeMetric.lastSolve());
-        System.out.printf("%-7s %8s %9s %9s %10s %8s %9s%n", "boids", "journeys",
-                "mean", "sd", "sd/mean", "routes", "shortest");
+        // Two accuracies, not one. sd/mean asks whether journeys agree with each other and
+        // forgives a clock that runs uniformly fast or slow; rms/100 asks whether they agree
+        // with the truth and does not. The second matters wherever the map fixes the scale
+        // for us — a stretch with one way in and one way out has to advance the clock by
+        // exactly one a tick, so a scheme whose scale is off arrives at such a place already
+        // wrong and has to absorb the difference somewhere.
+        System.out.printf("%-7s %8s %9s %9s %10s %9s %9s %8s %9s%n", "boids", "journeys",
+                "mean", "sd", "sd/mean", "rms-100", "rms/100", "routes", "shortest");
         List<Double> spreads = new ArrayList<>();
         Path file = preset.ingest().output("corpus", "journeys_" + ticks + ".tsv");
         StringBuilder rows = new StringBuilder("boids\tseed\tboid\tfx\tfy\tfd\ttx\tty\ttd"
@@ -1928,7 +2002,7 @@ public final class SimTest {
         // edge backwards until the lap it actually flew is added back. So the search has to
         // reach at least that far, which is a bound on the estimate rather than on the sum.
         double total = 0;
-        for (int len : m.length()) total += len;
+        for (double len : m.length()) total += len;
         double cap = ticks + total;
         for (int boids : flockSizes) {
             int runs = Math.max(1, perSize / boids);
@@ -1983,9 +2057,12 @@ public final class SimTest {
             double var = 0;
             for (double e : errors) var += (e + ticks - mean) * (e + ticks - mean);
             double sd = Math.sqrt(var / Math.max(1, errors.size() - 1));
-            System.out.printf("%-7d %8d %9.2f %9.3f %9.3f%% %8.1f %8.1f%%%n", boids, journeys,
-                    mean, sd, 100 * sd / mean, routeTotal / (double) journeys,
-                    100.0 * shortestBest / journeys);
+            double square = 0;
+            for (double e : errors) square += e * e;
+            double rms = Math.sqrt(square / errors.size());
+            System.out.printf("%-7d %8d %9.2f %9.3f %9.3f%% %9.3f %8.3f%% %8.1f %8.1f%%%n",
+                    boids, journeys, mean, sd, 100 * sd / mean, rms, rms,
+                    routeTotal / (double) journeys, 100.0 * shortestBest / journeys);
             spreads.add(100 * sd / mean);
         }
         double lo2 = Double.MAX_VALUE, hi2 = -Double.MAX_VALUE;
@@ -2079,7 +2156,7 @@ public final class SimTest {
             EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
                     l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), schemes[c]);
             double total = 0;
-            for (int len : m.length()) total += len;
+            for (double len : m.length()) total += len;
             double cap = ticks + total;
             for (int s = 0; s < seeds.length; s++) {
                 List<Double> estimates = new ArrayList<>();
@@ -2323,7 +2400,7 @@ public final class SimTest {
                 min = Math.min(min, m.tick()[s]);
                 max = Math.max(max, m.tick()[s]);
             }
-            System.out.printf("%-5d %7d %9d  %.2f to %.2f%n", e, m.length()[e], n, min, max);
+            System.out.printf("%-5d %7.2f %9d  %.2f to %.2f%n", e, m.length()[e], n, min, max);
         }
         System.out.printf("%nways through with slack: %d; with no route at all: %d%n", m.slack(), m.broken());
         System.out.printf("local-ordering violations: %d of %d states, worst by %.3f ticks%n", m.band(), l.liveCount(), EdgeMetric.lastWorstBand());
@@ -2384,7 +2461,7 @@ public final class SimTest {
             last = Math.max(last, m.tick()[s]);
         }
         System.out.printf("%n=== %s: edge %d spans ticks %.1f to %.1f inside the envelope, "
-                        + "edge length %d ===%n", preset.name(), from, first, last, m.length()[from]);
+                        + "edge length %.2f ===%n", preset.name(), from, first, last, m.length()[from]);
         System.out.printf("%n%-8s %-10s %-6s %s%n", "tau", "followers", "edge", "leader band along that edge");
         for (double tau = Math.ceil(first); tau <= last; tau += Math.max(1, (last - first) / 8)) {
             EdgeSlice.Slice s = EdgeSlice.at(l.map(), l.edge(), m, lead, from, tau, true, l.edges());
@@ -2405,6 +2482,91 @@ public final class SimTest {
         System.out.printf("%nat tau=%.0f: %d followers, %d leader states drawn%n",
                 mid, s.followers(), count(s.states()));
         System.out.printf("wrote %s%n", out);
+    }
+
+    /**
+     * Every window on one edge: where a leader must be, tick by tick, to take a boid out the
+     * wrong way.
+     * <p>
+     * The same measurement {@link #slice} draws a single frame of, run across the whole edge
+     * instead of at eight sample points, and reported as numbers rather than as a picture.
+     * A window is one leader edge's band followed through {@code tau}: it opens somewhere,
+     * drifts along at roughly the rate the boid travels, widens as the leader accumulates
+     * slack, and closes. Those four facts are what identifies it.
+     * <p>
+     * <b>The widths are upper bounds, not operating tolerances.</b> The search allows the
+     * leader any legal flying, including weaving to hold station relative to the boid, which
+     * a leader with anywhere else to be would never spend ticks doing. What the width bounds
+     * is the drift a window can absorb before it stops being the same window, which is what a
+     * cover needs; it is not how much room a leader actually has.
+     *
+     * @param from the edge the boid is on
+     * @param keep the exit it is being led out by
+     */
+    public static void windows(PresetScenarioParameter preset, boolean horizontal, int line,
+                               int lo, int hi, int dir, int from, int keep,
+                               EdgeWeights.Scheme scheme, double[][] chain) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
+        EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
+                l.liveCount(), from, keep);
+        EdgeInfluence.Lead lead = EdgeInfluence.lead(l.map(), l.edge(), l.live(), l.liveCount(),
+                from, keep, preset.turningRadius(), env);
+
+        double first = Double.MAX_VALUE, last = -Double.MAX_VALUE;
+        for (int s : env.envelope()) {
+            if (l.edge()[s] != from || Double.isNaN(m.tick()[s])) continue;
+            first = Math.min(first, m.tick()[s]);
+            last = Math.max(last, m.tick()[s]);
+        }
+        System.out.printf("%n=== %s: window %d -> %d, envelope spans tick %.1f to %.1f "
+                + "of edge %d (length %.2f) ===%n", preset.name(), from, keep, first, last,
+                from, m.length()[from]);
+
+        int edges = l.edges();
+        double[] firstLo = new double[edges], firstHi = new double[edges];
+        double[] lastLo = new double[edges], lastHi = new double[edges];
+        double[] tauOpen = new double[edges], tauShut = new double[edges];
+        double[] widest = new double[edges];
+        int[] seen = new int[edges];
+
+        Path file = preset.ingest().output("windows",
+                String.format("window_%d_%d.tsv", from, keep));
+        StringBuilder rows = new StringBuilder("tau\tfollowers\tleaderEdge\tlo\thi\twidth\tstates\n");
+        for (double tau = Math.ceil(first); tau <= last; tau += 1) {
+            EdgeSlice.Slice s = EdgeSlice.at(l.map(), l.edge(), m, lead, from, tau, true, edges);
+            if (s.followers() == 0) continue;
+            for (EdgeSlice.Band b : s.bands()) {
+                rows.append(String.format("%.0f\t%d\t%d\t%.3f\t%.3f\t%.3f\t%d%n",
+                        tau, s.followers(), b.edge(), b.lo(), b.hi(), b.width(), b.count()));
+                int e = b.edge();
+                if (seen[e]++ == 0) { firstLo[e] = b.lo(); firstHi[e] = b.hi(); tauOpen[e] = tau; }
+                lastLo[e] = b.lo();
+                lastHi[e] = b.hi();
+                tauShut[e] = tau;
+                widest[e] = Math.max(widest[e], b.width());
+            }
+        }
+        Files.writeString(file, rows.toString());
+
+        System.out.printf("%-7s %8s %10s %22s %22s %8s %9s%n", "leader", "ticks", "at tau",
+                "band when it opens", "band when it closes", "widest", "drift/tick");
+        for (int e = 0; e < edges; e++) {
+            if (seen[e] == 0) continue;
+            double span = tauShut[e] - tauOpen[e];
+            System.out.printf("edge %-2d %8d %5.0f..%-4.0f %10.1f to %-10.1f %10.1f to %-10.1f"
+                            + " %8.1f %9s%n", e, seen[e], tauOpen[e], tauShut[e],
+                    firstLo[e], firstHi[e], lastLo[e], lastHi[e], widest[e],
+                    span <= 0 ? "-" : String.format("%+.2f", (lastLo[e] - firstLo[e]) / span));
+        }
+        System.out.printf("wrote %s%n", file);
+    }
+
+    /** The same state with overrides attached, since a fresh one comes with none. */
+    static Sim.State withOverrides(Sim.State s, PsyboidOverride... overrides) {
+        return new Sim.State(s.n, s.x, s.y, s.h, s.tick, s.score, s.boidScore, s.label,
+                overrides);
     }
 
     /** Sizes of the sets the leader search runs over, before running it. */
@@ -2586,6 +2748,23 @@ public final class SimTest {
         edges = splitOrbits(map, live, liveCount, succ, degree, pred, predDegree, edge, edges);
         System.out.printf("%nafter cutting orbits: %d edges%n", edges);
         return new Labelling(map, live, liveCount, edge, edges);
+    }
+
+    /**
+     * Which edges a boid can be left on indefinitely, and which of them have already scored.
+     * <p>
+     * The same classification {@link #describe} draws, reachable on its own so that something
+     * only wanting to know whether an edge is stable does not have to render a graph to find
+     * out.
+     */
+    static EdgeNavigation.Properties properties(PresetScenarioParameter preset, Labelling l)
+            throws IOException {
+        EdgeStats stats = report(preset, l.map(), l.live(), l.liveCount(), l.edge(), l.edges());
+        EdgeNavigation.EdgeNav[] navs =
+                EdgeNavigation.analyse(l.map(), l.live(), l.liveCount(), l.edge(), l.edges());
+        int[] straightTo = new int[l.edges()];
+        for (int e = 0; e < l.edges(); e++) straightTo[e] = navs[e].straight().to();
+        return EdgeNavigation.classify(stats.scoring(), straightTo, stats.outTo(), l.edges());
     }
 
     /** Everything a decomposition reports and draws, once the labelling exists. */

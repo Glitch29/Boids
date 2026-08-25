@@ -41,8 +41,9 @@ public final class EdgeMetricStore {
      * to be reflected here by hand.
      * <p>
      * 1: original. 2: lifted weighting prunes nodes no traffic can circulate through.
+     * 3: edge lengths kept as fitted reals instead of being rounded to whole ticks.
      */
-    private static final int FORMAT = 2;
+    private static final int FORMAT = 3;
 
     public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
                                        int liveCount, int edges) {
@@ -155,7 +156,7 @@ public final class EdgeMetricStore {
             int edges = m.length().length;
             out.writeInt(edges);
             out.writeInt(liveCount);
-            for (int e = 0; e < edges; e++) out.writeInt(m.length()[e]);
+            for (int e = 0; e < edges; e++) out.writeDouble(m.length()[e]);
             for (int e = 0; e < edges; e++) for (int f = 0; f < edges; f++) out.writeInt(m.entryFrom()[e][f]);
             for (int e = 0; e < edges; e++) for (int f = 0; f < edges; f++) out.writeInt(m.exitTo()[e][f]);
             for (int i = 0; i < liveCount; i++) out.writeDouble(m.tick()[live[i]]);
@@ -178,8 +179,8 @@ public final class EdgeMetricStore {
         if (in.readInt() != FORMAT) throw new IOException("wrong format");
         int edges = in.readInt();
         if (in.readInt() != liveCount) throw new IOException("live count moved");
-        int[] length = new int[edges];
-        for (int e = 0; e < edges; e++) length[e] = in.readInt();
+        double[] length = new double[edges];
+        for (int e = 0; e < edges; e++) length[e] = in.readDouble();
         int[][] entryFrom = new int[edges][edges], exitTo = new int[edges][edges];
         for (int e = 0; e < edges; e++) for (int f = 0; f < edges; f++) entryFrom[e][f] = in.readInt();
         for (int e = 0; e < edges; e++) for (int f = 0; f < edges; f++) exitTo[e][f] = in.readInt();
