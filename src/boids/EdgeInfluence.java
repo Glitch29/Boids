@@ -47,11 +47,9 @@ public final class EdgeInfluence {
      * @param keep the exit worth keeping; leaving for anything else is the wrong commit
      */
     public static Result analyse(NavMap map, int[] edge, int[] live, int liveCount,
-                                 int from, int keep, double turningRadius) {
+                                 int from, int keep, Flocking f) {
         int turns = Params.TURNS, w = map.width(), h = map.height();
-        double rSep = Params.separation(turningRadius);
-        double rFlock = Params.flock(turningRadius);
-        int reach = (int) Math.floor(rFlock);
+        int reach = (int) Math.floor(f.rFlock());
 
         // Critical: straight from here leaves the edge for something that is not the exit
         // being kept. One more unsteered tick and the question is settled the wrong way.
@@ -89,7 +87,7 @@ public final class EdgeInfluence {
             int s = pair[0], turn = pair[1];
             int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
             long[] kernel = kernels.computeIfAbsent(d * 4 + (turn < 0 ? 0 : 1),
-                    k -> kernel(d, turn, reach, rSep, rFlock));
+                    k -> kernel(d, turn, reach, f));
             int span = 2 * reach + 1;
             for (int dy = -reach; dy <= reach; dy++) {
                 int ny = y + dy;
@@ -397,9 +395,7 @@ public final class EdgeInfluence {
      * second has a future; neither implies the other.
      */
     public static Lead lead(NavMap map, int[] edge, int[] live, int liveCount, int from,
-                            int keep, double turningRadius, Envelope env) {
-        double rSep = Params.separation(turningRadius);
-        double rFlock = Params.flock(turningRadius);
+                            int keep, Flocking f, Envelope env) {
         int turns = Params.TURNS, w = map.width();
         int n = env.envelope().length, words = (liveCount + 63) >>> 6;
 
@@ -427,7 +423,7 @@ public final class EdgeInfluence {
             for (int pi = 0; pi < liveCount; pi++) {
                 int p = live[pi];
                 int pd = p % turns, pc = p / turns;
-                int t = steer(d, pc % w - x, pc / w - y, pd, rSep, rFlock);
+                int t = steer(d, pc % w - x, pc / w - y, pd, f);
                 int u = map.successor(s, t);
                 if (u < 0) continue;
                 if (envIndex[u] >= 0 || edge[u] == keep) keepSet[i][pi >>> 6] |= 1L << (pi & 63);
@@ -451,7 +447,7 @@ public final class EdgeInfluence {
             for (int pi = 0; pi < liveCount; pi++) {
                 if ((forward[i][pi >>> 6] & (1L << (pi & 63))) == 0) continue;
                 int p = live[pi], pd = p % turns, pc = p / turns;
-                int t = steer(d, pc % w - x, pc / w - y, pd, rSep, rFlock);
+                int t = steer(d, pc % w - x, pc / w - y, pd, f);
                 int u = map.successor(s, t);
                 if (u < 0) continue;
                 int j = envIndex[u];
@@ -492,7 +488,7 @@ public final class EdgeInfluence {
                 if ((keepSet[i][pi >>> 6] & (1L << (pi & 63))) == 0) continue;
                 if ((backward[i][pi >>> 6] & (1L << (pi & 63))) != 0) continue;
                 int p = live[pi], pd = p % turns, pc = p / turns;
-                int t = steer(d, pc % w - x, pc / w - y, pd, rSep, rFlock);
+                int t = steer(d, pc % w - x, pc / w - y, pd, f);
                 int u = map.successor(s, t);
                 if (u < 0) continue;
                 boolean ok = edge[u] == keep;
@@ -557,14 +553,14 @@ public final class EdgeInfluence {
      * Every offset and heading a lone neighbour could have that makes the rules ask for
      * {@code turn}, for a boid on heading {@code d}.
      */
-    private static long[] kernel(int d, int turn, int reach, double rSep, double rFlock) {
+    private static long[] kernel(int d, int turn, int reach, Flocking f) {
         int turns = Params.TURNS, span = 2 * reach + 1;
         long[] bits = new long[(span * span * turns + 63) >>> 6];
         for (int dy = -reach; dy <= reach; dy++) {
             for (int dx = -reach; dx <= reach; dx++) {
                 int at = ((dy + reach) * span + (dx + reach)) * turns;
                 for (int hj = 0; hj < turns; hj++) {
-                    if (steer(d, dx, dy, hj, rSep, rFlock) == turn) set(bits, at + hj);
+                    if (steer(d, dx, dy, hj, f) == turn) set(bits, at + hj);
                 }
             }
         }
@@ -579,23 +575,23 @@ public final class EdgeInfluence {
      * comparison are reproduced exactly, because they decide every tie: straight beats both
      * turns, and left beats right.
      */
-    static int steer(int d, int dx, int dy, int hj, double rSep, double rFlock) {
+    static int steer(int d, int dx, int dy, int hj, Flocking f) {
         if (dx == 0 && dy == 0) return 0;
         double d2 = (double) dx * dx + (double) dy * dy;
-        if (d2 > rFlock * rFlock) return 0;                      // out of range: holds heading
+        if (d2 > f.rFlock() * f.rFlock()) return 0;              // out of range: holds heading
         double dist = Math.sqrt(d2);
         double hx = Params.COS[d], hy = Params.SIN[d];
         if (dx * hx + dy * hy < Params.COS_FOV * dist) return 0;  // behind: never seen
 
         double dirX = 0, dirY = 0;
-        if (dist < rSep) {                                        // separation, already unit
-            dirX -= Params.W_SEP * dx / dist;
-            dirY -= Params.W_SEP * dy / dist;
+        if (dist < f.rSep()) {                                    // separation, already unit
+            dirX -= f.wSep() * dx / dist;
+            dirY -= f.wSep() * dy / dist;
         }
-        dirX += Params.W_COH * dx / dist;                         // cohesion, already unit
-        dirY += Params.W_COH * dy / dist;
-        dirX += Params.W_ALI * Params.COS[hj];                    // alignment, already unit
-        dirY += Params.W_ALI * Params.SIN[hj];
+        dirX += f.wCoh() * dx / dist;                             // cohesion, already unit
+        dirY += f.wCoh() * dy / dist;
+        dirX += f.wAli() * Params.COS[hj];                        // alignment, already unit
+        dirY += f.wAli() * Params.SIN[hj];
         if (dirX == 0.0 && dirY == 0.0) return 0;
 
         int best = 0;
@@ -603,7 +599,7 @@ public final class EdgeInfluence {
         for (int delta : new int[]{0, -1, +1}) {
             int a = Math.floorMod(d + delta, turnsOf());
             double score = Params.COS[a] * dirX + Params.SIN[a] * dirY
-                    + (delta == 0 ? Params.STRAIGHT_BIAS : 0.0);
+                    + (delta == 0 ? f.straightBias() : 0.0);
             if (score > bestScore) { bestScore = score; best = delta; }
         }
         return best;

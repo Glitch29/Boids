@@ -2452,7 +2452,7 @@ public final class SimTest {
         EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
                 l.liveCount(), from, keep);
         EdgeInfluence.Lead lead = EdgeInfluence.lead(l.map(), l.edge(), l.live(), l.liveCount(),
-                from, keep, preset.turningRadius(), env);
+                from, keep, Flocking.of(preset.turningRadius()), env);
 
         double first = Double.MAX_VALUE, last = -Double.MAX_VALUE;
         for (int s : env.envelope()) {
@@ -2505,14 +2505,15 @@ public final class SimTest {
      */
     public static void windows(PresetScenarioParameter preset, boolean horizontal, int line,
                                int lo, int hi, int dir, int from, int keep,
-                               EdgeWeights.Scheme scheme, double[][] chain) throws IOException {
+                               EdgeWeights.Scheme scheme, double[][] chain, Flocking flock)
+            throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
         EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
                 l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
         EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
                 l.liveCount(), from, keep);
         EdgeInfluence.Lead lead = EdgeInfluence.lead(l.map(), l.edge(), l.live(), l.liveCount(),
-                from, keep, preset.turningRadius(), env);
+                from, keep, flock, env);
 
         double first = Double.MAX_VALUE, last = -Double.MAX_VALUE;
         for (int s : env.envelope()) {
@@ -2589,7 +2590,7 @@ public final class SimTest {
                 k.withUnsteered(), k.steeredInEnvelope(), k.unsteeredInEnvelope());
 
         EdgeInfluence.Lead lead = EdgeInfluence.lead(l.map(), l.edge(), l.live(), l.liveCount(),
-                from, keep, preset.turningRadius(), e);
+                from, keep, Flocking.of(preset.turningRadius()), e);
         System.out.printf("%d of %d sources can be led out, %d of %d terminals could have "
                         + "been led there%n", lead.sourcesLed(), e.source().length,
                 lead.terminalsLed(), e.terminal().length);
@@ -2615,7 +2616,7 @@ public final class SimTest {
                                  int lo, int hi, int dir, int from, int keep) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
         EdgeInfluence.Result r = EdgeInfluence.analyse(l.map(), l.edge(), l.live(),
-                l.liveCount(), from, keep, preset.turningRadius());
+                l.liveCount(), from, keep, Flocking.of(preset.turningRadius()));
 
         System.out.printf("%n=== %s @%s: holding edge %d away from anything but edge %d ===%n",
                 preset.name(), preset.ingest().hash(), from, keep);
