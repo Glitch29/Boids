@@ -196,6 +196,26 @@ public final class EdgeNavigation {
         return byEdge;
     }
 
+    /**
+     * The edge graph: one bitmask per edge of the edges it can step to, itself excluded.
+     * <p>
+     * The arcs are what says which transitions exist at all, and comparing them against
+     * {@code straightTo} is what says which of those unsteered travel does not account for —
+     * so this is the cheap census of the turns that need explaining. Self-arcs are left out
+     * because staying on an edge is not a transition anything has to explain.
+     */
+    public static long[] arcs(NavMap map, int[] live, int liveCount, int[] edge, int edges) {
+        long[] out = new long[edges];
+        for (int i = 0; i < liveCount; i++) {
+            int s = live[i];
+            for (int t = -1; t <= 1; t++) {
+                int u = step(map, s, t);
+                if (u >= 0 && edge[u] != edge[s] && edge[u] >= 0) out[edge[s]] |= 1L << edge[u];
+            }
+        }
+        return out;
+    }
+
     /** Every edge one step from this one. A refused turn lands where another request does,
      *  so post-veto successors are exactly the legal transitions and this matches the arcs. */
     private static int[] exitsOf(NavMap map, int[] edge, int[] states, int home) {

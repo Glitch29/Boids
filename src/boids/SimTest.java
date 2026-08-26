@@ -964,6 +964,113 @@ public final class SimTest {
         System.out.printf("wrote %s%n", file);
     }
 
+    /**
+     * Builds a map's solver facts if they are missing, then measures the solver against a
+     * truth only the harness knows.
+     * <p>
+     * Three populations, because they ask different questions. A plain flock has no psyboid at
+     * all, so every boid should survive and anything narrower is a false alarm. A flock with an
+     * overridden boid <b>on an unstable edge</b> is the case the solver exists for: the scene
+     * carries evidence about the psyboid and the question is whether it gets named. A flock
+     * whose psyboid sits on a stable edge carries no evidence about it at all — those are
+     * counted separately rather than mixed in, because scoring them together makes a solver
+     * look wrong for being silent about something invisible.
+     *
+     * @param flock the constants the windows are drawn at, if they have to be built
+     */
+    public static void solve(PresetScenarioParameter preset, boolean horizontal, int line,
+                             int lo, int hi, int dir, EdgeWeights.Scheme scheme,
+                             double[][] chain, Flocking flock, int seeds, int warm)
+            throws IOException {
+        SolverFacts f = SolverStore.prepare(preset,
+                new SolverFacts.Gate(horizontal, line, lo, hi, dir), scheme, chain, flock);
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        UnstableEdgeClue clue = new UnstableEdgeClue();
+
+        List<Sim.State> plain = new ArrayList<>();
+        List<Sim.State> shown = new ArrayList<>(), hidden = new ArrayList<>();
+        List<Integer> shownWho = new ArrayList<>(), hiddenWho = new ArrayList<>();
+        for (long seed = 0; seed < seeds; seed++) {
+            Sim.State s = engine.init(seed);
+            for (int t = 0; t < warm; t++) s = engine.tick(s);
+            Sim.State from = s;
+            for (int t = 0; t < 3000; t++) {
+                s = engine.tick(s);
+                if (t % 13 == 0 && owing(f, s) > 0) plain.add(s);
+            }
+            for (int who = 0; who < from.n; who++) {
+                for (int turn : new int[]{-1, 1}) {
+                    Sim.State a = withOverrides(from,
+                            new PsyboidOverride((int) from.tick, 40, turn, who));
+                    for (int t = 0; t < 200; t++) {
+                        a = engine.tick(a);
+                        if (t < 40 || t % 13 != 0 || owing(f, a) == 0) continue;
+                        if (f.stable(f.edgeAt(a.x[who], a.y[who], a.h[who]))) {
+                            hidden.add(a);
+                            hiddenWho.add(who);
+                        } else {
+                            shown.add(a);
+                            shownWho.add(who);
+                        }
+                    }
+                }
+            }
+        }
+
+        System.out.printf("%n=== %s @%s: solver over %d seeds ===%n", preset.name(),
+                preset.ingest().hash(), seeds);
+        System.out.printf("%-32s %7s %8s %8s %9s %8s %8s %8s%n", "scenes with something to "
+                + "explain", "count", "answered", "toodeep", "unexplained", "kept", "alone",
+                "excluded");
+        score(f, clue, "no psyboid", plain, null);
+        score(f, clue, "psyboid on an unstable edge", shown, shownWho);
+        score(f, clue, "psyboid on a stable edge", hidden, hiddenWho);
+    }
+
+    /** How many boids are somewhere unsteered travel would not have left them. */
+    private static int owing(SolverFacts f, Sim.State s) {
+        int owing = 0;
+        for (int i = 0; i < s.n; i++) {
+            int e = f.edgeAt(s.x[i], s.y[i], s.h[i]);
+            if (e >= 0 && !f.stable(e)) owing++;
+        }
+        return owing;
+    }
+
+    private static void score(SolverFacts f, UnstableEdgeClue clue, String label,
+                              List<Sim.State> scenes, List<Integer> psyboid) {
+        int deep = 0, unexplained = 0, kept = 0, alone = 0, excluded = 0, wide = 0;
+        for (int k = 0; k < scenes.size(); k++) {
+            Sim.State s = scenes.get(k);
+            try {
+                boolean[] c = clue.solve(f, s).candidate();
+                int size = 0;
+                for (boolean b : c) if (b) size++;
+                if (size == s.n) wide++;
+                if (psyboid == null) continue;
+                if (c[psyboid.get(k)]) {
+                    kept++;
+                    if (size == 1) alone++;
+                } else {
+                    excluded++;
+                }
+            } catch (Solver.TooDeep e) {
+                deep++;
+            } catch (Solver.Unexplained e) {
+                unexplained++;
+            }
+        }
+        int answered = scenes.size() - deep - unexplained;
+        System.out.printf("%-32s %7d %8d %8d %9d", label, scenes.size(), answered, deep,
+                unexplained);
+        if (psyboid == null) {
+            System.out.printf("   %d of %d over-narrowed, with nothing there to find%n",
+                    answered - wide, answered);
+        } else {
+            System.out.printf(" %8d %8d %8d%n", kept, alone, excluded);
+        }
+    }
+
     /** The same state with overrides attached, since a fresh one comes with none. */
     static Sim.State withOverrides(Sim.State s, PsyboidOverride... overrides) {
         return new Sim.State(s.n, s.x, s.y, s.h, s.tick, s.score, s.boidScore, s.label,
@@ -1837,29 +1944,16 @@ public final class SimTest {
         int[] minX = new int[edges], maxX = new int[edges], minY = new int[edges], maxY = new int[edges];
         Arrays.fill(minX, 9999); Arrays.fill(minY, 9999);
         Arrays.fill(maxX, -1); Arrays.fill(maxY, -1);
-        long[] outTo = new long[edges];
         for (int i = 0; i < liveCount; i++) {
             int s = live[i], e = edge[s];
-            int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+            int cell = s / turns, x = cell % w, y = cell / w;
             size[e]++;
             if (map.score(x, y) > 0) scoring[e]++;
             if (onA[s]) reachesA[e]++;
             minX[e] = Math.min(minX[e], x); maxX[e] = Math.max(maxX[e], x);
             minY[e] = Math.min(minY[e], y); maxY[e] = Math.max(maxY[e], y);
         }
-        for (int i = 0; i < liveCount; i++) {
-            int s = live[i];
-            int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
-            for (int t = -1; t <= 1; t++) {
-                if (map.constrainTurn(x, y, d, t) != t) continue;
-                int nd = Math.floorMod(d + t, turns);
-                int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
-                if (nx < 0 || ny < 0 || nx >= w || ny >= h(map) || map.oob(nx, ny)) continue;
-                if (!map.alive(nx, ny, nd)) continue;
-                int u = (nx + ny * w) * turns + nd;
-                if (edge[u] != edge[s]) outTo[edge[s]] |= 1L << edge[u];
-            }
-        }
+        long[] outTo = EdgeNavigation.arcs(map, live, liveCount, edge, edges);
 
         System.out.printf("%n%-5s %8s %8s %8s  %-22s %s%n",
                 "edge", "states", "scoring", "onA", "bounds", "goes to");
