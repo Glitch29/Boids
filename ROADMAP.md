@@ -47,6 +47,16 @@ Outstanding: the out-of-range collapse under "Cost", and the full minimal-subpat
 shortest leader path is recorded, which is minimal among those found but is not the whole
 minimal set).
 
+> **Arc `4->0` has no table under the two-model boid.** A build was killed after 2h46m of CPU
+> and 8.3 GB of a 10 GB heap without finishing — more than four times what tripling the
+> single-model 754 s would predict. Edge 4 is the worst case for admission breadth, and the
+> second model doubles the branching on top of it. **Every corpus figure so far is arcs `2->1`
+> and `5->6` only.** The out-of-range collapse below is what makes that arc runnable, not merely
+> faster.
+>
+> `CriticalEnvelope.analyse` also emits no progress, so a long build cannot be told from a hung
+> one. Worth fixing before the next long run.
+
 ### What it produces, and what it is not
 
 Critical-envelope analysis (CEA) generates **its own two-boid data**. It is not driven by

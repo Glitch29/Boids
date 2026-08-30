@@ -11,6 +11,30 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-29 (end, 2) — correction: the arc 4->0 table was never built
+
+**A claim in the previous session report was wrong.** Arc `4->0`'s envelope table under the
+two-model boid did *not* finish. The background build ran to **2h46m of CPU and 8.3 GB of a
+10 GB heap** without emitting its "tables built" line, and was killed. Only two `.bin` tables
+exist, for arcs `2->1` and `5->6`; the store's `.partial` rename meant nothing half-written was
+left behind.
+
+Single-model with grace pruning, that arc took 754 s. Two models roughly tripled the other arcs,
+which would predict something near 40 minutes — it ran more than four times that and was still
+going. Edge 4 is the worst case for admission breadth (deepest unsteered chains, only 19% of it
+settled), and the two-model step doubles the branching on top of that.
+
+**Every corpus figure in this log is from arcs `2->1` and `5->6` only**, which is what was
+stated at the time and remains true. Arc `4->0`'s residue under a psyboid is still unmeasured.
+
+**Two things this exposed.** `CriticalEnvelope.analyse` emits no progress at all, so a long
+build is indistinguishable from a hung one — there was no way to judge how close it was, which
+is why killing it was the only defensible call. And the practical ceiling on that arc argues the
+out-of-range collapse in `ROADMAP.md` §1 is not an optimisation but the thing that makes it
+runnable.
+
+---
+
 ## 2026-08-29 (end) — first real commit, and the tree tidied
 
 **Pushed.** The session landed as two commits on `main` — 103 files, +10,306/−1,042 — against a
