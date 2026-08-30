@@ -68,9 +68,21 @@ public final class ThreeBoidPhase {
     /** How long a single trial may run before its arrangement is abandoned as inconclusive. */
     private static final int PATIENCE = 2000;
 
-    /** @param reason the account {@link ExitAudit} gave, or null if the suspect did not exit */
+    /**
+     * One sampled arrangement and what became of it.
+     * <p>
+     * The three start states and the override flag are carried so any cell in the picture can be
+     * replayed exactly. A region on this map is a claim about arrangements, and a claim nobody
+     * can re-run is one nobody can check.
+     *
+     * @param reason      the account {@link ExitAudit} gave, or null if the suspect did not exit
+     * @param otherExited whether the <em>third</em> boid also took an exit during the trial,
+     *                    which separates an arrangement that works directly from one that works
+     *                    by first moving somebody else
+     */
     public record Cell(int route, int otherRoute, int x, int y, boolean exited,
-                       ExitAudit.Reason reason) {}
+                       ExitAudit.Reason reason, boolean otherExited,
+                       int psyStart, int otherStart, int suspectStart, boolean overridden) {}
 
     /** A simple loop from the suspect's edge back to itself, with where each edge sits on it. */
     public record Route(int[] edges, double[] offset, double length) {
@@ -80,18 +92,33 @@ public final class ThreeBoidPhase {
     /**
      * Samples the plane and writes the grid.
      *
-     * @param band    width in ticks of the tau window the suspect starts in, centred on its edge
-     * @param kBoid   unsteered steps the third boid is carried on from a random state
-     * @param kPsy    the same for the psyboid, which was previously always zero. Higher keeps a
-     *                boid on a coasting trajectory rather than somewhere only steering reaches,
-     *                at the cost of never sampling the early part of an unstable edge
-     * @param millis  wall-clock budget; sampling stops at whichever of this and {@code attempts}
-     *                comes first
+     * <h3>How long it runs</h3>
+     * Not a fixed attempt count and not a clock, because neither says anything about the thing
+     * that matters, which is coverage. Instead {@code targetFill}: stop after
+     * {@code 1 / (1 - targetFill)} consecutive attempts that landed only on cells already known.
+     * At a true fill of {@code p} the chance of a fresh cell is {@code 1 - p}, so that many
+     * misses in a row is about where {@code p} has been reached. It also costs nothing when part
+     * of the grid is unreachable: an unfillable region never contributes hits, so the run simply
+     * ends when the reachable part is done.
+     *
+     * <h3>Annealing k</h3>
+     * A high {@code k} keeps the other boids on coasting trajectories, which is realistic and
+     * also refuses to sample the early part of an unstable edge at all. In a larger flock a
+     * fourth boid could put somebody there, so those regions are worth filling even though
+     * reaching them here implicates recent steering. The first time the miss counter fills,
+     * {@code k} drops to zero rather than the run ending; the second time, it ends. Coverage
+     * from plausible placements first, then from any.
+     *
+     * @param band       width in ticks of the tau window the suspect starts in
+     * @param kBoid      unsteered steps the third boid is carried on from a random state
+     * @param kPsy       the same for the psyboid, advanced by its override's turn where it has
+     *                   one, since a permanently right-steering psyboid does not coast
+     * @param targetFill desired saturation of the reachable grid, in [0, 1)
      */
     public static void run(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
                            ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
-                           int kPsy, double resolution, long attempts, long millis, long seed,
-                           Path out) throws IOException {
+                           int kPsy, double resolution, double targetFill, long seed, Path out)
+            throws IOException {
         NavMap map = l.map();
         int[] edge = l.edge(), live = l.live();
         int liveCount = l.liveCount();
@@ -110,22 +137,27 @@ public final class ThreeBoidPhase {
         List<Integer> orphan = new ArrayList<>();
         for (int e = 0; e < f.edges(); e++) if (where[e].isEmpty()) orphan.add(e);
         System.out.printf("  edges on no loop, therefore never sampled: %s%n", orphan);
-        System.out.printf("%d suspect starts in a %.0f-tick band, one per phase; kBoid=%d "
-                        + "kPsyboid=%d, resolution %.0f%n", starts.length, band, kBoid, kPsy,
-                resolution);
+        long patience = (long) Math.ceil(1 / (1 - targetFill));
+        System.out.printf("%d suspect starts in a %.0f-tick band; kBoid=%d kPsyboid=%d, "
+                        + "resolution %.2f, target fill %.4f (%,d consecutive misses)%n",
+                starts.length, band, kBoid, kPsy, resolution, targetFill, patience);
 
         Boids2DEngine engine = new Boids2DEngine(preset);
         Random rng = new Random(seed);
         Map<Long, Cell> cells = new HashMap<>();
-        long began = System.nanoTime(), deadline = began + millis * 1_000_000L;
-        long tried = 0, simulated = 0, inconclusive = 0;
+        long began = System.nanoTime();
+        long tried = 0, simulated = 0, inconclusive = 0, misses = 0;
+        int kb = kBoid, kp = kPsy;
+        boolean annealed = false;
 
-        for (long a = 0; a < attempts; a++) {
-            if ((a & 0x3FF) == 0 && System.nanoTime() > deadline) break;
+        while (true) {
             tried++;
+            boolean override = rng.nextBoolean();
             int suspect = starts[rng.nextInt(starts.length)];
-            int other = coasted(map, live[rng.nextInt(liveCount)], kBoid);
-            int psy = coasted(map, live[rng.nextInt(liveCount)], kPsy);
+            int other = advance(map, live[rng.nextInt(liveCount)], kb, 0);
+            // A psyboid holding a right turn is not coasting, so carrying it forward unsteered
+            // would place it where it could not have arrived from. Advance it as it flies.
+            int psy = advance(map, live[rng.nextInt(liveCount)], kp, override ? +1 : 0);
             if (other < 0 || psy < 0) continue;
 
             int eb = f.edgeAt(x(map, other), y(map, other), h(other));
@@ -150,17 +182,28 @@ public final class ThreeBoidPhase {
                     if (!cells.containsKey(key)) targets.add(new int[]{pw[0], bw[0], cx, cy});
                 }
             }
-            if (targets.isEmpty()) continue;
+            if (targets.isEmpty()) {
+                if (++misses < patience) continue;
+                misses = 0;
+                if (annealed) break;
+                annealed = true;
+                kb = 0;
+                kp = 0;
+                System.out.printf("  %,d cells: dropping k to 0 to reach placements a coasting "
+                        + "boid cannot occupy%n", cells.size());
+                continue;
+            }
+            misses = 0;
 
             simulated++;
-            PsyboidOverride[] overrides = rng.nextBoolean()
+            PsyboidOverride[] overrides = override
                     ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
                     : new PsyboidOverride[0];
             Outcome o = trial(engine, f, tables, from, keep, psy, other, suspect, overrides);
             if (o == null) { inconclusive++; continue; }
             for (int[] t : targets) {
-                cells.put(key(t[0], t[1], t[2], t[3]),
-                        new Cell(t[0], t[1], t[2], t[3], o.exited(), o.reason()));
+                cells.put(key(t[0], t[1], t[2], t[3]), new Cell(t[0], t[1], t[2], t[3],
+                        o.exited(), o.reason(), o.otherExited(), psy, other, suspect, override));
             }
         }
 
@@ -168,16 +211,18 @@ public final class ThreeBoidPhase {
         report(cells.values(), tried, simulated, inconclusive, secs);
         fill(cells.values(), routes, resolution);
         draw(cells.values(), routes, resolution, from, keep, out);
+        replays(cells.values(), out.resolveSibling(
+                out.getFileName().toString().replace(".png", "-replays.tsv")));
         System.out.printf("wrote %s%n", out);
     }
 
-    private record Outcome(boolean exited, ExitAudit.Reason reason) {}
+    private record Outcome(boolean exited, ExitAudit.Reason reason, boolean otherExited) {}
 
     /** One arrangement, flown until the suspect leaves the edge. Null if it never did. */
     private static Outcome trial(Boids2DEngine engine, SolverFacts f, ExitAudit.Tables tables,
                                  int from, int keep, int psy, int other, int suspect,
                                  PsyboidOverride[] overrides) {
-        NavMap map = tablesMap(tables);
+        NavMap map = tables.map();
         int[] xs = {x(map, psy), x(map, other), x(map, suspect)};
         int[] ys = {y(map, psy), y(map, other), y(map, suspect)};
         int[] hs = {h(psy), h(other), h(suspect)};
@@ -192,12 +237,14 @@ public final class ThreeBoidPhase {
                 int now = f.edgeAt(s.x[SUSPECT], s.y[SUSPECT], s.h[SUSPECT]);
                 if (now == from) continue;
                 ExitAudit.Reason reason = null;
+                boolean otherExited = false;
                 for (ExitAudit.Exit e : audit.exits()) {
                     if (e.suspect() == SUSPECT && !e.reasons().isEmpty()) {
                         reason = e.reasons().get(0);
                     }
+                    if (e.suspect() == OTHER) otherExited = true;
                 }
-                return new Outcome(now == keep, reason);
+                return new Outcome(now == keep, reason, otherExited);
             }
         } catch (RuntimeException e) {
             return null;                      // a boid left the image; not an arrangement
@@ -207,8 +254,45 @@ public final class ThreeBoidPhase {
         return null;
     }
 
-    /** The navmap the tables were built against, so the trial and the tables cannot disagree. */
-    private static NavMap tablesMap(ExitAudit.Tables tables) { return tables.map(); }
+    /**
+     * Every cell that produced an exit, with enough to fly it again.
+     * <p>
+     * Exits only. Writing every cell would be a file the size of the picture and almost all of it
+     * would say "continued", which is the one outcome nobody needs to re-examine.
+     */
+    private static void replays(java.util.Collection<Cell> cells, Path file) throws IOException {
+        if (file.getParent() != null) Files.createDirectories(file.getParent());
+        String tab = "\t";
+        StringBuilder s = new StringBuilder(String.join(tab, "route", "otherRoute", "x", "y",
+                "reason", "leader", "cause", "otherExited", "overridden", "psyState",
+                "otherState", "suspectState")).append(System.lineSeparator());
+        int n = 0;
+        for (Cell c : cells) {
+            if (!c.exited()) continue;
+            n++;
+            ExitAudit.Reason r = c.reason();
+            s.append(String.join(tab, String.valueOf(c.route()), String.valueOf(c.otherRoute()),
+                    String.valueOf(c.x()), String.valueOf(c.y()),
+                    r == null ? "NONE" : r.level().toString(),
+                    String.valueOf(r == null ? -1 : r.leader()),
+                    r == null || r.cause() == null ? "-" : r.cause().toString(),
+                    String.valueOf(c.otherExited()), String.valueOf(c.overridden()),
+                    String.valueOf(c.psyStart()), String.valueOf(c.otherStart()),
+                    String.valueOf(c.suspectStart()))).append(System.lineSeparator());
+        }
+        Files.writeString(file, s.toString());
+        System.out.printf("  wrote %,d replayable exits to %s%n", n, file.getFileName());
+    }
+
+    /** Where a boid ends up after {@code k} ticks of holding {@code turn}, or -1 if it leaves. */
+    private static int advance(NavMap map, int state, int k, int turn) {
+        int at = state;
+        for (int i = 0; i < k; i++) {
+            at = map.successor(at, turn);
+            if (at < 0) return -1;
+        }
+        return at;
+    }
 
     // ---- routes -------------------------------------------------------------
 
@@ -338,10 +422,11 @@ public final class ThreeBoidPhase {
     private static int colour(Cell c) {
         if (!c.exited()) return CONTINUED;
         if (c.reason() == null) return 0xFFFFFF;
-        if (c.reason().level() == ExitAudit.Level.PSYBOID) return 0x7A6BB5;
-        boolean widened = c.reason().level() == ExitAudit.Level.ENVELOPE_WIDENED;
-        return c.reason().leader() == PSYBOID ? (widened ? 0xB5734A : 0xC8913F)
-                                              : (widened ? 0x3F7FA8 : 0x4FA8C8);
+        if (c.reason().level() == ExitAudit.Level.PSYBOID) return 0x66C070;
+        // Leader identity is the amber/cyan axis. The diluted model is rare and needs to be
+        // findable rather than tonally polite, so it gets magenta whichever boid led.
+        if (c.reason().level() == ExitAudit.Level.ENVELOPE_WIDENED) return 0xE040D0;
+        return c.reason().leader() == PSYBOID ? 0xC8913F : 0x4FA8C8;
     }
 
     private static void report(java.util.Collection<Cell> cells, long tried, long simulated,
@@ -440,7 +525,7 @@ public final class ThreeBoidPhase {
 
         String[] key = {"nothing accounts for it", "led by the psyboid", "led by the third boid",
                 "diluted model needed", "continued"};
-        int[] swatch = {0xFFFFFF, 0xC8913F, 0x4FA8C8, 0xB5734A, CONTINUED};
+        int[] swatch = {0xFFFFFF, 0xC8913F, 0x4FA8C8, 0xE040D0, CONTINUED};
         int usable = img.getWidth() - pad * 2, per = Math.max(1, usable / 220), pitch = usable / per;
         for (int i = 0; i < key.length; i++) {
             int lx = pad + (i % per) * pitch, ly = head + cy[n] + 20 + (i / per) * 18;

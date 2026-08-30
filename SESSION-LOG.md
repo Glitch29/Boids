@@ -11,6 +11,72 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-30 — phase map: target fill, replayability, and two claims tested
+
+**Changed.** Diluted is magenta rather than a brown indistinguishable from psyboid-amber. The
+psyboid is advanced by its override's turn where it has one, since a permanently right-steering
+psyboid does not coast and carrying it forward unsteered put it where it could not have arrived
+from. Run length is now `targetFill` — stop after `1/(1-targetFill)` consecutive attempts that
+land only on known cells — which measures the thing that matters and costs nothing when part of
+the grid is unreachable. **k anneals**: the first stall drops it to zero rather than ending the
+run, so regions a coasting boid cannot occupy still get filled; the second stall ends it.
+
+**Resolution 0.5, target fill 0.9995, 86 seconds**: 7,050,360 cells, 99.0–100.0% per panel. The
+anneal fired at 6,900,621 cells and the k=0 phase added **150,000 more** — so those regions are
+real and were being missed. 516,139 exits: 275,114 psyboid-led, 132,675 third-boid-led, 21
+diluted, **108,350 unexplained (21%)**. Every exit is written to `phase40-replays.tsv` with all
+three start states and the override flag, so any cell can be flown again.
+
+### The down-right diagonal — confirmed, and it is sharp
+
+Recording whether the *third* boid also exited tests this directly. Over the two ~528-tick route
+panels, binned by `x − y` (which is `psyboid_tau − boid_tau`, the phase difference between the
+two non-suspect boids):
+
+| `x − y` | third boid also exited |
+| --- | --- |
+| 8–47 | rises to **29.8%** at 16–23 |
+| 160–255 | rises to **15.5%** at 168–175 |
+| everywhere else | **0.0%** |
+
+Two windows with hard edges and complete silence between them. **Whether the third boid exits is
+a function of its phase against the psyboid alone**, independent of where the suspect is — which
+is exactly what a diagonal in suspect-relative coordinates means. The inference was right.
+
+Also: `otherExited` is **anti**-correlated with the suspect's exit being unexplained — 4.3% of
+accounted exits against 0.2% of unexplained ones. Whatever the unexplained residue is, it is not
+the psyboid working through the third boid.
+
+### White on the bands — confirmed, including the overhang
+
+Distance from each unexplained cell to the nearest single-leader band, panel
+`[4,0,3,5,8] x [4,0,3,5,8]`, in cells of 0.5 ticks:
+
+| | |
+| --- | --- |
+| on a band (0–1) | **90.7%** |
+| just off it (2–5) | **6.2%** |
+| near it (6–20) | 2.9% |
+| detached (>20) | **0.24%** |
+
+So the white does lie on the coloured bands and does extend slightly past them, as predicted.
+Across the four large panels the detached fraction runs 0.24–2.57%. **The route-2 panels read
+6–11% detached and I do not trust that**: the band threshold is calibrated for the big panels and
+those are half the size, so thin bands there fall below it. The large-panel figures are the ones
+to quote.
+
+**The detached cells cluster rather than scatter** — one example is a 9×9-cell blob at
+`(584–592, 153–161)` in the psyboid-`[4,2,1,5,8]` × boid-`[4,2,7]` panel, about 4.5 ticks square.
+Compact and localised, which is what a real phenomenon looks like and not what sampling noise
+looks like.
+
+**Not done.** The 80%-bias test on the detached cells — whether they are near-misses of a
+two-boid exit — needs replaying each and re-checking the entry arrangement under modified
+constants. The one-dimensional "which `(edge, tau)` ever come within separation range" precompute.
+Resolution 0.25, which the current run makes clearly affordable.
+
+---
+
 ## 2026-08-29 (end, 7) — the phase map gains routes, and saturates in twenty seconds
 
 **Routes are now part of the coordinate.** A sample lives in `(x, y, route, route)` — one simple
