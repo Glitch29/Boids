@@ -1,407 +1,391 @@
-# Edges on the dab-family maps
+# Edges
 
-How the route graph on `dab`, `dabnt` and `dabeone` is defined, derived and validated.
-Written 2026-08-16 against physics version 2.
+**Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
+ingest `609cffdb84be218c`, physics version 2.
 
-These maps look complicated and are not. Whatever a boid does it returns to the same
-stretch of corridor in a bounded, predictable number of ticks, and along the way it faces
-a decision tree with only two real outcomes.
-
-```
-choose from {exit 1, exit 2, neither}
-  exit 1 or exit 2 -> score ~53, choose again in ~530 ticks
-  neither          -> score 0,   choose again in ~285 ticks
-```
-
-The psyboid can always take an exit. An ordinary boid takes one only when other boids
-happen to be positioned so that it turns right at the critical moment.
+An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
+there is no line anyone draws and no geometry in the definition. This document states that
+definition exactly, then everything derived from it.
 
 ---
 
-## 1. The five circuits
+## 1. What an edge is
 
-Five closed circuits, named A–E, each a lap starting and ending at a chosen start state.
-A is the main loop and does not score. B–E all take an exit and score.
+### The axiom
 
-| route | takes | scoring loop | overrides (dabnt) |
-| --- | --- | --- | --- |
-| A | neither exit | — | none |
-| B | exit 1 | anticlockwise | `{19,32,+1}`, `{gateSofC-5,8,+1}` |
-| C | exit 1 | clockwise | `{19,32,+1}` |
-| D | exit 2 | anticlockwise | `{122,32,+1}`, `{gateSofE-5,8,+1}` |
-| E | exit 2 | clockwise | `{122,32,+1}` |
+> A set of edges is a **valid decomposition** of a bidirectionally-navigable map when
+> **every live point is on exactly one edge**, and **all points on the same edge have the same
+> set of predecessor edges and the same set of successor edges.**
 
-Overrides are `{onset tick, duration, turn}`, `+1` being a right turn. B and D differ from
-C and E only by a second, later override that reverses the direction the scoring loop is
-flown. `gateSofC` / `gateSofE` are the ticks at which C and E cross the scoring gate.
+That is the whole definition. It mentions no coordinates, no lines, no directions and no
+distances. An edge is identified only by how it connects to the other edges.
 
-**These onset numbers are not intrinsic.** See §5.
+A transition here is a permitted turn followed by a step: `NavMap.constrainTurn(x,y,d,t) == t`,
+then move. Nothing else counts as adjacency.
 
-## 2. The nine edges, plus X
+### "Next edge" means the first *different* one
 
-An edge's name is the set of routes that traverse it.
+Successor edge means the first edge **other than this one** reachable over all legal turn
+sequences — not whatever is one step away.
 
-```java
-{"ABCDE", "ADE", "A", "BC", "DE", "BCDE", "BD", "CE", "ABD", "X"}
-```
+This matters more than it looks. One-step adjacency shatters every path edge immediately: the
+interior of a path steps into itself, and only its last point steps out, so every point would
+have a different one-step successor set and refinement would split until each point stood
+alone. The correct reading closes over travel within the edge first.
 
-Three branch vertices (one in, two out) and three merge vertices (two in, one out):
+### Both directions, always
 
-| kind | vertex | meaning |
-| --- | --- | --- |
-| branch | `ABCDE -> BC | ADE` | exit 1 taken, or not |
-| branch | `ADE -> DE | A` | exit 2 taken, or not |
-| branch | `BCDE -> BD | CE` | which way round the scoring loop |
-| merge | `{BC, DE} -> BCDE` | the two exits rejoin |
-| merge | `{A, BD} -> ABD` | main loop rejoins |
-| merge | `{ABD, CE} -> ABCDE` | everything rejoins |
+Predecessor sets are **not optional and do not fall out of successor sets.**
 
-**Edge X** carries no route. It splits off `CE` and merges into `BC`, and largely overlaps
-`A` while running the opposite way. It exists because the corridors permit it, not because
-any circuit uses it. It is derived as A's complement: in each region A occupies, whichever
-direction-half A does not own is X.
+Forward alone finds branches but is blind to merges: arriving from somewhere new creates no
+forward distinction, because everything downstream of the merge has the same future whichever
+way it arrived. Run forward-only on dabeone's main loop — which has two branches and two
+merges — and it comes out as two segments where three are correct.
 
-X matters — it is why a boid that has taken an exit can still avoid scoring (§5).
+So refinement computes a fixed point in each direction and splits on the pair.
 
-## 3. The two defining rules
+### What the axiom does at a branch and a merge
 
-Both are properties of the state graph, where a transition is a permitted turn
-(`NavMap.constrainTurn(x,y,d,t) == t`) followed by a step.
+The same rule, read locally, is the intuition:
 
 > **At a branch**, a state that can still reach both outcomes is on the **inbound** edge.
 > **At a merge**, a state reachable from both inbound edges is on the **outbound** edge.
 
-So an edge boundary is not a line anyone draws — it is where the set of reachable futures
-(or reachable pasts) changes.
+**An edge boundary is where the set of reachable futures, or reachable pasts, changes.** It is
+a property of the graph. Nobody places it.
 
 ### Direction, not position
 
-Most live pixels belong to exactly **two** edges, one per direction of travel. `BC` and
-`DE` are disjoint in `(x,y,d)` but overlap heavily in `(x,y)`, running opposite ways.
-Any representation keyed on position alone is wrong.
+Most live pixels belong to **two** edges, one per direction of travel. Two edges can be
+disjoint in `(x, y, d)` and overlap almost completely in `(x, y)`, running opposite ways
+through the same corridor. Every decomposition has this mirror structure: on dabeone every
+edge size appears twice, once travelling one way and once the other.
 
-The two small crossings between the main loop and the outer loop carry **four** edges
-through the same pixels. Signal bleed there is the main hazard when deriving edges.
+Where a corridor crosses another, **four** edges pass through the same pixels.
 
-## 4. Deriving edges: what worked
+**Any representation keyed on position alone is wrong.** This is the single most common source
+of error in this project, and the reason `(x, y)` is a visualisation space and nothing more.
 
-The edge map is `(x,y,d) -> edge`, stored as one byte per state, mirroring the navmap's
-indexing: `(x + y*width) * TURNS + heading`.
+### It is a test, not a constructor
 
-1. **Trace the five circuits** from the start state with the overrides above. Each yields
-   `(tick, x, y, d)` per step.
-2. **Region annotation** generalises those 1-pixel-wide traces to whole corridors. A
-   hand-drawn overlay marks continuous regions; each region-half is exactly one edge:
-   - **red** region: `16<d<48` is one edge, `d<16 or d>48` the other;
-   - **blue** region: `0<d<32` is one edge, `32<d` the other;
-   - **white** at the two four-edge crossings.
-   A region must never span a branch or merge — that is the whole load-bearing constraint.
-3. **Resolve splits and merges** with the tables in §2.
-4. **Seed X** as A's complement in A's regions.
+Many decompositions satisfy the axiom. Every point as its own edge is valid; every point as a
+single edge is valid. Something else has to choose which one you want — see §3.
 
-Validated on dabnt: all five circuits reproduce the stated edge order, 2,377 route states
-checked with 0 wrong, and every unresolved state is unreachable.
+### Refinement is free
 
-### Route tracing gotcha
+The constructive consequence: whenever points within an edge disagree about their
+next-or-previous edge sets, split the edge into one piece per distinct pair of sets. Repeat.
 
-A circuit is complete when it returns within Euclidean distance 4 of the start **and**
-within 8 heading steps of the start heading. Position alone is not enough: every outer-loop
-route passes the start point twice, outbound and inbound. Waiting for an exact state repeat
-overshoots by whole extra laps.
+This terminates. In practice, more than a couple of iterations means something is wrong.
 
-## 5. The override-window trap
+---
 
-**Do not define an exit window by sweeping override onsets.** Sweeping onsets with a fixed
-override duration measures the override vocabulary as much as the map: the earliest onset
-that still exits is the true commit point shifted back by the duration, so halving the
-duration moves every window. On dabeone a 32-tick right turn gave "exit 1 at onsets
-268–277 and 0–12" — the upper bound 12 is real, the lower bound is an artifact.
+## 2. Gates are a bootstrap, not an analysis tool
 
-The intrinsic question is about states, not ticks:
+A **gate** is a line segment in `(x, y)` used to cut cycles so that a first decomposition can
+be constructed. That is its only sanctioned use.
 
-> How far can a boid go before it **must** already be turning right to exit,
-> and where is it **guaranteed** to exit however it turns?
+**That a gate lives in `(x, y)` at all is the tell that it is unfit for analysis.** It cannot
+distinguish the two directions of travel through a corridor, it has no meaning in
+`(edge, tau)`, and its placement is a human choice that nothing downstream should depend on.
+Anything that evaluates a gate where it should be evaluating an edge relation is a bug.
 
-### `firstGates` — the right computation
+Gates are recorded in `SolverFacts.Gate` **for provenance only** — so a reader can reproduce a
+decomposition. Nothing at solve time reads one, and nothing new should.
 
-For every state, which landmark could be the **first** one crossed, over all legal turn
-sequences. A least fixed point: a transition crossing a gate contributes that gate; one
-that does not contributes its destination's set. Then:
+Known-good gates, kept because rebuilding a decomposition needs them:
 
-- both an exit and a continue landmark reachable -> **decision still open** (inbound edge)
-- only an exit landmark -> **committed** (already on the outgoing edge)
-- only a continue landmark -> exit no longer possible
-
-The commit boundary is placement-free. The *counts* on either side are not — they depend
-on where the continue landmark sits.
-
-### What is and is not intrinsic
-
-`avoidScoring` computes the viability kernel over a map where the scoring region counts as
-wall, giving states from which a boid can fly forever without scoring. Its complement is
-"cannot avoid scoring", which needs no drawn landmarks at all.
-
-**On its own it does not locate the exit branch.** Measured on dabeone: a boid that takes
-exit 1 at tick 12 does not become unable to avoid scoring until tick ~386 — because edge X
-lets it leave the exit without ever entering the scoring loop. So `avoidScoring` alone
-locates the **scoring-loop commit**, a real and separate vertex, roughly where `pre-score`
-is crossed.
-
-### One anchor on A is enough
-
-Taking an exit is irreversible with respect to A. A boid that has exited can avoid scoring
-indefinitely by way of X, but it **can never rejoin an A edge without scoring first**. So:
-
-> **has exited** == **cannot reach a known A state without scoring**
-
-That needs no drawn line, no direction convention and no annotation — just one anchor state
-anywhere on route A. Backward breadth-first from the anchor over the real transition
-relation, keeping only steps whose segment misses the scoring region; everything not
-reached has exited.
-
-Verified on dabeone from anchor `(200,179,33)`, reproducing the landmark-derived boundaries
-exactly:
-
-| onset | exits at | state |
+| map | gate | edges |
 | --- | --- | --- |
-| none | never | stays on A |
-| 0, 6, 12 | tick 22 | `(147,129,50)` |
-| 13 | never | — |
-| 100, 104, 108 | tick 124 | `(95,261,25)` |
-| 109 | never | — |
+| dabeone | `x=202, y=[174,191]`, decreasing | 9 |
+| plait | `y=360, x=[335,350]`, both ways | 6 |
 
-89,600 of 136,276 live states have exited; the remaining 46,676 are the A edges.
+**Health check: arrival count.** A gate must be a *real cut* — every cycle crossing it. A bad
+gate does not fail loudly; it corrupts the partition. An arrival count far below the
+corridor's cross-section means the line is clipping something rather than spanning it. 62
+arrivals against a healthy 120–180 signalled a bad gate that made refinement run away to 493
+edges.
 
-### Cross-checked against dabnt's annotated edge map
+---
 
-Anchored on the settled single-boid orbit at `(264,361,51)`, against the hand-built edge
-map, over all 172,666 live states:
+## 3. Constructing a decomposition
 
-| edge | expected | classified on A | classified exited |
-| --- | --- | --- | --- |
-| ABCDE, ADE, A, ABD | on A | **all** | 0 |
-| BC, DE, BCDE, X | exited | 0 | **all** |
-| BD | exited | 1,553 | 5,223 |
-| CE | exited | 826 | 7,336 |
+The axiom accepts many answers, so a construction picks a useful one. Gates enter here and
+nowhere else.
 
-Eight of ten edges exact, X included. The 2,379 disagreements (1.4%) are entirely on BD and
-CE, and they are not errors: those two edges **span the scoring region**, running from the
-scoring-loop split back to the merges. A boid on the far end of BD has already scored and
-can reach A without scoring *again*, so it correctly fails the test.
+1. **`O`** = the points that can return to themselves without crossing the gate — the union of
+   cycles in the gate-cut graph. Its strongly connected components are the **orbits**, one
+   edge each.
+2. **Merge orbit phases.** A ~4 px step means pixels four apart are one trajectory sampled a
+   tick apart; the three between belong to trajectories that never touch it.
+3. **The complement of `O`** splits into components connected by forward *or* backward travel
+   without leaving the complement. These are candidate edges.
+4. **`mergeAlongside`** — merge edges within one tick's travel and ±1 heading **mod 32**. This
+   must **exclude orbits**; 54.8% of one plait region lies alongside an orbit and merging it
+   destroys the decomposition. Errant merges are otherwise harmless — refinement splits them
+   again.
+5. **Refine**, per §1.
+6. **`splitOrbits`** — cut each orbit with its own gate.
 
-So the test measures "will score before returning to A", which equals "has exited" only for
-edges lying wholly before the scoring event. It cannot place BD or CE. For solver purposes
-that cut may be the more useful one, since it is exactly the set of boids with a score
-still ahead of them.
+An **orbit** is any edge some point of which can forward-navigate back to itself. The axiom
+cannot split one: it is strongly connected, so every point reaches everything and all
+next-edge sets are equal. It has to be cut. A single state is not enough — removing one state
+from a strongly connected orbit leaves it strongly connected by another path.
 
-Note that **every onset within a window commits at the identical state and tick**, twelve
-ticks of onset spread notwithstanding. The corridor funnels them: near an exit the veto
-leaves only one legal turn, so the branch is a specific gate state rather than a diffuse
-boundary. The same effect appears on dabnt, where ticks 19–26 have left and straight both
-vetoed.
+**Placing an orbit's gate:** keep it away from **both** directions of traffic across the
+orbit's boundary, `O → Oᶜ` and `Oᶜ → O`. Measuring only the outgoing side put dabeone's gate
+at a junction adjoining four edges at once, which is what produced the 493-edge runaway.
+Correcting the boundary test moved them to plain corridor and both orbits cut cleanly.
 
-What still needs a reference is telling the outgoing edges apart — `BC` from `DE`, `BD`
-from `CE` — since those differ by direction through shared pixels. dabeone's blue lines do
-that job in one bit each.
+**Limit:** refinement gives up above **63 edges** (64-bit mask), `SolverFacts.MAX_EDGES`. The
+error message distinguishes this from bad gate placement, but the limit remains.
 
-## 6. Map-specific data
+**The edge boundary is the commit boundary.** The edges were designed to force that
+equivalence: the tick a boid leaves an edge is the tick its choice of destination is locked in.
+That is why an exit is reported at the crossing, even though it is *attributed* at an earlier
+moment — see `ROADMAP.md` §1.
 
-### dabnt
+**Not implemented:** revert-on-invalid-merge. The spec calls for backing out to the uncut orbit
+and retrying when a merged edge fails the axiom. Correct gate placement removed the need on
+the current maps, but a bad gate still corrupts the partition rather than being rejected.
 
-> ⚠ **The old start `(270, 156, 32)` is dead under physics 2** — `alive == false`, and the
-> edge map has no label for it. `constrainTurn` returns the proposed turn unchanged from a
-> dead state, so `traceRoute` still produced paths from it and the edge map built on those
-> paths validated against itself; the check was circular, not sound. The traces and edge
-> map in `ingests/48b46d3d06e54c75/routes/` therefore start from a state no boid can
-> occupy and need regenerating from a live start. Take one from the settled single-boid
-> orbit, e.g. `(264, 361, 51)`, which is live, reachable and labelled `A`.
+---
+
+## 4. Per-edge properties
+
+All from `EdgeNavigation`, all stored in `SolverFacts`.
+
+**`straightTo[e]`** — where unsteered travel from `e` leads. **A dominant destination, not a
+universal one.** The exceptions are **follow-through states**: once a boid has been turned
+into a branch it stays labelled on the old edge for a few ticks, and straight travel from
+there completes the crossing. On dabeone, 20 states of edge 2 go straight to edge 1, 16 of
+edge 4 to edge 0, 18 of edge 5 to edge 6. Treating `straightTo` as universal inflated a
+route-change count by 50%.
+
+**`stable[e]`** — unsteered travel returns to the edge without scoring. **This is the
+snapshot-only test for "requires explanation":** a boid on an unstable edge is somewhere
+unsteered travel would not have left it. On dabeone the only unsteered cycle is
+`2 → 7 → 4 → 2`, so `{2,4,7}` are stable and `{0,1,3,5,6,8}` are not.
+
+**`scoring[e]`** — least fixed point of three rules: holds scoring states; leads somewhere
+scoring; every way in comes from somewhere scoring.
+
+**`exitTurn[from][to]`** — which turn a crossing counts as: `-1` left, `0` straight, `+1`
+right, `NO_EXIT` where no turn connects the pair. **An exit is a property of the pair of
+edges, not of what the boid was steering when it crossed.** A boid that turned a corner over
+thirty ticks arrives at the boundary long since committed, and the last tick before crossing
+asks for nothing in particular; reading the classification off instantaneous steering makes
+that look like a straight crossing. Straight is applied last so it wins where more than one
+turn reaches the same edge.
+
+**Steering cost is dynamic programming, not a search.** The minimum steered ticks to leave by
+a given exit is a 0-1 BFS: states reaching the target in one straight tick have value 0, in
+one turning tick have value 1, otherwise `min(1 + left, 1 + right, 0 + straight)` over
+navigations that stay on the edge. Non-straight ticks **need not be consecutive**, and a
+right-facing exit *can* navigate left. Getting this right took dabeone from 103–119 ticks to
+**7–8**, and plait from 717 to **6**.
+
+---
+
+## 5. `(edge, tau)` — the macro space
+
+The decomposition says which stretch a state is on but not where along it, so two states on
+one edge are incomparable and states on different edges doubly so. The **clock** fixes that:
+every state gets a **tau**, every edge a real-valued **length**, and distance becomes
+subtraction.
+
+**Lengths add.** Leaving an edge at tau `t` puts the boid at `t + 1 − L(e)` on the next. More
+usefully at a vertex where several edges meet: subtract each arriving edge's own length and
+every edge around the vertex is measured from the vertex itself.
+
+**Distance** = `tau(end) − tau(start) + Σ lengths of every edge on the route except the last`,
+enumerated by DFS over the edge arcs. `EdgeDistance.between` returns one value per route
+rather than picking, because they are genuinely different journeys.
+
+**The cap belongs on the estimate, not the route sum.** plait's edges are 753 long, and a cap
+of `3 × ticks` pruned every route leaving the start edge, producing errors of 815 ticks. Use
+`cap = ticks + Σ all edge lengths`.
+
+**Keep lengths real.** Rounding to whole ticks injects up to half a tick of error at every
+crossing — invisible inside an edge, and the same order as the effects being measured.
+
+**Lengths are weighting-dependent.** Never compare across schemes. Under lifted memoryless,
+dabeone's nine lengths are ≈ 158.14, 158.62, 100.59, 100.97, 93.73, 102.59, 71.84, 80.97,
+72.76.
+
+**Free correctness check:** inverse edge pairs should come out near-equal (157.37/157.77,
+99.75/100.15, 752.89/753.39). Nothing in the solve knows about inverses, so agreement is
+independent evidence.
+
+---
+
+## 6. Routes
+
+**A route is a series of edges.** That is the whole representation. Positions along it come
+from tau plus the accumulated lengths of everything crossed.
+
+On dabeone the only unsteered cycle is `2 → 7 → 4 → 2`, with an exit branching off edges 4 and
+2. Everything else on the map is reached by taking one of those exits.
+
+**Exactly three steered edge transitions exist anywhere on dabeone** — `2→1`, `4→0`, `5→6` —
+established exhaustively by `TwoBoid`. Everything else is straight-only. That is what makes a
+finite cover of the explanations possible.
+
+`5→6` closes a loop over `{3,5,6}` that a psyboid can maintain to keep a boid off the scoring
+edge indefinitely. **It occurs only in the first 500 ticks and then never again** across 1.28M
+boid-ticks, so it is a cold-start phenomenon; warm up before concluding anything about it.
+
+---
+
+## 7. The critical envelope, and windows
+
+The umbrella name for this analysis is **critical-envelope analysis**. It has no single owning
+class; the stages are:
+
+| stage | code | what it produces |
+| --- | --- | --- |
+| 1. critical states + envelope | `EdgeInfluence.envelope` | `Envelope(envelope, terminal, source, critical)` |
+| 2. leader positions | `EdgeInfluence.lead` | `Lead` |
+| 3. bands at one tau | `EdgeSlice.at` | `Slice(tau, followers, bands)` |
+| 4. driver + storage | `SimTest.windows` → `SolverFacts.Window` | `<ingest>/windows/window_<f>_<t>.tsv` |
+
+> ⚠ **The envelope is being redefined and the stages below will change.** The replacement is
+> the set of states that reverse-navigate from the exit edge — complete by construction, since
+> every boid that exits was steered onto it — and attribution moves to the tick the boid
+> *enters* the envelope rather than the tick it crosses. Full specification in `ROADMAP.md` §1.
+> What follows describes what is built today.
+
+**Critical state** — one from which a single unsteered tick commits the boid the wrong way.
+The last moment anything can be done.
+
+**Envelope** — the forward closure of the critical states *within the edge*, so a boid in it
+stays in it until it leaves the edge altogether. Critical states alone lack that property, and
+without it "kept in the envelope" is not a condition a leader could hold onto tick after tick.
+
+The suspect side of this is acknowledged to be crude: unsteered travel from the start of the
+edge, intersected with an expanded band of critical states. The leader side admits **any
+navigable position**, and deliberately so — restricting it to `TwoBoid`-reachable arrangements
+would over-constrain where a leader could have been coming into the turn.
+
+**Window** — for one arc `from → keep`, where a leader must be, tau by tau, as a band per
+leader edge.
+
+**The band's width is the answer, not its position.** Position depends on the arbitrary choice
+of tau; width is the tolerance in the leader's position and does not move when the envelope
+does.
+
+**Only the opening band is meaningful.** Widths saturate to whole edges within a few ticks,
+because the search lets a leader weave to hold station. Tightest measured on dabeone: `2→1` at
+leader edge 7, **0.2 ticks**; `4→0` at leader edge 2, **1.0**. `SolverFacts.vacuous` marks a
+band too wide to say anything, at 0.9 of the leader edge.
+
+**Backward closure for the envelope must use unsteered predecessors only**, and sources must be
+folded in *before* the forward closure or forward-closedness breaks.
+
+**Widening.** Halve `straightBias` rather than changing `wSep`: it scales how decisive an
+influence must be without altering what any influence *is*, and the same knob is wanted on the
+photo-solving side. For separation, additionally record a **double-strength separation** band;
+it only bites within `rSep`, so applying it globally still changes only separation cases.
+**Never do this by editing `Params`** — pass a `Flocking`.
+
+**Cause** is `SEPARATION` or `ALIGNMENT_AND_COHESION`. Alignment and cohesion are a **joint
+cause**: there is no clean distinction and they frequently work in tandem. *This is not yet a
+field on any band* — see `ROADMAP.md`.
+
+### Do not define a window by sweeping override onsets
+
+Sweeping onsets at a fixed override duration measures the override vocabulary as much as the
+map: the earliest onset that still exits is the true commit point shifted back by the
+duration, so halving the duration moves every window. On dabeone a 32-tick right turn gave
+"exit 1 at onsets 268–277 and 0–12" — the upper bound is real, the lower bound is an artifact.
+
+The intrinsic question is about states, not ticks: how far can a boid go before it **must**
+already be turning to exit, and where is it **guaranteed** to exit however it turns. Both lie
+entirely inside one edge.
+
+Relatedly, **every onset within a window commits at the identical state and tick.** The
+corridor funnels them: near an exit the veto leaves only one legal turn, so the branch is a
+specific gate state rather than a diffuse boundary.
+
+---
+
+## 8. Things that look like findings and are not
+
+1. **Phase combs.** A ~4 px step means anything that comes out as an evenly-spread speckle
+   rather than a region is phase, not structure. A source set appearing to reach "only 5 of 36
+   terminals" was this; after making the sources phase-complete, all were reachable.
+   *The one place phase is modelled rather than distrusted is the **partial tick** in the
+   settled-state construction — boids clump in tau modulo the step length, so states genuinely
+   on the path of unsteered travel get crossed between ticks. See `ROADMAP.md` §1.*
+2. **`straightTo` as a universal.** Follow-through states violate it — §4.
+3. **Wide bands near an exit.** Windows saturate by construction; only the opening is real.
+4. **Cold-start transients.** `5→6` exists only in the first 500 ticks. Measure warmed.
+5. **A stale cache.** Identical numbers after a real fix means the key is wrong. Bump `FORMAT`.
+6. **Extremes at edge crossings.** Usually the rounding of an edge length.
+7. **`d` and `d+32` being "close".** They are opposite directions through one pixel and belong
+   to unrelated trajectories. The one deliberate exception is `mergeAlongside`, which compares
+   headings mod 32.
+
+---
+
+## 9. dabeone reference data
+
+Ingest `609cffdb84be218c`, 379×407, turning radius 40, physics 2.
 
 | | |
 | --- | --- |
-| start | ~~`(270, 156, 32)`~~ dead under physics 2 — see above |
-| route A lap | 289–290 ticks |
-| exit routes | ~520–524 ticks, score 53 |
-| live states | 172,666 (physics 2, bidirectional) |
-| gates | `gate-A (186,185,179,189)`, `gate-B (81,82,183,190)`, `gate-S (311,310,273,280)` |
-
-Gates are `(fromX, toX, yTop, yBottom)` for a vertical line; the crossing direction is
-implied by which x is larger. `Gate.crossed` pads the span by 3 to catch diagonal steps.
-
-### dabeone
-
-Marks are drawn into the map itself and are inert to the engine — neither black
-(`000000`, wall) nor scoring orange (`FF7F27`) — so they change the content hash but not
-the physics.
-
-| | |
-| --- | --- |
-| start | `(200, 179, 33)`, agreed by 16/16 seeds |
+| live states | 136,276 |
+| edges | 9 |
+| gate | `x=202, y=[174,191]`, decreasing |
+| stable edges | `{2, 4, 7}` |
+| unsteered cycle | `2 → 7 → 4 → 2` |
+| steered arcs | `2→1`, `4→0`, `5→6` (exhaustive) |
+| follow-through states | 20 on edge 2, 16 on edge 4, 18 on edge 5 |
 | route A lap | 278 ticks |
 | exit routes | 533–536 ticks, score 54 |
-| live states | 136,276 |
-| exit 1 available | route A ticks **0–12** |
-| exit 2 available | route A ticks **101–108** |
-| cannot avoid scoring | 11,574 states |
+| reachable pairs | 213,423,450 (1.15%), bit-identical from 5 seeds |
+| psyboid reaches | 100% of live states; the boid reaches 79.86% |
 
-| mark | colour | geometry | role |
-| --- | --- | --- | --- |
-| red | `ED1C24` | x=201, y179–186 | **start line**, crossed R->L; opens the exit-1 decision |
-| red | `ED1C24` | x=79, y182–190 | crossed L->R; opens the exit-2 decision |
-| red | `ED1C24` | x=331, y273–280 | crossed R->L into the scoring loop (A crosses it L->R only) |
-| blue | `00A2E8` | x=154, y111–121 | inside exit 1: L->R is BC, R->L is DE |
-| blue | `00A2E8` | x=86, y264–269 | exit 2: L->R is BC, R->L is DE |
-| grey | `7F7F7F` | x82–268, y278–360 | entirely within A and X |
+---
 
-Each decision **opens exactly as its red line is crossed**, which is why the lines are
-where they are.
+## 10. Retired
 
-Extend gates ~5px past the drawn ends to catch diagonal steps — but check first. Four of
-the five run into solid wall, so extension is free. The x=86 blue line has only **4px** of
-wall below it before another corridor opens at y=274, so its lower end must be clipped
-(y1=270 keeps the gate, including the record's own 3px slack, inside the wall).
+Recorded so they are not rediscovered and mistaken for current method.
 
-## 7. Leader windows (dabnt, physics 2)
+**Named route edges.** `EDGES.md` formerly defined ten edges by which of five circuits
+traversed them — `ABCDE`, `ADE`, `A`, `BC`, `DE`, `BCDE`, `BD`, `CE`, `ABD`, and `X` (which
+carried no route and existed because the corridors permitted it). Built by hand on dabnt.
+Retired: programmatic decomposition supersedes it, and the naming does not generalise.
 
-Which phase differences let a leader pull an ordinary boid out of route A. Phase difference
-is the leader's time-on-lap minus the follower's; the follower starts a fresh lap at 0.
+**Hand-drawn region annotation.** A painted overlay marking corridor regions, each half of
+which was one edge. **Purely a bootstrapping tool** for calculating edges before the axiom was
+implemented. No longer needed and not to be regenerated.
 
-| leader route | induces exit 1 | induces exit 2 | follower reaches exit edge |
-| --- | --- | --- | --- |
-| B, C | **233–235** | none | tick 42 |
-| D, E | none | **21–30, 34–37** | tick 134–136 |
+**The five circuits A–E and their traces.** Routes are now a series of edges. The traces in
+`routes/` and `ingests/48b46d3d06e54c75/routes/` are stale — they were generated from dabnt
+start state `(270, 156, 32)`, which is **dead under physics 2**. `constrainTurn` returns the
+proposed turn unchanged from a dead state, so tracing still produced paths and the edge map
+built on them validated against itself. The check was circular, not sound.
 
-**B ≡ C and D ≡ E exactly** within this phase range, because they diverge only in the
-scoring loop, later than any decision here. That collapses the leader dimension from four
-routes to two classes: "took exit 1" and "took exit 2". A leader induces the exit it took
-itself. The 31–33 hole is real structure, not noise.
+**`avoidScoring` / the A-anchor test.** A viability kernel over a map where the scoring region
+counts as wall, used to derive "has this boid exited" from a single anchor state. It works and
+needs no annotation, but it measures "will score before returning to A", which equals "has
+exited" only for edges lying wholly before the scoring event. Superseded by stability.
 
-Method: leader held on its route with a straight override for 10,000 ticks (a lone boid
-proposes straight everywhere outside its route overrides, so this reproduces the circuit
-while making the leader deaf to the follower), then the route's own overrides on top. Two
-shifted overrides alone are **not** enough — one other boid pushes the leader off the
-circuit long before the follower decides. Verify fidelity every run: 251/251 with the
-straight hold, 23/251 without.
+---
 
-Caveats: the leader is boid 0 so it moves first, and it flies straight rather than
-flocking, so these are idealised-leader windows.
+## 11. Open
 
-## 7a. Decomposition from gates alone (the validity axiom)
-
-A set of edges is a **valid decomposition** of a bidirectionally-navigable map when every
-live point is on exactly one edge, and all points of an edge agree on the set of edges they
-can go to next. Many decompositions satisfy this — one edge per point, or one edge for
-everything — so a construction is needed to pick a useful one.
-
-Refinement: whenever points of an edge disagree about their next edges, split by that set,
-and repeat. Guaranteed to terminate.
-
-> "Next edge" means the first **different** edge reachable over all legal turn sequences,
-> not whatever is one step away. One-step shatters every path edge immediately, since its
-> interior steps within itself and only its last point steps out.
-
-### Construction from one gate
-
-1. `O` = points that can return to themselves without crossing the gate — the union of
-   cycles in the gate-cut graph. Its SCCs are the orbits, one edge each.
-2. The complement splits into components connected by forward *or* backward travel without
-   leaving the complement.
-3. Refine.
-
-On dabeone with gate `x=230, y=[200,325]` rightward (320 transitions cut) this gave five
-compound edges directly — refinement was a **no-op**, so the construction lands on a valid
-decomposition unaided:
-
-| states | scoring | on A | is |
-| --- | --- | --- | --- |
-| 43,970 | 0 | all | {ABCDE, ADE, A, ABD} |
-| 17,028 | 0 | 0 | {BC₁} |
-| 17,028 | 0 | 0 | {DE} |
-| 43,970 | 0 | 0 | {CE₁, X, BC₂, BCDE} |
-| 14,280 | 9,077 | 2,706 | {BD, CE₂} |
-
-Adjacency `A → {BC₁, DE} → {…BCDE} → {BD, CE₂} → A`. The two 43,970-state edges are exact
-mirrors, as are the two 17,028-state ones — the same pixels travelled opposite ways.
-
-### Cutting orbits
-
-An orbit is any edge some point of which can forward-navigate back to itself. The axiom
-cannot split one: it is strongly connected, so every point can reach everything and all
-next-edge sets are equal. Cut it with a gate, refine, then merge the cut with the edges
-either side to heal the artificial seam.
-
-**The gate must be a real cut** — a line across the corridor, every cycle crossing it. A
-single state is not enough: removing one state from a strongly connected orbit leaves it
-strongly connected by another path, and refinement finds nothing. Place it as far as
-possible from the orbit's own borders, and verify no cycle survives before using it.
-
-Cutting dabeone's A orbit split it in two, giving 6 edges, `4 → 2 → 4` with one exit
-branching from each.
-
-### The axiom is symmetric
-
-All points of an edge must share **both** their successor edges and their predecessor
-edges. Bidirectionality does not fall out of the forward rule. Forward alone finds branches
-but is blind to merges — arriving from somewhere new creates no forward distinction — so
-dabeone's A loop, which has two branches and two merges, came out as two segments instead
-of three. Refinement therefore computes a fixed point in each direction and splits on the
-pair.
-
-### Placing an orbit's gate
-
-Keep it away from **both** directions of traffic across the orbit's boundary: O → Oᶜ *and*
-Oᶜ → O. Measuring only the outgoing side puts the gate near where the complement flows back
-in, which on dabeone meant `(284,285)` — a junction adjoining BCDE, BD, CE and X all at
-once. The gate cut raggedly (62 arrival states against a healthy ~120–180) and refinement
-ran away to 493 edges. Correcting the boundary test moved the gates to `(14,108,16)` and
-`(14,104,48)`, a plain corridor, and both orbits cut cleanly.
-
-Arrival count is a good health check: far below a corridor cross-section means the line is
-clipping something rather than spanning it.
-
-### Result on dabeone
-
-Gate `x=230, y=[200,325]` rightward, then one gate per orbit: **9 edges**, refinement stable.
-
-| states | scoring | on A | goes to |
-| --- | --- | --- | --- |
-| 12,471 | 0 | 12,471 | exit, 15,361 |
-| 15,361 | 0 | 15,361 | exit, 16,138 |
-| 16,138 | 0 | 16,138 | 12,471 |
-| 17,028 ×2 | 0 | 0 | the two exits |
-| 12,471 / 15,361 / 16,138 | 0 | 0 | reverse twins (X family) |
-| 14,280 | 9,077 | 2,706 | scoring, back to A |
-
-A loops as `12,471 → 15,361 → 16,138 →`, an exit branching off each of the first two. Every
-size appears twice, once on A and once reversed — same pixels, opposite headings.
-
-Still unimplemented: revert-on-invalid-merge. The spec calls for backing out to the uncut
-orbit and retrying when the merged edge fails the axiom. Correct gate placement removed the
-need on this map, but a bad gate still corrupts the partition rather than being rejected.
-
-Verification gate for naming the edges: `x=255, y=[170,200]`, right-to-left selects A,
-left-to-right its reverse twin.
-
-## 8. How much annotation is actually needed
-
-Revised after §5. The hand-drawn region overlay was how dabnt's edge map was built, but
-most of what it encoded is now derivable:
-
-| what | how | needs from a human |
-| --- | --- | --- |
-| has the boid exited | backward BFS from an A anchor, scoring excluded | **one state on route A** |
-| where the exit branches are | the frontier of that set | nothing |
-| the scoring-loop commit | `avoidScoring` viability kernel | nothing |
-| `BC` vs `DE`, `BD` vs `CE` | direction through shared pixels | **one bit per edge pair** |
-| reachability / unreachable states | `NavMap` bidirectional kernel | nothing |
-
-So the minimum input is an anchor plus a handful of direction bits, not a painted map.
-Not yet done: re-deriving dabnt's edges this way and diffing against its hand-annotated
-ground truth, which is what would settle whether the annotation is necessary or merely
-convenient.
-
-## 9. Open
-
-- Two-boid leader combinations — a minority of induced exits, not yet characterised.
-- The canonical `(x,y,d,tick)` path per edge, for backward extrapolation.
-- dabeone's own edge map: start, gates and commit boundaries are known; the annotation is
-  not yet drawn.
+- **The critical envelope may not cover the earliest possible influence.** Whether the
+  envelope is large enough is the next thing to check, and it is priority one — see
+  `ROADMAP.md`. A window is only a cover if it opens at or before the first tick a leader
+  could act.
+- **Cause is not recorded on bands.** `SEPARATION` vs `ALIGNMENT_AND_COHESION` currently
+  exists only as hand-written labels in `UnstableEdgeClue`.
+- **Modified-physics separation windows are not stored separately.** `SolverFacts` holds one
+  `Window[]`, so the fallback set has nowhere to live.
+- **Two-boid leader combinations** — flocking sums its neighbours before choosing, so two
+  boids can produce a turn neither would produce alone. Not characterised.
+- **Freely navigable edges** — an edge where a boid at any state can turn around and come back.
+  Nothing models this, and most of the machinery assumes monotone progress along an edge, so
+  tau would not be monotone in time. Dabeone and plait have none, which is why it has not bitten.

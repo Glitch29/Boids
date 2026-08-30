@@ -1,0 +1,23 @@
+map        plinko
+hash       79bc84a1369a3d2f
+sha256     79bc84a1369a3d2f77dbe417b665a327210091dbf7661344fcad96d558be00f1
+size       600x600
+oob        121876
+scoring    120205
+open       117919
+dead       1034 (shown as wall in display.png)
+radius     40
+navigable  BIDIRECTIONAL
+physics    2
+ingested   2026-08-16T03:25:57Z
+source     areas\plinko\plinko.png
+
+map.png is this map. It does not change, and it is the only file here that
+physics may be computed from. display.png is the same map with pixels no
+boid can occupy painted as wall; it is for rendering and reading, and
+rebuilding a navmap from it would give a smaller and wrong answer, because
+dead pixels lie on the swept paths of live ones.
+
+Anything derived from this version of plinko — navmaps, renders, route traces,
+edge maps, analysis — belongs in here, and nothing in here refers to a
+version that is not this one.

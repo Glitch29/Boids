@@ -56,20 +56,41 @@ public final class SolverFacts {
     }
 
     /**
+     * A band wide enough to say nothing.
+     * <p>
+     * The leader search asks which placements are compatible with the boid still leaving the
+     * right way, and near the end of an envelope the boid is committed — so every placement is
+     * compatible and the band comes back as the whole edge. That is not a wide constraint, it
+     * is the absence of one, and on dabeone the rows it produces are byte-identical across all
+     * three windows: every edge at its full extent. Discarding them is what lets every other
+     * {@code tau} be used, which matters because a leader can join a boid part way through and
+     * a window anchored on one moment misses it.
+     */
+    public static final double VACUOUS = 0.9;
+
+    /** Whether this band covers so much of its edge that it excludes nothing. */
+    public boolean vacuous(Band b) {
+        double span = tickHi[b.leaderEdge()] - tickLo[b.leaderEdge()];
+        return span <= 0 || b.width() >= VACUOUS * span;
+    }
+
+    /**
      * A turn unsteered travel does not account for, and where a leader has to be to cause it.
      * <p>
      * One window per steered arc of the edge graph: a boid on {@code from} that would have
      * gone straight to {@code straightTo[from]} instead leaves for {@code keep}.
      * <p>
-     * <b>Only the opening bands mean anything.</b> The bands widen as {@code tau} advances and
-     * saturate to whole edges within a few ticks, because the search that produced them lets a
-     * leader weave to hold station, and because a boid at the far end of the envelope is
-     * already committed so anything at all "suffices" from there. The rows are all kept, since
-     * they cost nothing and the right operating width is still an open question, but a caller
-     * that takes the union over {@code tau} gets a statement true of every leader and useful
-     * about none.
+     * <b>A leader can join part way through, so no single {@code tau} is the window.</b> The
+     * rows are all kept and a reader is meant to use all of them — except the ones
+     * {@link #vacuous} rejects, which are not wide constraints but absent ones. Anchoring on
+     * the opening row alone looks tidy and is wrong: on dabeone the {@code 2->1} window has no
+     * band at all on edges 7 or 8 at its opening {@code tau} and gains both one tick later,
+     * and a real leader standing on edge 8 is therefore invisible to it.
      *
-     * @param opens the smallest {@code tau} any band was found at
+     * @param opens the smallest {@code tau} that has a band. Not the smallest {@code tau} the
+     *              envelope covers — an envelope can span ticks over which the leader search
+     *              finds nothing, and treating those as the opening leaves a window with no
+     *              bands under it at all
      */
     public record Window(int from, int keep, double opens, Band[] bands) {
 
@@ -94,9 +115,12 @@ public final class SolverFacts {
     private final Gate gate;
 
     private final double[] length;
+    private final double[] tickLo;
+    private final double[] tickHi;
     private final boolean[] stable;
     private final boolean[] scoring;
     private final int[] straightTo;
+    private final int[][] exitTurn;
     private final long[] arcs;
     private final Window[] windows;
 
@@ -111,9 +135,9 @@ public final class SolverFacts {
     private final Window[][] into;
 
     SolverFacts(String map, String hash, String scheme, String flocking, int width, int height,
-                int edges, Gate gate, double[] length, boolean[] stable, boolean[] scoring,
-                int[] straightTo, long[] arcs, Window[] windows, short[] edgeOf,
-                double[] tickOf) {
+                int edges, Gate gate, double[] length, double[] tickLo, double[] tickHi,
+                boolean[] stable, boolean[] scoring, int[] straightTo, int[][] exitTurn,
+                long[] arcs, Window[] windows, short[] edgeOf, double[] tickOf) {
         this.map = map;
         this.hash = hash;
         this.scheme = scheme;
@@ -123,9 +147,12 @@ public final class SolverFacts {
         this.edges = edges;
         this.gate = gate;
         this.length = length;
+        this.tickLo = tickLo;
+        this.tickHi = tickHi;
         this.stable = stable;
         this.scoring = scoring;
         this.straightTo = straightTo;
+        this.exitTurn = exitTurn;
         this.arcs = arcs;
         this.windows = windows;
         this.edgeOf = edgeOf;
@@ -176,7 +203,22 @@ public final class SolverFacts {
 
     public double[] length() { return length; }
 
+    /** Per edge, the smallest and largest tick value any of its states has. */
+    public double[] tickLo() { return tickLo; }
+
+    public double[] tickHi() { return tickHi; }
+
     public int[] straightTo() { return straightTo; }
+
+    /**
+     * Which turn a crossing between two edges counts as: -1 left, 0 straight, +1 right, or
+     * {@link EdgeNavigation#NO_EXIT} where the pair is not an arc at all.
+     * <p>
+     * A fact about the map rather than about any flight through it, which is what makes it
+     * safe to read off a photograph. See {@link EdgeNavigation#exitTurns} for why it must not
+     * be inferred from what a boid was steering when it crossed.
+     */
+    public int[][] exitTurn() { return exitTurn; }
 
     public Window[] windows() { return windows; }
 

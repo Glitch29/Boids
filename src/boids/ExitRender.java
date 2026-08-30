@@ -16,7 +16,7 @@ import java.nio.file.Path;
  * <p>
  * A count of unexplained exits says only that the account is incomplete. What is wanted is the
  * arrangement itself: where the suspect was, which way it was pointing, and which neighbours it
- * could see — because the suspicion is that several of them together did what none of them
+ * could see â because the suspicion is that several of them together did what none of them
  * would do alone, and that is a claim about a picture.
  * <p>
  * Cropped to what the suspect could possibly have been reacting to. Nothing outside its
@@ -44,10 +44,14 @@ public final class ExitRender {
                              int scale) throws IOException {
         double rSep = Params.separation(turningRadius);
         double rFlock = Params.flock(turningRadius);
+        // The suspect is read out of the arrangement rather than off the exit, because an exit
+        // is anchored where the boid crossed while the picture worth drawing is the arrangement
+        // handed in — which the caller chooses, and which is normally the envelope entry.
+        final int ex = x[e.suspect()], ey = y[e.suspect()], eh = h[e.suspect()];
         BufferedImage map = ImageIO.read(background.toFile());
 
         int margin = (int) Math.ceil(rFlock) + 24;
-        int left = e.x() - margin, top = e.y() - margin;
+        int left = ex - margin, top = ey - margin;
         int span = margin * 2 + 1;
 
         BufferedImage img = new BufferedImage(span * scale, span * scale + 74,
@@ -72,7 +76,7 @@ public final class ExitRender {
             }
         }
 
-        int cx = (e.x() - left) * scale + scale / 2, cy = (e.y() - top) * scale + scale / 2 + 74;
+        int cx = (ex - left) * scale + scale / 2, cy = (ey - top) * scale + scale / 2 + 74;
 
         g.setStroke(new BasicStroke(1.5f));
         ring(g, cx, cy, rSep * scale, SEP_RING);
@@ -80,7 +84,7 @@ public final class ExitRender {
 
         // The blind arc behind the suspect, since a neighbour inside the radius but behind it
         // is invisible and the picture should say so.
-        double hx = Params.COS[e.heading()], hy = Params.SIN[e.heading()];
+        double hx = Params.COS[eh], hy = Params.SIN[eh];
         double back = Math.acos(Params.COS_FOV);
         double facing = Math.atan2(hy, hx);
         g.setColor(new Color(FLOCK_RING));
@@ -92,23 +96,24 @@ public final class ExitRender {
 
         for (int j = 0; j < n; j++) {
             if (j == e.suspect()) continue;
-            boolean seen = rules.perceived(e.x(), e.y(), e.heading(), x[j], y[j]) >= 0;
+            boolean seen = rules.perceived(ex, ey, eh, x[j], y[j]) >= 0;
             boid(g, (x[j] - left) * scale + scale / 2, (y[j] - top) * scale + scale / 2 + 74,
                     h[j], seen ? VISIBLE : UNSEEN, scale, String.valueOf(j));
         }
-        boid(g, cx, cy, e.heading(), SUSPECT, scale, String.valueOf(e.suspect()));
+        boid(g, cx, cy, eh, SUSPECT, scale, String.valueOf(e.suspect()));
 
         g.setColor(new Color(TEXT));
         g.setFont(new Font("SansSerif", Font.BOLD, 14));
-        g.drawString(String.format("UNEXPLAINED exit  %d -> %d  (straight would give %d)",
-                e.fromEdge(), e.toEdge(), e.straightEdge()), 10, 20);
+        g.drawString(String.format("%s exit  %d -> %d",
+                e.unexplained() ? "UNEXPLAINED" : String.valueOf(e.best()),
+                e.fromEdge(), e.toEdge()), 10, 20);
         g.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        g.drawString(String.format("tick %d, boid %d at (%d,%d,%d), asked for %+d,"
-                        + " edge tick %.2f", e.tick(), e.suspect(), e.x(), e.y(), e.heading(),
-                e.want(), e.suspectTick()), 10, 40);
-        g.drawString(String.format("%d neighbours in view, none sufficient alone"
+        g.drawString(String.format("crossed at tick %d, steered onto the envelope at tick %d;"
+                        + " boid %d at (%d,%d,%d)", e.tick(), e.entryTick(), e.suspect(),
+                ex, ey, eh), 10, 40);
+        g.drawString(String.format("%d neighbours in view, %d reasons"
                         + "   |  red ring = separation %.0f, blue = flocking %.0f, blue rays"
-                        + " = blind arc", e.seen(), rSep, rFlock), 10, 58);
+                        + " = blind arc", e.seen(), e.reasons().size(), rSep, rFlock), 10, 58);
         g.dispose();
 
         if (out.getParent() != null) Files.createDirectories(out.getParent());

@@ -1,0 +1,23 @@
+map        wormway
+hash       58e932f45e7ebfd7
+sha256     58e932f45e7ebfd7dc002aff913d2f8dae8e76e3b9b18570a31f51b243d5107c
+size       600x594
+oob        254210
+scoring    11169
+open       91021
+dead       17777 (shown as wall in display.png)
+radius     40
+navigable  BIDIRECTIONAL
+physics    2
+ingested   2026-08-16T03:25:57Z
+source     areas\wormway\wormway.png
+
+map.png is this map. It does not change, and it is the only file here that
+physics may be computed from. display.png is the same map with pixels no
+boid can occupy painted as wall; it is for rendering and reading, and
+rebuilding a navmap from it would give a smaller and wrong answer, because
+dead pixels lie on the swept paths of live ones.
+
+Anything derived from this version of wormway — navmaps, renders, route traces,
+edge maps, analysis — belongs in here, and nothing in here refers to a
+version that is not this one.

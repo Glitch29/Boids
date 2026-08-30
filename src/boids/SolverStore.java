@@ -43,9 +43,12 @@ public final class SolverStore {
      * failure it prevents is silent: these facts are the solver's entire model of the map, and
      * a stale one does not look stale, it just answers a slightly different map's questions.
      * <p>
-     * 1: first version.
+     * 1: first version. 2: per-edge tick spans, so a band can be judged vacuous; window
+     * opening anchored on the first tau with a band rather than the first with followers.
+     * 3: per-edge-pair exit turns, so a crossing is classified by the pair rather than by what
+     * the boid was steering as it crossed.
      */
-    private static final int FORMAT = 1;
+    private static final int FORMAT = 3;
 
     private static final String FILE = "facts.bin";
 
@@ -107,6 +110,7 @@ public final class SolverStore {
         int[] straightTo = new int[l.edges()];
         for (int e = 0; e < l.edges(); e++) straightTo[e] = navs[e].straight().to();
         long[] arcs = EdgeNavigation.arcs(l.map(), l.live(), l.liveCount(), l.edge(), l.edges());
+        int[][] exitTurn = EdgeNavigation.exitTurns(navs, l.edges());
         EdgeNavigation.Properties props = SimTest.properties(preset, l);
 
         EdgeMetric.Metric metric = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
@@ -114,6 +118,18 @@ public final class SolverStore {
         SolverFacts.checkLengths(metric.length());
 
         SolverFacts.Window[] windows = windows(l, metric, straightTo, arcs, flock);
+
+        // The full extent of each edge on the clock. A band as wide as this says nothing, and
+        // knowing which bands those are is the difference between a wide window and no window.
+        double[] tickLo = new double[l.edges()], tickHi = new double[l.edges()];
+        Arrays.fill(tickLo, Double.MAX_VALUE);
+        Arrays.fill(tickHi, -Double.MAX_VALUE);
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i], e = l.edge()[s];
+            if (e < 0 || Double.isNaN(metric.tick()[s])) continue;
+            tickLo[e] = Math.min(tickLo[e], metric.tick()[s]);
+            tickHi[e] = Math.max(tickHi[e], metric.tick()[s]);
+        }
 
         short[] edgeOf = new short[l.edge().length];
         Arrays.fill(edgeOf, (short) -1);
@@ -128,8 +144,8 @@ public final class SolverStore {
         SolverFacts facts = new SolverFacts(preset.name().toLowerCase(java.util.Locale.ROOT),
                 preset.ingest().hash(), scheme + "/" + SolverFacts.describe(chain),
                 flock.toString(), l.map().width(), l.map().height(), l.edges(), gate,
-                metric.length(), props.stable(), props.scoring(), straightTo, arcs, windows,
-                edgeOf, tickOf);
+                metric.length(), tickLo, tickHi, props.stable(), props.scoring(), straightTo,
+                exitTurn, arcs, windows, edgeOf, tickOf);
 
         Path file = preset.ingest().output("solver", FILE);
         write(file, facts, l.live(), l.liveCount());
@@ -175,11 +191,14 @@ public final class SolverStore {
         }
 
         List<SolverFacts.Band> bands = new ArrayList<>();
+        // Opened at the first tau that has a band, not the first that has followers. An
+        // envelope can span ticks the leader search finds nothing over -- edge 5 of dabeone
+        // has four of them -- and anchoring on those leaves the window empty.
         double opens = Double.NaN;
         for (double tau = Math.ceil(first); tau <= last; tau += 1) {
             EdgeSlice.Slice slice = EdgeSlice.at(l.map(), l.edge(), metric, lead, from, tau,
                     true, l.edges());
-            if (slice.followers() == 0) continue;
+            if (slice.followers() == 0 || slice.bands().isEmpty()) continue;
             if (Double.isNaN(opens)) opens = tau;
             for (EdgeSlice.Band b : slice.bands()) {
                 bands.add(new SolverFacts.Band(tau, b.edge(), b.lo(), b.hi()));
@@ -218,10 +237,13 @@ public final class SolverStore {
             out.writeInt(f.gate().dir());
             for (int e = 0; e < f.edges(); e++) {
                 out.writeDouble(f.length()[e]);
+                out.writeDouble(f.tickLo()[e]);
+                out.writeDouble(f.tickHi()[e]);
                 out.writeBoolean(f.stable(e));
                 out.writeBoolean(f.scoring(e));
                 out.writeInt(f.straightTo()[e]);
                 out.writeLong(f.arcs()[e]);
+                for (int g = 0; g < f.edges(); g++) out.writeInt(f.exitTurn()[e][g]);
             }
             out.writeInt(f.windows().length);
             for (SolverFacts.Window w : f.windows()) {
@@ -264,16 +286,20 @@ public final class SolverStore {
         SolverFacts.Gate gate = new SolverFacts.Gate(in.readBoolean(), in.readInt(),
                 in.readInt(), in.readInt(), in.readInt());
 
-        double[] length = new double[edges];
+        double[] length = new double[edges], tickLo = new double[edges], tickHi = new double[edges];
         boolean[] stable = new boolean[edges], scoring = new boolean[edges];
         int[] straightTo = new int[edges];
+        int[][] exitTurn = new int[edges][edges];
         long[] arcs = new long[edges];
         for (int e = 0; e < edges; e++) {
             length[e] = in.readDouble();
+            tickLo[e] = in.readDouble();
+            tickHi[e] = in.readDouble();
             stable[e] = in.readBoolean();
             scoring[e] = in.readBoolean();
             straightTo[e] = in.readInt();
             arcs[e] = in.readLong();
+            for (int g = 0; g < edges; g++) exitTurn[e][g] = in.readInt();
         }
 
         SolverFacts.Window[] windows = new SolverFacts.Window[in.readInt()];
@@ -300,6 +326,7 @@ public final class SolverStore {
         for (int i = 0; i < liveCount; i++) tickOf[live[i]] = in.readDouble();
 
         return new SolverFacts(map, hash, scheme, flocking, width, height, edges, gate, length,
-                stable, scoring, straightTo, arcs, windows, edgeOf, tickOf);
+                tickLo, tickHi, stable, scoring, straightTo, exitTurn, arcs, windows, edgeOf,
+                tickOf);
     }
 }

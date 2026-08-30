@@ -1,0 +1,7 @@
+# Ingest history for plinko. Newest last; one line per distinct build.
+# Folders live in ingests/<hash>/. The options below all change what
+# gets ingested, so the hash already tells them apart — they are here
+# to say which is which, not to identify anything.
+#
+# hash             radius nav    trim phys  width height    oob scoring   open   dead
+79bc84a1369a3d2f     40 both   yes  p2      600    600 121876  120205 117919   1034

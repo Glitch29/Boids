@@ -1,0 +1,23 @@
+map        hamburger
+hash       6e0d4d0837192e8f
+sha256     6e0d4d0837192e8ff9af357ac5bd77311bf60d8f962237a00393b101a468b861
+size       276x207
+oob        28164
+scoring    4707
+open       24261
+dead       161 (shown as wall in display.png)
+radius     20
+navigable  BIDIRECTIONAL
+physics    2
+ingested   2026-08-16T03:25:56Z
+source     areas\hamburger\hamburger.png
+
+map.png is this map. It does not change, and it is the only file here that
+physics may be computed from. display.png is the same map with pixels no
+boid can occupy painted as wall; it is for rendering and reading, and
+rebuilding a navmap from it would give a smaller and wrong answer, because
+dead pixels lie on the swept paths of live ones.
+
+Anything derived from this version of hamburger — navmaps, renders, route traces,
+edge maps, analysis — belongs in here, and nothing in here refers to a
+version that is not this one.

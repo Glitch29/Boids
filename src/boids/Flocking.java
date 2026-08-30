@@ -51,6 +51,32 @@ public record Flocking(double wSep, double wCoh, double wAli, double straightBia
         return new Flocking(weight, wCoh, wAli, straightBias, rSep, rFlock);
     }
 
+    /**
+     * What a close neighbour looks like once a crowd has cancelled the other two rules.
+     * <p>
+     * Alignment and cohesion at zero, separation doubled. This is the second model a boid is
+     * allowed to choose in the critical-envelope analysis, and its shape is chosen from which
+     * way each term moves as boids are added rather than from a wish to widen anything.
+     * <p>
+     * <b>Alignment and cohesion dilute; separation does not.</b> Every term is summed over
+     * neighbours and then normalised, so a spread of neighbours in the annulus partially cancels
+     * and the surviving unit vector is the mean of directions that disagree. A neighbour inside
+     * {@code rSep} keeps contributing a full-strength push. So the more crowded a boid is, the
+     * more its decision is separation and the less it is anything else.
+     * <p>
+     * <b>And for a separation-dominated leader the other two are obstacles</b>, not help:
+     * cohesion pulls along the very line separation is pushing back down. Zeroing them is
+     * therefore the faithful model of a crowd, where halving the straight bias would be the
+     * opposite — that amplifies alignment and cohesion just where a real crowd suppresses them.
+     * <p>
+     * It also keeps the fallback narrow. With those two at zero this model cannot manufacture an
+     * alignment-dominated admission that the true constants missed; it can only add
+     * separation-driven ones.
+     */
+    public Flocking diluted() {
+        return new Flocking(2 * wSep, 0, 0, straightBias, rSep, rFlock);
+    }
+
     /** Whether a neighbour this far away is inside the separation term. */
     public boolean separating(double distance) {
         return distance < rSep;

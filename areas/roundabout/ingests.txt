@@ -1,0 +1,7 @@
+# Ingest history for roundabout. Newest last; one line per distinct build.
+# Folders live in ingests/<hash>/. The options below all change what
+# gets ingested, so the hash already tells them apart — they are here
+# to say which is which, not to identify anything.
+#
+# hash             radius nav    trim phys  width height    oob scoring   open   dead
+6129bb026fa8ae26     40 both   yes  p2      600    594 296358   11232  48810  18306

@@ -1,5 +1,23 @@
 # Play area contracts
 
+> **Partly historical.** C3 and the first section are current: the contracts are what the
+> designer guarantees, and they define the boundary of the specification.
+>
+> **Everything from "Derived: the navigability map" onward describes code that no longer
+> exists.** The prohibited-heading-range lattice, the circle sweeps, the ellipse fit and C2's
+> two-range bound were all made unnecessary by the viability kernel (`NavMapBuilder`), which
+> computes survivability by backward reachability over the state graph and needs no assumption
+> about the shape of the play area at all. C1, C2 and C4 constrained that construction; the
+> kernel does not need them.
+>
+> **The ⚠ "refactor range arithmetic to integers" warning below refers to deleted code.** It
+> is kept because the reasoning generalises — angles have no business being `double` when
+> there are only 64 headings — and because three of its four worked examples are good
+> illustrations of what floating-point boundary bugs look like. It is not an instruction.
+>
+> Retained in full rather than trimmed: the reasoning is sound and the closed-form checks are
+> worth having if the geometry is ever revisited.
+
 These are guarantees the **play area designer** makes. They are deliberately **not
 verified by the code**. Their purpose is to define the boundary of the specification:
 any corner case that can only arise when one of these is violated has *arbitrary*

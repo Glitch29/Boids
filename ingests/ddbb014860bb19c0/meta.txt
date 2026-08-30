@@ -1,0 +1,23 @@
+map        peanut
+hash       ddbb014860bb19c0
+sha256     ddbb014860bb19c0247d0c7b99f1a956126e5bb31db385e9f4b16e77d9ba7a10
+size       1240x690
+oob        299888
+scoring    0
+open       555712
+dead       952 (shown as wall in display.png)
+radius     40
+navigable  BIDIRECTIONAL
+physics    2
+ingested   2026-08-16T03:25:56Z
+source     areas\peanut\peanut.png
+
+map.png is this map. It does not change, and it is the only file here that
+physics may be computed from. display.png is the same map with pixels no
+boid can occupy painted as wall; it is for rendering and reading, and
+rebuilding a navmap from it would give a smaller and wrong answer, because
+dead pixels lie on the swept paths of live ones.
+
+Anything derived from this version of peanut — navmaps, renders, route traces,
+edge maps, analysis — belongs in here, and nothing in here refers to a
+version that is not this one.

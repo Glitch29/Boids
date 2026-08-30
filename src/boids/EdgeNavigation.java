@@ -196,6 +196,42 @@ public final class EdgeNavigation {
         return byEdge;
     }
 
+    /** No turn reaches this edge from that one, so the pair is not an exit at all. */
+    public static final int NO_EXIT = Integer.MIN_VALUE;
+
+    /**
+     * Which turn a crossing between two edges counts as: {@code -1} left, {@code 0} straight,
+     * {@code +1} right.
+     * <p>
+     * <b>A property of the pair of edges, not of what the boid was doing at the moment it
+     * crossed.</b> On dabeone {@code 4 -> 0} is a right exit and {@code 4 -> 2} a straight one,
+     * and that stays true whether the boid arrived at the boundary mid-turn, holding straight,
+     * or fighting a wall that vetoed half its request. Reading the classification off the
+     * instantaneous steering instead is how a boid deliberately turned a corner over thirty
+     * ticks ends up looking like it went straight: by the time it reaches the boundary the turn
+     * is long since made, and the last tick before crossing asks for nothing in particular.
+     * <p>
+     * Straight is applied last so it wins where more than one turn reaches the same edge. A
+     * destination unsteered travel can reach is a straight exit by definition; that some
+     * steering also arrives there does not make it a turn.
+     */
+    public static int[][] exitTurns(EdgeNav[] navs, int edges) {
+        int[][] turn = new int[edges][edges];
+        for (int[] row : turn) Arrays.fill(row, NO_EXIT);
+        for (int e = 0; e < edges; e++) {
+            mark(turn[e], navs[e].left(), -1);
+            mark(turn[e], navs[e].right(), 1);
+            mark(turn[e], navs[e].straight(), 0);
+        }
+        return turn;
+    }
+
+    private static void mark(int[] row, Hold hold, int turn) {
+        for (int f = 0; f < row.length; f++) {
+            if ((hold.outcomes() & (1L << f)) != 0) row[f] = turn;
+        }
+    }
+
     /**
      * The edge graph: one bitmask per edge of the edges it can step to, itself excluded.
      * <p>

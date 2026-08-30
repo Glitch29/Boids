@@ -1,0 +1,355 @@
+# Glossary
+
+Every term in this project that carries a precise meaning, and the name it goes by in the
+code. Where a word has been used two ways, the collision is called out and one reading is
+declared canonical.
+
+**Status:** written 2026-08-27, against dabeone ingest `609cffdb84be218c`.
+
+---
+
+## The three spaces
+
+Most confusion in this project is a category error between these.
+
+**`(x, y, d)` — micro navigation.** Position in pixels plus one of `Params.TURNS = 64`
+headings. Every physical fact — what a boid can do, where it can be, what it perceives —
+lives here. A state is indexed `(x + y * width) * TURNS + d`.
+
+**`(edge, tau)` — macro navigation.** Which stretch of the map a boid is on, and how far
+along it. Every route, distance, window and solver argument lives here. This is the space the
+solver actually reasons in.
+
+**`(x, y)` — visualisation only.** Position with the heading discarded. Renders and hand
+inspection. **Nothing may be concluded from it**, because most live pixels carry two or more
+edges travelling different directions through them, so a claim about `(x, y)` is a claim
+about several unrelated trajectories at once.
+
+---
+
+## Simulation
+
+**boid** — an agent with `(x, y, d)`. Moves one fixed-length step per tick and turns by at
+most one of 64 headings per tick. Action space is `{-1, 0, +1}` for every control.
+
+**psyboid** — a boid whose movement request is overwritten for a stretch. **Not a
+decision-maker and not a special case in the engine**: an override is another
+`MovementControl` in the same chain as the flocking rules and the collision veto, choosing
+from the same three turns. The simulation never knows which boid is the psyboid. `Sim.PSYBOID
+= 0` is only the default index an override is installed on.
+
+**override** — one boid, one turn, held for a stretch, as `(onset, duration, turn, who)`.
+`PsyboidOverride`. Runs after flocking and before the veto, so it is a *request*: the map can
+still refuse it.
+
+**tick** — **one simulation time step.** `Sim.State.tick`. Reserve the word for this. See
+*tau* for position along an edge.
+
+**veto / collision veto** — `NavMap.constrainTurn`. Converts a request that would leave the
+play area into the nearest turn that does not. Always has something to offer from a live
+state.
+
+**sequencing / mid-tick** — boids advance in index order within a tick, each deciding against
+the array as it stands, so boids `0..i-1` have moved and `i+1..n-1` have not. **A tick has an
+interior.** Anything reconstructing a decision must reproduce that arrangement or it is
+answering a different question. `Boids2DEngine.Trace` fires mid-tick for this reason.
+
+**flocking constants** — `Params` is what the simulation does and is never edited. `Flocking`
+is the same constants as an argument, so an analysis can ask its question at widened values
+without moving anything the simulation reads.
+
+**straight bias** — hysteresis on holding the current heading, `(wSep + wCoh + wAli) / TURNS`.
+The knob of choice for widening a window: it scales how decisive an influence must be without
+altering what any influence is.
+
+**control** — score a run accumulates with no psyboid. A case whose control is non-zero has
+scoring that the psyboid does not explain.
+
+---
+
+## Maps and ingests
+
+**play area / map** — a PNG. `#000000` is out of bounds, everything else is playable,
+scoring regions are a distinguished colour (`FF7F27`). Authored in `areas/<name>/<name>.png`.
+
+**ingest** — a frozen, content-addressed copy of a map at `ingests/<hash>/`, named by the
+SHA-256 of its pixels plus radius, navigability, trap-trimming and physics version.
+`MapStore`. **The editable PNG is a design document; the ingest is what the simulation
+reads.** Everything derived from a map is written inside its own ingest, so a result can
+never be read against a map that has since been edited.
+
+**`map.png`** — the frozen map. **The only file physics may be computed from.**
+
+**`display.png`** — the same map with dead pixels painted as wall. **Rendering only.**
+
+**dead pixel** — in play, but no heading survives from it. Forms a band hugging every wall.
+Load-bearing: a boid flying along a wall sweeps its step through that band, so rebuilding a
+navmap from `display.png` loses states (19,422 on dab, a tenth of the kernel).
+
+**trap** — a pixel with no survivable heading at all. Drawn red by `NavMapRender`. Should not
+exist in a sane map.
+
+**navmap** — the viability kernel over `(x, y, d)`: every state with both an infinite future
+and an infinite past. `NavMap`, built by `NavMapBuilder`. A run that starts live stays in
+play forever.
+
+**live / alive** — in the viability kernel. `Navigability.BIDIRECTIONAL` is the default and
+means both directions; `FORWARD` exists only to widen spawning.
+
+**physics version** — `Params.PHYSICS`, currently 2. Part of the ingest hash, so a physics
+change produces a different ingest rather than silently reinterpreting an old one.
+
+---
+
+## Edges
+
+Full treatment in `EDGES.md`.
+
+**edge** — a set of live `(x, y, d)` states, defined *relative to the other edges*: all
+points of an edge share the same set of successor edges and the same set of predecessor
+edges. Edges are numbered `0..n-1` per map.
+
+> **Collision, resolved.** `EDGES.md` formerly used *edge* for the ten hand-annotated named
+> route segments on dabnt (`ABCDE`, `ADE`, `A`, `BC`, `DE`, `BCDE`, `BD`, `CE`, `ABD`, `X`).
+> Those were a bootstrapping device and are **retired**. *Edge* now means only the numbered
+> `(x, y, d)` sets above.
+
+**the axiom** — the validity test for a decomposition. Every live point on exactly one edge;
+all points of an edge agree on their successor-edge set *and* their predecessor-edge set. **A
+test, not a constructor** — many decompositions satisfy it.
+
+**refinement** — the constructive consequence of the axiom: split any edge whose points
+disagree about their next-or-previous edge sets. Terminates.
+
+**orbit** — an edge some point of which can forward-navigate back to itself. Strongly
+connected, so the axiom cannot split it; it has to be cut.
+
+**gate** — a line segment in `(x, y)` used to cut cycles so a decomposition can be
+bootstrapped. **Not an analysis tool.** That it lives in `(x, y)` at all is the tell. See
+`EDGES.md` §2.
+
+**stable edge** — unsteered travel returns to it without scoring. A boid on a stable edge
+could have been there forever and owes no explanation. On dabeone: `{2, 4, 7}`.
+
+**unstable edge** — anything else. **A boid on an unstable edge is the snapshot-only test for
+"requires explanation".**
+
+**scoring edge** — least fixed point of: holds scoring states, leads somewhere scoring, every
+way in comes from somewhere scoring.
+
+**`straightTo[e]`** — where unsteered travel from edge `e` leads. **A dominant destination,
+not a universal one.** Follow-through states violate it.
+
+**follow-through state** — a state still labelled on the edge a boid is leaving, a few ticks
+after the turn that committed it. 20 on dabeone edge 2, 16 on edge 4, 18 on edge 5. Treating
+`straightTo` as universal because of these inflated a route-change count by 50%.
+
+**exit** — a crossing from one edge to another that unsteered travel would not have made.
+**A property of the pair of edges, not of what the boid was steering when it crossed.**
+`EdgeNavigation.exitTurns` gives `-1 / 0 / +1` per ordered pair, `NO_EXIT` where no turn
+connects them.
+
+**route** — a path through the edge graph, written as a series of edges. On dabeone the only
+unsteered cycle is `2 → 7 → 4 → 2`.
+
+---
+
+## The clock
+
+**tau (τ)** — **how far along its own edge a state is, in ticks.** Real-valued. This is the
+macro-space position coordinate.
+
+> **Collision, resolved.** The code currently calls this `tick` in `EdgeMetric.Metric.tick()`,
+> `SolverFacts.tickAt/tickOf/tickLo/tickHi`, and `ExitAudit.Exit.suspectTick` — while
+> `Sim.State.tick` and `ExitAudit.Exit.tick` mean simulation time. `ExitAudit.Exit` carries
+> both senses in one record. **Canonical: `tau` for position along an edge, `tick` for
+> simulation time.** Docs use `tau` now; the code rename is pending (`ROADMAP.md`).
+
+**edge length** — one real number per edge, shared by every way through it. **Lengths add**:
+leaving an edge at tau `t` puts the boid at `t + 1 - L(e)` on the next. Keep them real —
+rounding to whole ticks injects half a tick of error at every crossing.
+
+**span** — end-to-end clock time across an edge. **Not the same as its length**, and reading
+one back as the other diverges.
+
+**the clock** — the assignment of a tau to every state and a length to every edge, as one
+joint least-squares fit solved by conjugate gradient. `EdgeMetric`, cached by
+`EdgeMetricStore`.
+
+**distance** — `tau(end) - tau(start) + Σ lengths of every edge on the route except the last`.
+`EdgeDistance.between`, which returns one value per route rather than picking.
+
+**gauge** — the fit is underdetermined in a describable way; a spanning forest of the class
+graph gives exactly the pinnable lengths. Fix it structurally, never with Tikhonov weights.
+
+**weighting scheme** — how much each transition counts in the fit. `EdgeWeights.Scheme`:
+`UNIFORM`, `CIRCULATION`, `MOMENTUM`. Best measured is the **lifted memoryless flow**
+(`MOMENTUM` with an all-ones chain at γ=0). Lengths are weighting-dependent: **never compare
+across schemes.**
+
+**lifted flow** — traffic solved over `(state, last request)` nodes rather than states. Seeds
+one unit per *request*, which is what the simulation does where the veto collapses two
+requests onto one successor.
+
+---
+
+## Windows and the critical envelope
+
+**critical state** — a state on an edge from which one unsteered tick commits the boid the
+wrong way. The last moment anything can be done.
+
+**envelope** — *being redefined; see `ROADMAP.md` §1.*
+**Current:** the forward closure of the critical states within the edge, so a boid in it stays
+in it until it leaves the edge altogether. With `terminal` (one steered tick from the exit) and
+`source` (where a boid enters the envelope).
+`EdgeInfluence.envelope → Envelope(envelope, terminal, source, critical)`.
+**Replacement:** the **unsteered**-predecessor closure of the exit edge, plus the states on the
+downstream edge that reverse-navigate to the current edge in one tick. It terminates because
+unsteered travel from the start of an edge never leaves it by a non-straight transition, and it
+is complete because every boid that exits was steered onto it.
+
+**unsteered predecessor** — of a state `S`, any state from which **straight steering** would
+bring the boid to `S`. Steering means the **intended direction, before the physics veto**, so a
+state whose straight request the veto turns is still an unsteered predecessor of where it
+actually lands.
+
+**envelope entry** — the tick a boid moves onto the envelope from a state off it. **The moment
+attribution is done at**, as distinct from the crossing tick, which is when the exit is
+*reported*. Always a steered move, since unsteered travel into the envelope implies you were
+already in it. Only the final entry is analysed.
+
+**commit boundary** — where a boid's exit becomes unavoidable. **It is the edge boundary
+itself**; the edges were designed to force that equivalence. *Not* the envelope boundary — a
+boid that has entered the envelope can still be steered back out, which is hard on dabeone and
+plait but always available to a psyboid.
+
+**settled** — the predicate the backward pair search terminates on: a state where the exiting
+boid is flying its ordinary unsteered course. Constructed as **`{closure, partial tick,
+closure}`** over the unsteered paths through the edge. **Every state by which a boid enters an
+edge is settled**, which is what bounds the backward search to within one edge. **Named to
+avoid colliding with `stable`**, which is an edge property; *settled* is a property of a state.
+
+**partial tick** — turn as normal, then advance only partially, landing on any intermediate
+sample point of the navmap's out-of-bounds check. Its purpose is **phase alignment**: boids
+clump in tau modulo the step length, so states lying on the general path of unsteered travel
+get missed by being crossed between ticks. **Applied exactly once** — chaining partial ticks
+would let a boid strafe up to 45° off its heading.
+
+**lead** — where a second boid can be to hold the first inside the envelope, computed from
+the single-neighbour closed form. `EdgeInfluence.lead → Lead`.
+
+**band** — a stretch of one leader edge, in tau. `EdgeSlice.Band(edge, lo, hi, count)` when
+computed; `SolverFacts.Band(tau, leaderEdge, lo, hi)` when stored. **The band's width is the
+answer, not its position** — position depends on the arbitrary choice of tau.
+
+**window** — for one arc `from → keep`, the bands per leader edge, tau by tau.
+`SolverFacts.Window(from, keep, opens, bands)`. **Only the opening band is meaningful**;
+widths saturate to whole edges within a few ticks.
+
+**vacuous** — a band so wide it says nothing. `SolverFacts.vacuous`, threshold `VACUOUS = 0.9`
+of the leader edge.
+
+**critical-envelope analysis** — **the umbrella name for the whole pipeline above.** No
+single class owns it; see the named-analyses table below.
+
+**cause** — why a leader induced the turn: `SEPARATION` or `ALIGNMENT_AND_COHESION`.
+Alignment and cohesion are a **joint cause** — there is no clean split and they work in
+tandem. Expected to be sharply bimodal under almost any measure; the most robust is which
+influence set, subject to its range limits, has the **larger component orthogonal to the
+direction of travel with the sign matching the turn being executed**. Recorded at envelope
+entry. Recorded on `CriticalEnvelope.Entry`.
+
+**diluted model** — the second physics an exiting boid may choose on any tick during
+critical-envelope analysis: `wAli = 0`, `wCoh = 0`, `wSep` doubled. `Flocking.diluted()`.
+Models what a crowd does — alignment and cohesion are summed over neighbours then normalised, so
+a spread of them partially cancels, while a neighbour inside `rSep` keeps pushing at full
+strength. **Not the same as halving the straight bias**, which amplifies alignment and cohesion
+exactly where a crowd suppresses them.
+
+**two-model boid** — the exiting boid in critical-envelope analysis picks the true constants or
+the diluted model **independently on every tick**, at the entry and throughout its history. A
+history in which the crowd tipped one decision and not the next is then expressible, where a
+table built wholly under other constants would turn every marginal straight into a turn along
+the whole path — the wrong shape, not merely too many. `CriticalEnvelope.Entry.diluted()` says
+which model carried the entry, which is what ranks `ENVELOPE` against `ENVELOPE_WIDENED`.
+
+**single-neighbour closed form** — with exactly one neighbour the whole influence collapses
+to `30u + 70a` in the flocking annulus and `-90u + 70a` inside separation, where `u` points
+at the neighbour and `a` is its heading. `EdgeInfluence.steer`. **Returns `0` for anything
+out of range or behind the FOV** — the property that made the old sufficiency test wrong.
+
+---
+
+## Solving
+
+**scene / arrangement** — one `Sim.State`: positions and headings, no tick, no history.
+What a solver is given.
+
+**clue** — one kind of evidence read off a scene, returning a per-boid weight: `1` for "says
+nothing", `0` for "rules out", larger for a lean. `Clue`. The solver multiplies them.
+
+**facts** — everything a solver may know about a map before it sees a scene: the
+decomposition, stability, the clock, the windows. `SolverFacts`, built once per map version by
+`SolverStore.build`, stored at `ingests/<hash>/solver/facts.bin`. **A solver never builds
+these.**
+
+**ExitAudit** — the exit classifier. Watches a run with full information and accounts for
+every exit. This is the ground truth the solver is measured against; see `ROADMAP.md` for its
+specification.
+
+**owing / requires explanation** — a boid on an unstable edge. `SimTest.owing` counts them.
+
+**the grade** — `SolverScore`, a **penalty** over the four outcome counts, to be minimised. Each
+answered class is given the K-weighted psyboid rate found inside it, and every boid is scored on
+squared error against that, psyboids counting `K` times. Closed form where the caps do not bind:
+`g(K·FN, TN) + g(K·TP, FP)` with `g(a,b) = ab/(a+b)`. **Abstaining is the worst attainable score
+and every uninformative assignment ties with it**, so the number moves only on discrimination.
+`SolverScore.normalised` reads 1.000 for a perfect answer and 0.000 for knowing nothing. Not to
+be confused with a run's *score*, which is what the psyboid maximises.
+
+**hedge cap** — the clamp that makes the grade monotone. A class answered BOID may not be given
+a higher psyboid rate than the population has, nor a class answered PSYBOID a higher boid rate;
+`SolverScore.capNegative` / `capPositive`, which sum to 1. Without it the score is symmetric
+under swapping every answer, so a perfectly inverted solver also scores zero and correcting a
+mistake can *raise* the penalty. **The caps must be the population rates**: a constant cap is
+flat at only one class balance and otherwise lets an uninformative solver gain by answering
+PSYBOID less often.
+
+**plan** — a searched psyboid timeline, as a seed plus one override per decision.
+`PsyboidBits.Replay`.
+
+**label** — the text form of a plan, e.g. `seed200|p1Rd24t10028|…`. **The label is the
+artifact**: everything else can be recomputed from it.
+
+**corpus** — a body of runs to measure against. `ingests/<hash>/psyboid/plans.tsv` is the
+dab-like one, written by `PsyboidCorpus`, every row verified by replay before it is written.
+
+---
+
+## Named analyses
+
+Canonical name → where it lives. Use these names; confirm the code name before working on
+anything not listed.
+
+| name | code | output |
+| --- | --- | --- |
+| ingest | `MapStore` | `ingests/<hash>/` |
+| viability kernel / navmap | `NavMapBuilder` → `NavMap` | in memory |
+| edge decomposition | `SimTest.labelFor` / `decompose` | `<ingest>/edges/` |
+| per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
+| the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
+| transition weights | `EdgeWeights` | in the clock |
+| **critical-envelope analysis** | `EdgeInfluence` + `EdgeSlice`, driven by `SimTest.windows` | `<ingest>/windows/window_<from>_<to>.tsv` |
+| two-boid reachability | `TwoBoid` | `<ingest>/twoboid/` |
+| critical-envelope tables | `CriticalEnvelope`, stored by `CriticalEnvelopeStore` | `<ingest>/envelope/` |
+| exit classification | `ExitAudit` | `<ingest>/audit/` |
+| solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
+| the solver | `Solver` + `UnstableEdgeClue` | — |
+| psyboid search | `PsyboidBits` | — |
+| psyboid corpus | `PsyboidCorpus` | `<ingest>/psyboid/plans.tsv` |
+
+> **Two different two-boid analyses. Do not conflate them.**
+> **`EdgeInfluence`** is the single-neighbour *closed form*, and it is what the critical
+> envelope and every window are computed from.
+> **`TwoBoid`** is the *exhaustive enumeration* of reachable pairs. It told us which arcs are
+> steerable at all (`2→1`, `4→0`, `5→6` on dabeone); it does not produce windows.

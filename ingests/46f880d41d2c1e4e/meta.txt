@@ -1,0 +1,23 @@
+map        plait
+hash       46f880d41d2c1e4e
+sha256     46f880d41d2c1e4e39483d94c99622d1a8dcb3b8545bfe90924fd9374527bd28
+size       497x480
+oob        204812
+scoring    2488
+open       31260
+dead       3021 (shown as wall in display.png)
+radius     40
+navigable  BIDIRECTIONAL
+physics    2
+ingested   2026-08-20T02:18:24Z
+source     areas\plait\plait.png
+
+map.png is this map. It does not change, and it is the only file here that
+physics may be computed from. display.png is the same map with pixels no
+boid can occupy painted as wall; it is for rendering and reading, and
+rebuilding a navmap from it would give a smaller and wrong answer, because
+dead pixels lie on the swept paths of live ones.
+
+Anything derived from this version of plait — navmaps, renders, route traces,
+edge maps, analysis — belongs in here, and nothing in here refers to a
+version that is not this one.

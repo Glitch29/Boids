@@ -1,0 +1,11 @@
+# Ingest history for plait. Newest last; one line per distinct build.
+# Folders live in ingests/<hash>/. The options below all change what
+# gets ingested, so the hash already tells them apart; they are here
+# to say which is which, not to identify anything.
+#
+# 'dead' counts pixels no boid can occupy. They are wall in display.png
+# and untouched in map.png, which is what physics reads.
+#
+# hash             radius nav    trim phys  width height    oob scoring   open   dead
+535b1128f5368981     40 both   yes  p2      497    480 203103    2488  32969   1317
+46f880d41d2c1e4e     40 both   yes  p2      497    480 204812    2488  31260   3021

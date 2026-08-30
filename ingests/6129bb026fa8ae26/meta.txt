@@ -1,0 +1,23 @@
+map        roundabout
+hash       6129bb026fa8ae26
+sha256     6129bb026fa8ae26343f2c78ba703f6500b1f9a2405ddd0635c274f23e9c5047
+size       600x594
+oob        296358
+scoring    11232
+open       48810
+dead       18306 (shown as wall in display.png)
+radius     40
+navigable  BIDIRECTIONAL
+physics    2
+ingested   2026-08-16T03:25:57Z
+source     areas\roundabout\roundabout.png
+
+map.png is this map. It does not change, and it is the only file here that
+physics may be computed from. display.png is the same map with pixels no
+boid can occupy painted as wall; it is for rendering and reading, and
+rebuilding a navmap from it would give a smaller and wrong answer, because
+dead pixels lie on the swept paths of live ones.
+
+Anything derived from this version of roundabout — navmaps, renders, route traces,
+edge maps, analysis — belongs in here, and nothing in here refers to a
+version that is not this one.

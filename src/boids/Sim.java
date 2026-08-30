@@ -17,6 +17,47 @@ public final class Sim {
     private Sim() {}
 
     /**
+     * Which boid an override steers when nothing says otherwise.
+     * <p>
+     * Zero, and that is not neutral: boid 0 moves first each tick, so it decides against
+     * an arrangement in which nobody has moved yet. Cases built this way inherit that.
+     */
+    public static final int PSYBOID = 0;
+
+    /**
+     * An override chopped into consecutive segments, each free to turn either way or hold
+     * straight. Maximum control over the psyboid rather than a single committed sweep.
+     * <p>
+     * The whole thing starts somewhere in {@code [0, maxDelay]} past {@code baseTick}, then
+     * {@code segments - 1} cut points are drawn uniformly over the duration and sorted,
+     * partitioning it into {@code segments} consecutive intervals. Each interval picks a
+     * direction with equal probability. Cut points may coincide, which yields a zero-length
+     * segment — harmless, since such an override never fires.
+     * <p>
+     * This is what makes a searched psyboid a different animal from a single held turn: the
+     * segments tile the timeline so the boid is under near-continuous control, and a plan is a
+     * sequence of these rather than one intervention that is over in forty ticks.
+     */
+    public static PsyboidOverride[] segmentedOverride(int baseTick, int maxDelay, int duration,
+                                                      int segments, int psyboid,
+                                                      java.util.Random rng) {
+        int start = baseTick + rng.nextInt(maxDelay + 1);
+
+        int[] cuts = new int[segments - 1];
+        for (int i = 0; i < cuts.length; i++) cuts[i] = rng.nextInt(duration);
+        java.util.Arrays.sort(cuts);
+
+        PsyboidOverride[] out = new PsyboidOverride[segments];
+        int from = 0;
+        for (int i = 0; i < segments; i++) {
+            int to = i < cuts.length ? cuts[i] : duration;
+            out[i] = new PsyboidOverride(start + from, to - from, rng.nextInt(3) - 1, psyboid);
+            from = to;
+        }
+        return out;
+    }
+
+    /**
      * A flock at one instant, with the score it has accumulated and where it came from.
      * <p>
      * Treat instances as immutable. The arrays are exposed directly rather than copied,

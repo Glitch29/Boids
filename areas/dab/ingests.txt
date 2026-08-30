@@ -1,0 +1,7 @@
+# Ingest history for dab. Newest last; one line per distinct build.
+# Folders live in ingests/<hash>/. The options below all change what
+# gets ingested, so the hash already tells them apart — they are here
+# to say which is which, not to identify anything.
+#
+# hash             radius nav    trim phys  width height    oob scoring   open   dead
+85ee41e4a84945dd     40 both   yes  p2      379    407 134619    1643  17991   1565

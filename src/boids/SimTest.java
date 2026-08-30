@@ -965,16 +965,24 @@ public final class SimTest {
     }
 
     /**
-     * Builds a map's solver facts if they are missing, then measures the solver against a
-     * truth only the harness knows.
+     * Builds a map's solver facts if they are missing, then grades the solver against a truth
+     * only the harness knows.
      * <p>
-     * Three populations, because they ask different questions. A plain flock has no psyboid at
-     * all, so every boid should survive and anything narrower is a false alarm. A flock with an
-     * overridden boid <b>on an unstable edge</b> is the case the solver exists for: the scene
-     * carries evidence about the psyboid and the question is whether it gets named. A flock
-     * whose psyboid sits on a stable edge carries no evidence about it at all — those are
-     * counted separately rather than mixed in, because scoring them together makes a solver
-     * look wrong for being silent about something invisible.
+     * <b>Graded by {@link SolverScore}</b>, a penalty to be minimised rather than a tally of
+     * correct answers. Not to be confused with a run's score, which is what the psyboid is trying
+     * to maximise and has nothing to do with how well the solver reads it. A true positive is the
+     * psyboid surviving; a true negative is another boid correctly ruled out. The property that
+     * matters here is that abstaining — keeping every boid — is the <em>worst</em> attainable
+     * score and every uninformative assignment ties with it, so the number moves only on
+     * discrimination and cannot be inflated by being indiscriminately generous or indiscriminately
+     * strict.
+     * <p>
+     * Split by whether the override actually changed the psyboid's route, which is a fact about
+     * the corpus rather than an assumption about inference. A forty-tick override often ends
+     * without the boid having crossed an edge it would not otherwise have crossed, and those
+     * scenes hold no trace of it for anyone to find; mixing them in measures the case generator
+     * rather than the solver. Both are reported, because which of them is worth working on is
+     * not this method's decision.
      *
      * @param flock the constants the windows are drawn at, if they have to be built
      */
@@ -982,50 +990,107 @@ public final class SimTest {
                              int lo, int hi, int dir, EdgeWeights.Scheme scheme,
                              double[][] chain, Flocking flock, int seeds, int warm)
             throws IOException {
+        solve(preset, horizontal, line, lo, hi, dir, scheme, chain, flock, seeds, warm,
+                new UnstableEdgeClue());
+    }
+
+    /** The same, with the windows to try named, so a candidate can be measured on its own. */
+    public static void solve(PresetScenarioParameter preset, boolean horizontal, int line,
+                             int lo, int hi, int dir, EdgeWeights.Scheme scheme,
+                             double[][] chain, Flocking flock, int seeds, int warm,
+                             UnstableEdgeClue clue)
+            throws IOException {
         SolverFacts f = SolverStore.prepare(preset,
                 new SolverFacts.Gate(horizontal, line, lo, hi, dir), scheme, chain, flock);
         Boids2DEngine engine = new Boids2DEngine(preset);
-        UnstableEdgeClue clue = new UnstableEdgeClue();
 
         List<Sim.State> plain = new ArrayList<>();
-        List<Sim.State> shown = new ArrayList<>(), hidden = new ArrayList<>();
-        List<Integer> shownWho = new ArrayList<>(), hiddenWho = new ArrayList<>();
+        List<Sim.State> marked = new ArrayList<>(), unmarked = new ArrayList<>();
+        List<Integer> markedWho = new ArrayList<>(), unmarkedWho = new ArrayList<>();
+        List<Integer> markedRun = new ArrayList<>(), unmarkedRun = new ArrayList<>();
+        int runs = 0, effective = 0, inert = 0;
         for (long seed = 0; seed < seeds; seed++) {
             Sim.State s = engine.init(seed);
             for (int t = 0; t < warm; t++) s = engine.tick(s);
-            Sim.State from = s;
+            // One override per onset per boid per direction, with the onsets spread along the
+            // timeline. Forking repeatedly off one moment gives scenes that look independent
+            // and are not: a single override resampled every few ticks is one event seen ten
+            // times, and a grade averaged over those is really a grade over the events.
+            Sim.State walk = s;
+            for (int k = 0; k < ONSETS; k++) {
+                for (int who = 0; who < walk.n; who++) {
+                    for (int turn : new int[]{-1, 1}) {
+                        int run = runs++;
+                        Sim.State a = withOverrides(walk,
+                                new PsyboidOverride((int) walk.tick, DURATION, turn, who));
+                        int was = f.edgeAt(a.x[who], a.y[who], a.h[who]);
+                        boolean mark = false, took = false;
+                        for (int t = 0; t < HORIZON; t++) {
+                            a = engine.tick(a);
+                            int now = f.edgeAt(a.x[who], a.y[who], a.h[who]);
+                            if (now != was) {
+                                // A turn it would not have taken on its own is the only thing
+                                // that leaves the position evidence this solver reads.
+                                mark |= was >= 0 && f.straightTo()[was] != now;
+                                was = now;
+                            }
+                            // Sampled from the first tick, the override still running. A scene
+                            // taken only after it ends is a scene with no psyboid in it: the
+                            // boid is flying the ordinary rules again and all that survives is
+                            // where the override left it.
+                            if (t % 13 != 0 || owing(f, a) == 0) continue;
+                            took = true;
+                            (mark ? marked : unmarked).add(a);
+                            (mark ? markedWho : unmarkedWho).add(who);
+                            (mark ? markedRun : unmarkedRun).add(run);
+                        }
+                        if (mark) effective++; else inert++;
+                        if (!took) { /* nothing to explain anywhere in the horizon */ }
+                    }
+                }
+                for (int t = 0; t < SPACING; t++) walk = engine.tick(walk);
+            }
             for (int t = 0; t < 3000; t++) {
                 s = engine.tick(s);
                 if (t % 13 == 0 && owing(f, s) > 0) plain.add(s);
             }
-            for (int who = 0; who < from.n; who++) {
-                for (int turn : new int[]{-1, 1}) {
-                    Sim.State a = withOverrides(from,
-                            new PsyboidOverride((int) from.tick, 40, turn, who));
-                    for (int t = 0; t < 200; t++) {
-                        a = engine.tick(a);
-                        if (t < 40 || t % 13 != 0 || owing(f, a) == 0) continue;
-                        if (f.stable(f.edgeAt(a.x[who], a.y[who], a.h[who]))) {
-                            hidden.add(a);
-                            hiddenWho.add(who);
-                        } else {
-                            shown.add(a);
-                            shownWho.add(who);
-                        }
-                    }
-                }
-            }
         }
 
-        System.out.printf("%n=== %s @%s: solver over %d seeds ===%n", preset.name(),
-                preset.ingest().hash(), seeds);
-        System.out.printf("%-32s %7s %8s %8s %9s %8s %8s %8s%n", "scenes with something to "
-                + "explain", "count", "answered", "toodeep", "unexplained", "kept", "alone",
-                "excluded");
-        score(f, clue, "no psyboid", plain, null);
-        score(f, clue, "psyboid on an unstable edge", shown, shownWho);
-        score(f, clue, "psyboid on a stable edge", hidden, hiddenWho);
+        System.out.printf("%n=== %s @%s: solver over %d seeds, windows %s ===%n", preset.name(),
+                preset.ingest().hash(), seeds,
+                clue.using().isEmpty() ? "none" : String.join(" + ", clue.using()));
+        System.out.printf("%,d override runs: %,d changed the psyboid's route, %,d were inert%n",
+                runs, effective, inert);
+        System.out.printf("%-34s %7s %8s %8s %7s %7s %7s %8s %8s%n", "scenes with something to "
+                + "explain", "count", "answered", "toodeep", "TP", "TN", "FN", "penalty");
+        grade(f, clue, "no psyboid", plain, null, null);
+        grade(f, clue, "override changed the route", marked, markedWho, markedRun);
+        grade(f, clue, "override changed nothing", unmarked, unmarkedWho, unmarkedRun);
     }
+
+    /**
+     * How the synthetic override corpus is laid out.
+     * <p>
+     * There is no searched override corpus for any dab-like map — {@code data/searches.tsv}
+     * covers blossom, daisy, plinko and hamburger and nothing else — so the psyboid runs a
+     * solver is graded on have to be generated here, and how they are generated decides what
+     * the grade means.
+     * <p>
+     * {@link #ONSETS} is the number that matters. Forking every override off a single moment
+     * makes one event look like ten scenes, and a grade averaged over scenes is then a grade
+     * over a handful of events with the sample size hidden. Spreading the onsets buys
+     * independent events at the only price worth paying, which is simulation time.
+     */
+    private static final int ONSETS = 12;
+
+    /** How long an override holds one turn. The searched corpus used 8 and 32. */
+    private static final int DURATION = 40;
+
+    /** How long after onset scenes are still taken. */
+    private static final int HORIZON = 200;
+
+    /** Ticks between one onset and the next, well beyond the horizon so runs do not overlap. */
+    private static final int SPACING = 250;
 
     /** How many boids are somewhere unsteered travel would not have left them. */
     private static int owing(SolverFacts f, Sim.State s) {
@@ -1037,40 +1102,320 @@ public final class SimTest {
         return owing;
     }
 
-    private static void score(SolverFacts f, UnstableEdgeClue clue, String label,
-                              List<Sim.State> scenes, List<Integer> psyboid) {
-        int deep = 0, unexplained = 0, kept = 0, alone = 0, excluded = 0, wide = 0;
+    private static void grade(SolverFacts f, UnstableEdgeClue clue, String label,
+                              List<Sim.State> scenes, List<Integer> psyboid, List<Integer> run) {
+        int deep = 0, kept = 0, ruledOut = 0, excluded = 0, wide = 0, answered = 0;
+        int tp = 0, fn = 0, tn = 0, fp = 0;
         for (int k = 0; k < scenes.size(); k++) {
             Sim.State s = scenes.get(k);
+            int[] odds;
             try {
-                boolean[] c = clue.solve(f, s).candidate();
-                int size = 0;
-                for (boolean b : c) if (b) size++;
-                if (size == s.n) wide++;
-                if (psyboid == null) continue;
-                if (c[psyboid.get(k)]) {
-                    kept++;
-                    if (size == 1) alone++;
-                } else {
-                    excluded++;
-                }
+                odds = clue.odds(f, s);
             } catch (Solver.TooDeep e) {
                 deep++;
-            } catch (Solver.Unexplained e) {
-                unexplained++;
+                continue;
             }
+            answered++;
+            int size = 0;
+            for (int v : odds) if (v > 0) size++;
+            if (size == s.n) wide++;
+            if (psyboid == null) continue;
+            int who = psyboid.get(k);
+            boolean hit = odds[who] > 0;
+            // Every boid ruled out that was not the psyboid. When the psyboid itself was ruled
+            // out it is one of the excluded, and must not be counted as a correct exclusion.
+            int negatives = (s.n - size) - (hit ? 0 : 1);
+            if (hit) kept++; else excluded++;
+            ruledOut += negatives;
+            if (hit) tp++; else fn++;
+            tn += negatives;
+            fp += (s.n - 1) - negatives;
         }
-        int answered = scenes.size() - deep - unexplained;
-        System.out.printf("%-32s %7d %8d %8d %9d", label, scenes.size(), answered, deep,
-                unexplained);
+        System.out.printf("%-34s %7d %8d %8d", label, scenes.size(), answered, deep);
         if (psyboid == null) {
             System.out.printf("   %d of %d over-narrowed, with nothing there to find%n",
                     answered - wide, answered);
         } else {
-            System.out.printf(" %8d %8d %8d%n", kept, alone, excluded);
+            System.out.printf(" %7d %7d %7d %8.3f %8.3f%n", kept, ruledOut, excluded,
+                    SolverScore.penalty(tp, fn, tn, fp),
+                    SolverScore.normalised(tp, fn, tn, fp, SolverScore.K));
         }
     }
 
+    /**
+     * The three things the solver must do when it has been given no windows.
+     * <p>
+     * Worth asserting rather than describing, because with no windows the answer is a pure
+     * function of which edges are unstable, and nothing about leaders, drift or the clock can
+     * reach it. Anything breaking these has broken the skeleton rather than the modelling.
+     */
+    public static void solverInvariants(PresetScenarioParameter preset, boolean horizontal,
+                                        int line, int lo, int hi, int dir,
+                                        EdgeWeights.Scheme scheme, double[][] chain,
+                                        Flocking flock, int seeds, int warm) throws IOException {
+        SolverFacts f = SolverStore.prepare(preset,
+                new SolverFacts.Gate(horizontal, line, lo, hi, dir), scheme, chain, flock);
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        UnstableEdgeClue clue = new UnstableEdgeClue();
+
+        int[] seen = new int[4];
+        int checked = 0, deep = 0, wrong = 0;
+        for (long seed = 0; seed < seeds; seed++) {
+            Sim.State s = engine.init(seed);
+            for (int t = 0; t < warm; t++) s = engine.tick(s);
+            for (int t = 0; t < 3000; t++) {
+                s = engine.tick(s);
+                int owing = owing(f, s);
+                int[] odds;
+                try {
+                    odds = clue.odds(f, s);
+                } catch (Solver.TooDeep e) {
+                    deep++;
+                    continue;
+                }
+                checked++;
+                seen[Math.min(3, owing)]++;
+                boolean ok;
+                if (owing == 0) {
+                    ok = uniform(odds, 1);
+                } else if (owing == 1) {
+                    ok = true;
+                    for (int i = 0; i < s.n; i++) {
+                        boolean unstable = !f.stable(f.edgeAt(s.x[i], s.y[i], s.h[i]));
+                        ok &= odds[i] == (unstable ? 1 : 0);
+                    }
+                } else {
+                    ok = uniform(odds, 0);
+                }
+                if (!ok && wrong++ < 5 && UnstableEdgeClue.acknowledged().isEmpty()) {
+                    System.out.printf("  BROKEN at tick %d: %d owing, odds %s%n", s.tick, owing,
+                            Arrays.toString(odds));
+                }
+            }
+        }
+        System.out.printf("%n=== %s: no-window invariants over %,d scenes ===%n", preset.name(),
+                checked);
+        System.out.printf("  %,d with nothing owing, %,d with one, %,d with two or more%n",
+                seen[0], seen[1], seen[2] + seen[3]);
+        System.out.printf("  %,d gave up on depth%n", deep);
+        // They stop being invariants the moment a window is acknowledged, which is the whole
+        // point of a window: it lets a boid other than the one owing an explanation account for
+        // it. With windows in play the departures are a measure of how much they are doing.
+        List<String> windows = UnstableEdgeClue.acknowledged();
+        if (windows.isEmpty()) {
+            System.out.printf("  %s%n", wrong == 0 ? "all three invariants hold"
+                    : wrong + " SCENES BROKE AN INVARIANT");
+        } else {
+            System.out.printf("  %,d scenes answered differently from the no-window baseline,%n"
+                            + "  which is what the %d acknowledged window(s) are for: %s%n",
+                    wrong, windows.size(), String.join(", ", windows));
+        }
+    }
+
+    private static boolean uniform(int[] values, int of) {
+        for (int v : values) if (v != of) return false;
+        return true;
+    }
+
+    /**
+     * Runs a corpus past the audit and asks whether anything got out without a reason.
+     * <p>
+     * <b>This is the test the whole net exists to pass.</b> The critical envelope is complete by
+     * construction — every boid that exits was steered onto it — so an exit the audit cannot
+     * account for means one of two things, and both are findings rather than noise: the
+     * envelope's leader table is missing an arrangement it should admit, or the exit was
+     * produced by several boids between them in a way no single leader reproduces.
+     * <p>
+     * Warmed before the audit is attached. A cold start drops boids inside each other's
+     * separation radius, so the first few hundred ticks are full of shoves that are real but are
+     * a property of the placement rather than of how a settled flock flies.
+     */
+    public static void census(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir, int[][] arcs, Flocking normal,
+                              Flocking widened, int seeds, int ticks, int warm)
+            throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        long built = System.nanoTime();
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+                l.map(), l.edge(), l.live(), l.liveCount(), arcs, normal, widened),
+                new PsyboidOverride[0]);
+        System.out.printf("%ntables built in %.0fs%s%n", (System.nanoTime() - built) / 1e9,
+                widened == null ? " (no widened tables: level 3 is not being checked)" : "");
+
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        for (long seed = 0; seed < seeds; seed++) {
+            engine.trace(null);
+            Sim.State s = engine.init(seed);
+            for (int t = 0; t < warm; t++) s = engine.tick(s);
+            audit.reset(s.n);
+            engine.trace(audit);
+            for (int t = 0; t < ticks; t++) s = engine.tick(s);
+        }
+        engine.trace(null);
+
+        System.out.printf("%n=== %s @%s: exit audit over %d seeds x %,d ticks, warmed %,d ===%n",
+                preset.name(), preset.ingest().hash(), seeds, ticks, warm);
+        System.out.print(audit.summary());
+
+        java.util.Map<String, Integer> causes = new java.util.TreeMap<>();
+        for (ExitAudit.Exit e : audit.exits()) {
+            if (e.reasons().isEmpty()) continue;
+            ExitAudit.Reason r = e.reasons().get(0);
+            if (r.cause() == null) continue;
+            causes.merge(e.fromEdge() + "->" + e.toEdge() + " L"
+                    + r.leaderPath()[r.leaderPath().length - 1] + " " + r.cause(), 1,
+                    Integer::sum);
+        }
+        System.out.println("  leader edge and cause, by best reason:");
+        causes.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
+                .forEach(e -> System.out.printf("    %-40s %,6d%n", e.getKey(), e.getValue()));
+
+        Path file = preset.ingest().output("audit", String.format("exits_%dseed_%dt.tsv",
+                seeds, ticks));
+        audit.write(file);
+        System.out.printf("  wrote %s%n", file);
+    }
+
+    /**
+     * A classifier window's band for one leader edge, shifted to the instant of the turn.
+     * <p>
+     * Rows the leader search left as good as the whole edge are dropped: those are not wide
+     * constraints but missing ones, and letting them into the union widens every other row for
+     * nothing. The anchor is {@code length[from]} rather than the largest tick any state of
+     * {@code from} has, because that is where the solver's own rebasing puts a boid at the
+     * instant it crosses.
+     */
+    private static double[] recorded(SolverFacts f, SolverFacts.Window w, int leaderEdge) {
+        if (w == null) return new double[]{Double.NaN, Double.NaN};
+        double anchor = f.length()[w.from()];
+        double lo = Double.MAX_VALUE, hi = -Double.MAX_VALUE;
+        for (SolverFacts.Band b : w.bands()) {
+            if (b.leaderEdge() != leaderEdge || f.vacuous(b)) continue;
+            lo = Math.min(lo, b.lo() + anchor - b.tau());
+            hi = Math.max(hi, b.hi() + anchor - b.tau());
+        }
+        return lo > hi ? new double[]{Double.NaN, Double.NaN} : new double[]{lo, hi};
+    }
+
+    /** The arcs a leader on this edge would have to account for, walking its own history back. */
+    private static String backwards(SolverFacts f, int leaderEdge) {
+        StringBuilder s = new StringBuilder();
+        java.util.ArrayDeque<int[]> work = new java.util.ArrayDeque<>();
+        boolean[] seen = new boolean[f.edges()];
+        work.add(new int[]{leaderEdge, 0});
+        seen[leaderEdge] = true;
+        while (!work.isEmpty()) {
+            int[] at = work.poll();
+            if (f.stable(at[0])) {
+                if (at[0] != leaderEdge) {
+                    s.append(s.length() > 0 ? ", " : "").append("stops at stable ").append(at[0]);
+                }
+                continue;
+            }
+            if (at[1] >= 4) continue;
+            for (int p : f.predecessors(at[0])) {
+                if (f.straightTo()[p] != at[0]) {
+                    s.append(s.length() > 0 ? ", " : "").append(p).append("-").append(at[0]);
+                }
+                if (seen[p]) continue;
+                seen[p] = true;
+                work.add(new int[]{p, at[1] + 1});
+            }
+        }
+        return s.length() == 0 ? "-" : s.toString();
+    }
+
+    /**
+     * Grades the solver on a real psyboid corpus, one plan at a time.
+     * <p>
+     * <b>Graded per plan, not per scene.</b> A plan is one psyboid doing one thing; sampling it
+     * every hundred ticks produces a dozen scenes that are not a dozen independent tests of
+     * anything. So the scenes within a plan are averaged first and the plans are averaged
+     * second, which makes the sample size the number of plans and puts the standard error on
+     * the quantity that actually varies.
+     * <p>
+     * Scenes are taken from the whole measured window including the ticks the override is
+     * running, which is the other half of the same mistake: a scene sampled only after a plan
+     * finishes contains no psyboid, just a boid that used to be one.
+     * <p>
+     * The grade is {@link SolverScore}, normalised so that 1.000 is a perfect answer and 0.000
+     * is knowing nothing. Normalised per plan rather than summed, because a raw penalty scales
+     * with how many scenes a plan yielded and plans differ in length.
+     */
+    public static void graded(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir, EdgeWeights.Scheme scheme,
+                              double[][] chain, Flocking flock, int every, UnstableEdgeClue clue)
+            throws IOException {
+        SolverFacts f = SolverStore.prepare(preset,
+                new SolverFacts.Gate(horizontal, line, lo, hi, dir), scheme, chain, flock);
+        List<String> labels = PsyboidCorpus.labels(preset.ingest());
+        Boids2DEngine engine = new Boids2DEngine(preset);
+
+        double[] perPlan = new double[labels.size()];
+        int graded = 0, scenes = 0, blind = 0, deep = 0;
+        int totalTP = 0, totalFN = 0, totalTN = 0, totalFP = 0;
+        for (String label : labels) {
+            PsyboidBits.Replay plan = PsyboidBits.parse(label);
+            Sim.State s = engine.init(plan.seed());
+            for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+            s = withOverrides(s, plan.overrides());
+
+            long last = 0;
+            for (PsyboidOverride o : plan.overrides()) {
+                last = Math.max(last, o.onset() + o.duration());
+            }
+            int planTP = 0, planFN = 0, planTN = 0, planFP = 0;
+            int taken = 0;
+            while (s.tick <= last) {
+                s = engine.tick(s);
+                if (s.tick % every != 0) continue;
+                if (owing(f, s) == 0) { blind++; continue; }
+                scenes++;
+                int[] odds;
+                try {
+                    odds = clue.odds(f, s);
+                } catch (Solver.TooDeep e) {
+                    deep++;
+                    continue;
+                }
+                int kept = 0;
+                for (int v : odds) if (v > 0) kept++;
+                boolean hit = odds[Sim.PSYBOID] > 0;
+                int negatives = (s.n - kept) - (hit ? 0 : 1);
+                taken++;
+                if (hit) planTP++; else planFN++;
+                planTN += negatives;
+                planFP += (s.n - 1) - negatives;
+            }
+            if (taken == 0) continue;
+            totalTP += planTP; totalFN += planFN; totalTN += planTN; totalFP += planFP;
+            // Normalised per plan, because a raw penalty scales with how many scenes the plan
+            // yielded and plans differ. Averaging the normalised figure keeps the plan as the
+            // unit of sampling, which is what the standard error below is a statement about.
+            perPlan[graded++] = SolverScore.normalised(planTP, planFN, planTN, planFP,
+                    SolverScore.K);
+        }
+
+        double mean = 0;
+        for (int i = 0; i < graded; i++) mean += perPlan[i];
+        mean /= Math.max(1, graded);
+        double var = 0;
+        for (int i = 0; i < graded; i++) var += (perPlan[i] - mean) * (perPlan[i] - mean);
+        double se = Math.sqrt(var / Math.max(1, graded - 1)) / Math.sqrt(Math.max(1, graded));
+
+        System.out.printf("%n=== %s @%s: solver on the psyboid corpus, windows %s ===%n",
+                preset.name(), preset.ingest().hash(),
+                clue.using().isEmpty() ? "none" : String.join(" + ", clue.using()));
+        System.out.printf("%,d plans, %,d scenes with something to explain (%,d with nothing, "
+                + "%,d too deep)%n", graded, scenes, blind, deep);
+        System.out.printf("true positives %,d, false negatives %,d, true negatives %,d, "
+                + "false positives %,d%n", totalTP, totalFN, totalTN, totalFP);
+        System.out.printf("corpus penalty %.2f against %.2f for keeping everything%n",
+                SolverScore.penalty(totalTP, totalFN, totalTN, totalFP),
+                SolverScore.abstaining(totalTP + totalFN, totalTN + totalFP, SolverScore.K));
+        System.out.printf("normalised score, averaged within a plan then across plans: "
+                + "%.3f +- %.3f  (0.000 knows nothing, 1.000 is perfect)%n", mean, se);
+    }
     /** The same state with overrides attached, since a fresh one comes with none. */
     static Sim.State withOverrides(Sim.State s, PsyboidOverride... overrides) {
         return new Sim.State(s.n, s.x, s.y, s.h, s.tick, s.score, s.boidScore, s.label,
@@ -1968,10 +2313,8 @@ public final class SimTest {
         return new EdgeStats(size, scoring, reachesA, minX, maxX, minY, maxY, outTo);
     }
 
-    private static final int[] EDGE_PALETTE = {
-            0xE6194B, 0x3CB44B, 0x4363D8, 0xFFE119, 0xF58231,
-            0x911EB4, 0x46F0F0, 0xF032E6, 0xBCF60C, 0x008080,
-    };
+    /** Shared with every other render, so an edge is one colour wherever it is drawn. */
+    private static final int[] EDGE_PALETTE = SceneRender.EDGE_PALETTE;
 
     /**
      * Paints the decomposition, one colour per edge and its inverse.
@@ -2182,10 +2525,484 @@ picks, never in what is available to it.
         g.dispose();
     }
 
+    /**
+     * Critical-envelope analysis for one arc, reported and written to the ingest.
+     * <p>
+     * Run it for each steered transition the two-boid census found. Passing a widened
+     * {@code flock} — half straight bias — produces the level-3 fallback table rather than the
+     * normal-physics one, and writes it alongside under its own name.
+     */
+    public static void envelope(PresetScenarioParameter preset, boolean horizontal, int line,
+                                int lo, int hi, int dir, int from, int keep, Flocking flock)
+            throws IOException {
+        envelope(preset, label(preset, horizontal, line, lo, hi, dir), from, keep, flock);
+    }
+
+    /** The same against a labelling already in hand, so a sweep of arcs decomposes once. */
+    public static void envelope(PresetScenarioParameter preset, Labelling l, int from, int keep,
+                                Flocking flock) throws IOException {
+        long start = System.nanoTime();
+        CriticalEnvelope.Table t = CriticalEnvelope.analyse(l.map(), l.edge(), l.live(),
+                l.liveCount(), from, keep, flock);
+        double secs = (System.nanoTime() - start) / 1e9;
+
+        boolean widened = flock.straightBias() != Params.STRAIGHT_BIAS;
+        CriticalEnvelope.Envelope env = t.envelope();
+        System.out.printf("%n=== %s @%s: critical envelope %d -> %d%s ===%n", preset.name(),
+                preset.ingest().hash(), from, keep, widened ? ", half straight bias" : "");
+        System.out.printf("envelope %,d states (%,d on edge %d, %,d one tick onto edge %d), "
+                        + "%,d at the front%n", env.size(), env.onFrom().length, from,
+                env.onKeep().length, keep, env.entered().length);
+        System.out.printf("settled %,d states of edge %d%n", t.settled(), from);
+
+        int sep = 0, ali = 0;
+        java.util.Set<Integer> priors = new java.util.HashSet<>();
+        java.util.Map<String, Integer> paths = new java.util.TreeMap<>();
+        for (CriticalEnvelope.Entry e : t.entries()) {
+            if (e.cause() == CriticalEnvelope.Cause.SEPARATION) sep++; else ali++;
+            priors.add(e.boidPrior());
+            paths.merge(Arrays.toString(e.leaderPath()).replace(" ", ""), 1, Integer::sum);
+        }
+        System.out.printf("%,d admitted pairs over %,d distinct entry states: %,d SEPARATION, "
+                + "%,d ALIGNMENT_AND_COHESION%n", t.entries().size(), priors.size(), sep, ali);
+        System.out.printf("%,d pairs probed in %.1fs%s%n", t.probed(), secs,
+                t.budgetHit() ? "  ** BUDGET HIT, table is incomplete **" : "");
+        System.out.println("leader edge paths:");
+        paths.entrySet().stream()
+                .sorted((a, b) -> b.getValue() - a.getValue())
+                .forEach(e -> System.out.printf("  %-16s %,7d%n", e.getKey(), e.getValue()));
+
+        Path file = preset.ingest().output("envelope", String.format("arc_%d_%d%s.tsv",
+                from, keep, widened ? "_halfbias" : ""));
+        CriticalEnvelope.write(file, t);
+        System.out.printf("wrote %s%n", file);
+    }
+
+    /**
+     * How far a boid's history can be walked backwards inside one edge, and by what.
+     * <p>
+     * The question this answers is what actually bounds the admission search in
+     * {@link CriticalEnvelope}. While a leader is out of flocking range it steers nothing, so
+     * the boid's only predecessors are its unsteered ones — and if those chains are short, the
+     * out-of-range part of the search is shallow whatever the leader does. Reported separately
+     * from the chains available once a leader is in range, which admit steered predecessors too.
+     */
+    public static void chains(PresetScenarioParameter preset, boolean horizontal, int line,
+                              int lo, int hi, int dir, int[] edges) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        NavMap map = l.map();
+        int[] edge = l.edge();
+        int[] preds = new int[3];
+
+        for (int from : edges) {
+            boolean[] settled = CriticalEnvelope.settled(map, edge, l.live(), l.liveCount(), from);
+            List<Integer> on = new ArrayList<>();
+            for (int i = 0; i < l.liveCount(); i++) if (edge[l.live()[i]] == from) on.add(l.live()[i]);
+
+            // Longest backward unsteered chain that stays on the edge, by memoised depth-first
+            // search. A cycle would make the answer infinite, so it is detected and reported
+            // rather than assumed away.
+            Map<Integer, Integer> depth = new java.util.HashMap<>();
+            java.util.Set<Integer> onStack = new java.util.HashSet<>();
+            boolean[] cyclic = {false};
+            int settledCount = 0, reachesSettled = 0, terminates = 0;
+            long total = 0;
+            int worst = 0;
+            int[] histogram = new int[9];
+            for (int s : on) {
+                if (settled[s]) { settledCount++; continue; }
+                int d = unsteeredDepth(map, edge, from, s, depth, onStack, cyclic, preds);
+                worst = Math.max(worst, d);
+                total += d;
+                histogram[Math.min(histogram.length - 1, d)]++;
+                if (d == 0) terminates++;
+                // Confirms the theory: settled is forward-closed under coasting, so its
+                // complement is backward-closed and no unsteered chain can walk into it.
+                int at = s;
+                for (int guard = 0; guard < 4096; guard++) {
+                    int n = map.unsteeredPredecessors(at, preds);
+                    int next = -1;
+                    for (int k = 0; k < n; k++) if (edge[preds[k]] == from) next = preds[k];
+                    if (next < 0) break;
+                    if (settled[next]) { reachesSettled++; break; }
+                    at = next;
+                }
+            }
+            int unsettled = on.size() - settledCount;
+
+            // What the search actually has to cope with once a leader is in range: every
+            // predecessor, not only the unsteered one.
+            boolean[] seen = new boolean[edge.length];
+            java.util.ArrayDeque<Integer> q = new java.util.ArrayDeque<>();
+            for (int s : on) if (!settled[s] && !seen[s]) { seen[s] = true; q.add(s); }
+            int reach = 0;
+            while (!q.isEmpty()) {
+                int s = q.poll();
+                reach++;
+                int n = map.steeredPredecessors(s, preds);
+                for (int k = 0; k < n; k++) {
+                    if (edge[preds[k]] == from && !seen[preds[k]]) {
+                        seen[preds[k]] = true;
+                        q.add(preds[k]);
+                    }
+                }
+            }
+
+            System.out.printf("%n=== edge %d: %,d states, %,d settled, %,d not ===%n",
+                    from, on.size(), settledCount, unsettled);
+            System.out.printf("unsteered backward chains from unsettled states%s:%n",
+                    cyclic[0] ? "  ** A CYCLE EXISTS, depths are lower bounds **" : "");
+            System.out.printf("  longest %d, mean %.2f, %,d terminate immediately%n",
+                    worst, unsettled == 0 ? 0 : (double) total / unsettled, terminates);
+            System.out.print("  depth histogram 0..7,8+: ");
+            for (int v : histogram) System.out.printf("%,d ", v);
+            System.out.printf("%n  reached a settled state: %,d of %,d%n", reachesSettled,
+                    unsettled);
+            System.out.printf("backward closure over ALL predecessors: %,d states of %,d%n",
+                    reach, on.size());
+            System.out.printf("  worst-case pair space against %,d live leaders: %,d%n",
+                    l.liveCount(), (long) reach * l.liveCount());
+        }
+    }
+
+    private static int unsteeredDepth(NavMap map, int[] edge, int from, int s,
+                                      Map<Integer, Integer> depth,
+                                      java.util.Set<Integer> onStack, boolean[] cyclic,
+                                      int[] scratch) {
+        Integer have = depth.get(s);
+        if (have != null) return have;
+        if (!onStack.add(s)) { cyclic[0] = true; return 0; }
+        int[] preds = new int[3];
+        int n = map.unsteeredPredecessors(s, preds);
+        int best = 0;
+        for (int k = 0; k < n; k++) {
+            if (edge[preds[k]] != from) continue;
+            best = Math.max(best, 1 + unsteeredDepth(map, edge, from, preds[k], depth, onStack,
+                    cyclic, scratch));
+        }
+        onStack.remove(s);
+        depth.put(s, best);
+        return best;
+    }
+
+    /**
+     * The same test against the psyboid corpus rather than plain seeds.
+     * <p>
+     * <b>This is the version with enough exits in it to mean anything.</b> Left alone a settled
+     * flock almost never leaves the main loop — by design, since that is what makes an exit
+     * evidence — so a plain run yields a handful of events over hundreds of thousands of ticks.
+     * A psyboid is the thing that makes exits happen, and a corpus of searched plans is the only
+     * honest supply of them: the alternative is inventing overrides inside the harness, which
+     * measures the harness.
+     * <p>
+     * Each plan brings its own overrides, and they are installed on the audit as well as on the
+     * run, because an exit taken by the boid under an override is accounted for at
+     * {@link ExitAudit.Level#PSYBOID} and nothing else has to explain it.
+     */
+    public static void auditCorpus(PresetScenarioParameter preset, boolean horizontal, int line,
+                                   int lo, int hi, int dir, int[][] arcs, Flocking normal,
+                                   Flocking widened) throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        long built = System.nanoTime();
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+                l.map(), l.edge(), l.live(), l.liveCount(), arcs, normal, widened),
+                new PsyboidOverride[0]);
+        System.out.printf("%ntables built in %.0fs%s%n", (System.nanoTime() - built) / 1e9,
+                widened == null ? " (no widened tables: level 3 is not being checked)" : "");
+
+        List<String> labels = PsyboidCorpus.labels(preset.ingest());
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        long ticks = 0;
+        for (String label : labels) {
+            PsyboidBits.Replay plan = PsyboidBits.parse(label);
+            engine.trace(null);
+            Sim.State s = engine.init(plan.seed());
+            for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+            s = withOverrides(s, plan.overrides());
+            long last = 0;
+            for (PsyboidOverride o : plan.overrides()) {
+                last = Math.max(last, (long) o.onset() + o.duration());
+            }
+            audit.reset(s.n, plan.overrides());
+            engine.trace(audit);
+            while (s.tick <= last) { s = engine.tick(s); ticks++; }
+        }
+        engine.trace(null);
+
+        System.out.printf("%n=== %s @%s: exit audit over %d psyboid plans, %,d ticks ===%n",
+                preset.name(), preset.ingest().hash(), labels.size(), ticks);
+        System.out.print(audit.summary());
+
+        java.util.Map<String, Integer> causes = new java.util.TreeMap<>();
+        int psyboidExits = 0, alsoLed = 0;
+        for (ExitAudit.Exit e : audit.exits()) {
+            if (e.reasons().isEmpty()) continue;
+            ExitAudit.Reason r = e.reasons().get(0);
+            if (r.level() == ExitAudit.Level.PSYBOID) {
+                psyboidExits++;
+                // A psyboid that could have been led anyway took an exit it did not need an
+                // override for, which is a different kind of event and worth counting apart.
+                if (e.reasons().size() > 1) alsoLed++;
+                continue;
+            }
+            if (r.cause() == null) continue;
+            causes.merge(e.fromEdge() + "->" + e.toEdge() + " L"
+                    + r.leaderPath()[r.leaderPath().length - 1] + " " + r.cause(), 1,
+                    Integer::sum);
+        }
+        System.out.printf("  %,d exits under an override, of which %,d had a leader as well%n",
+                psyboidExits, alsoLed);
+        System.out.println("  leader edge and cause, where a leader was the best reason:");
+        causes.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
+                .forEach(e -> System.out.printf("    %-40s %,6d%n", e.getKey(), e.getValue()));
+
+        Path file = preset.ingest().output("audit", "exits_corpus.tsv");
+        audit.write(file);
+        System.out.printf("  wrote %s%n", file);
+    }
+
+    /**
+     * Draws every exit nothing accounts for, and prints the influence that produced it.
+     * <p>
+     * A count of unexplained exits says only that the account is incomplete. The picture and the
+     * decomposition together say <em>what</em> it is missing, and the specific thing worth
+     * looking for is <b>superposition</b>: each of the three rules is normalised to unit length
+     * before weighting, so one neighbour inside the separation radius contributes the whole of
+     * {@code W_SEP} while every neighbour out in the annulus shares one {@code W_COH} and one
+     * {@code W_ALI} between them. One close boid and several far ones can therefore carry a turn
+     * that no single-neighbour analysis admits, and no leader table built pairwise can contain
+     * it.
+     * <p>
+     * Drawn at the <b>envelope entry</b> rather than at the crossing, because that is the
+     * arrangement the boid was actually steered by.
+     */
+    public static void renderUnexplained(PresetScenarioParameter preset, boolean horizontal,
+                                         int line, int lo, int hi, int dir, int[][] arcs,
+                                         Flocking normal, Flocking widened, Path outDir)
+            throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+                l.map(), l.edge(), l.live(), l.liveCount(), arcs, normal, widened),
+                new PsyboidOverride[0]);
+
+        List<String> labels = PsyboidCorpus.labels(preset.ingest());
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        for (String label : labels) {
+            PsyboidBits.Replay plan = PsyboidBits.parse(label);
+            engine.trace(null);
+            Sim.State s = engine.init(plan.seed());
+            for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+            s = withOverrides(s, plan.overrides());
+            long last = 0;
+            for (PsyboidOverride o : plan.overrides()) {
+                last = Math.max(last, (long) o.onset() + o.duration());
+            }
+            audit.reset(s.n, plan.overrides());
+            engine.trace(audit);
+            while (s.tick <= last) s = engine.tick(s);
+        }
+        engine.trace(null);
+
+        MovementLogic rules = new MovementLogic(preset.turningRadius());
+        double rSep = Params.separation(preset.turningRadius());
+        int turns = Params.TURNS, w = l.map().width();
+        int drawn = 0;
+        for (ExitAudit.Exit e : audit.exits()) {
+            if (!e.unexplained() || e.entryStates().length == 0) continue;
+            int n = e.entryStates().length;
+            int[] x = new int[n], y = new int[n], h = new int[n];
+            for (int j = 0; j < n; j++) {
+                int st = e.entryStates()[j];
+                h[j] = st % turns;
+                x[j] = (st / turns) % w;
+                y[j] = (st / turns) / w;
+            }
+            Path png = outDir.resolve(String.format("unexplained_%02d_t%d_b%d.png",
+                    ++drawn, e.tick(), e.suspect()));
+            ExitRender.write(preset.ingest().display(), png, e, x, y, h, n, rules,
+                    preset.turningRadius(), 3);
+
+            int i = e.suspect();
+            MovementLogic.Influence in = rules.decompose(
+                    new BoidArray(n, x, y, h, e.entryTick()), i);
+            double sep = MovementLogic.Influence.across(in.sepX(), in.sepY(), h[i]);
+            double coh = MovementLogic.Influence.across(in.cohX(), in.cohY(), h[i]);
+            double ali = MovementLogic.Influence.across(in.aliX(), in.aliY(), h[i]);
+
+            System.out.printf("%n--- %s ---%n", png.getFileName());
+            System.out.printf("exit %d->%d at tick %d, steered onto the envelope at tick %d%n",
+                    e.fromEdge(), e.toEdge(), e.tick(), e.entryTick());
+            System.out.printf("suspect %d at (%d,%d,%d); %d seen, %d inside separation; "
+                    + "flock asked for %+d%n", i, x[i], y[i], h[i], in.seen(), in.close(),
+                    in.turn());
+            System.out.printf("  across-heading, positive right:  separation %+8.2f   "
+                            + "cohesion %+7.2f   alignment %+7.2f   total %+8.2f%n",
+                    sep, coh, ali, sep + coh + ali);
+            System.out.printf("  straight bias %.4f; a turn needs the total to beat it%n",
+                    Params.STRAIGHT_BIAS);
+            boolean known = audit.isEntryState(e.fromEdge(), e.toEdge(), e.entryPrior());
+            System.out.printf("  suspect's entry state is %s the tables%n",
+                    known ? "IN" : "ABSENT FROM");
+            System.out.printf("  %-5s %-16s %8s %10s %8s %10s%n", "boid", "state", "distance",
+                    "regime", "alone", "in table");
+            for (int j = 0; j < n; j++) {
+                if (j == i) continue;
+                double d = Math.hypot(x[j] - (double) x[i], y[j] - (double) y[i]);
+                double vis = rules.perceived(x[i], y[i], h[i], x[j], y[j]);
+                String regime = vis < 0 ? "unseen" : d < rSep ? "SEPARATION" : "annulus";
+                int alone = EdgeInfluence.steer(h[i], x[j] - x[i], y[j] - y[i], h[j], normal);
+                boolean pair = audit.lookup(e.fromEdge(), e.toEdge(), e.entryPrior(),
+                        e.entryStates()[j]) != null;
+                System.out.printf("  %-5d (%3d,%3d,%2d)     %8.1f %10s %8s %10s%n", j, x[j],
+                        y[j], h[j], d, regime, vis < 0 ? "-" : String.format("%+d", alone),
+                        pair ? "yes" : "no");
+            }
+        }
+        System.out.printf("%n%d unexplained exits drawn into %s%n", drawn, outDir);
+    }
+
+    /**
+     * Tick by tick, what the flock made the suspect do against what a pairwise model says it
+     * would have done.
+     * <p>
+     * This is the admission test written out longhand. {@link CriticalEnvelope} walks a pair
+     * backwards accepting a step only when one of the two physics models reproduces the move the
+     * boid actually made; where neither does, the chain breaks and the arrangement is refused.
+     * The <b>lands</b> column is that test, and the first row where it reads {@code no} is where
+     * the history was lost.
+     */
+    public static void steeringHistory(PresetScenarioParameter preset, boolean horizontal,
+                                       int line, int lo, int hi, int dir, int[][] arcs,
+                                       Flocking normal, Flocking alt, int lookback)
+            throws IOException {
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        NavMap map = l.map();
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+                map, l.edge(), l.live(), l.liveCount(), arcs, normal, alt),
+                new PsyboidOverride[0]);
+        boolean[] settled = CriticalEnvelope.settled(map, l.edge(), l.live(), l.liveCount(),
+                arcs[0][0]);
+
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        for (String label : PsyboidCorpus.labels(preset.ingest())) {
+            PsyboidBits.Replay plan = PsyboidBits.parse(label);
+            long last = 0;
+            for (PsyboidOverride o : plan.overrides()) {
+                last = Math.max(last, (long) o.onset() + o.duration());
+            }
+            int before = audit.exits().size();
+            engine.trace(null);
+            Sim.State s = engine.init(plan.seed());
+            for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+            s = withOverrides(s, plan.overrides());
+            audit.reset(s.n, plan.overrides());
+            engine.trace(audit);
+            while (s.tick <= last) s = engine.tick(s);
+            engine.trace(null);
+
+            for (int k = before; k < audit.exits().size(); k++) {
+                ExitAudit.Exit e = audit.exits().get(k);
+                if (!e.unexplained() || e.entryStates().length == 0) continue;
+                replayHistory(preset, engine, plan, last, e, map, l.edge(), settled, normal,
+                        alt, lookback);
+            }
+        }
+    }
+
+    /**
+     * Flies the plan again with a recorder on the suspect, and prints the window.
+     * <p>
+     * <b>Every neighbour, not one chosen leader.</b> The question a fixed leader cannot answer is
+     * whether the history is a <em>baton pass</em> — one boid accounting for the early ticks and
+     * a different one for the later ticks, with no single boid covering the whole run. Admission
+     * holds one leader for an entire history, so a baton pass is unaccountable to any pairwise
+     * table however its constants are set, and that is a different finding from a window being
+     * slightly too narrow.
+     */
+    private static void replayHistory(PresetScenarioParameter preset, Boids2DEngine engine,
+                                      PsyboidBits.Replay plan, long last, ExitAudit.Exit e,
+                                      NavMap map, int[] edge, boolean[] settled,
+                                      Flocking normal, Flocking alt, int lookback)
+            throws IOException {
+        int who = e.suspect();
+        int n = e.entryStates().length;
+        long from = e.entryTick() - lookback + 1;
+
+        int[][] landed = new int[n][1];
+        int[] ticks = {0};
+
+        System.out.printf("%n=== exit %d->%d at tick %d, suspect %d, envelope entry at tick"
+                        + " %d ===%n", e.fromEdge(), e.toEdge(), e.tick(), who, e.entryTick());
+        System.out.printf("%6s %5s %6s %5s  %-10s", "tick", "want", "actual", "edge", "accounts");
+        for (int j = 0; j < n; j++) {
+            if (j != who) System.out.printf("  %14s", "boid " + j + " d/dil/dist");
+        }
+        System.out.printf("  %s%n", "note");
+
+        Boids2DEngine.Trace recorder = (tick, i, boids, want) -> {
+            if (i != who || tick < from || tick > e.entryTick()) return;
+            ticks[0]++;
+            int x = boids.x()[i], y = boids.y()[i], h = boids.h()[i];
+            int state = map.index(x, y, h);
+            int went = map.successor(state, want);
+
+            StringBuilder cells = new StringBuilder();
+            StringBuilder accounts = new StringBuilder();
+            for (int j = 0; j < n; j++) {
+                if (j == who) continue;
+                int lx = boids.x()[j], ly = boids.y()[j], lh = boids.h()[j];
+                int p1 = EdgeInfluence.steer(h, lx - x, ly - y, lh, normal);
+                int p2 = EdgeInfluence.steer(h, lx - x, ly - y, lh, alt);
+                boolean ok = map.successor(state, p1) == went || map.successor(state, p2) == went;
+                double d = Math.hypot(lx - (double) x, ly - (double) y);
+                if (ok) {
+                    landed[j][0]++;
+                    accounts.append(accounts.length() > 0 ? "," : "").append(j);
+                }
+                cells.append(String.format("  %+2d/%+2d/%5.0f%s", p1, p2, d, ok ? "*" : " "));
+            }
+            String note = settled[state] ? "settled" : "";
+            if (tick == e.entryTick()) note = (note.isEmpty() ? "" : note + ", ") + "ENTERS";
+            System.out.printf("%6d %+5d %+6d %5d  %-10s%s  %s%n", tick, want,
+                    map.constrainTurn(x, y, h, want), edge[state],
+                    accounts.length() == 0 ? "NOBODY" : "{" + accounts + "}",
+                    cells, note);
+        };
+
+        engine.trace(null);
+        Sim.State s = engine.init(plan.seed());
+        for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+        s = withOverrides(s, plan.overrides());
+        engine.trace(recorder);
+        while (s.tick <= last) s = engine.tick(s);
+        engine.trace(null);
+
+        // The decisive number. A pairwise table holds one leader for a whole history, so unless
+        // some boid accounts for every tick, no setting of the constants can admit this.
+        System.out.printf("over %d ticks: ", ticks[0]);
+        boolean any = false;
+        for (int j = 0; j < n; j++) {
+            if (j == who) continue;
+            System.out.printf("boid %d accounts for %d, ", j, landed[j][0]);
+            any |= landed[j][0] == ticks[0];
+        }
+        System.out.printf("%n  %s%n", any
+                ? "at least one boid accounts for the whole window"
+                : "NO SINGLE BOID ACCOUNTS FOR THE WHOLE WINDOW -- multi-leader");
+    }
+
     public static void main(String[] args) throws IOException {
         // Output goes inside the map's own ingest, so a route trace or an edge map can
         // never be read against a dabnt that has been edited since it was produced.
-        decompose(PresetScenarioParameter.PLAIT, true, 360, 335, 350, 0);
+        PresetScenarioParameter p = PresetScenarioParameter.DABEONE;
+        Flocking f = Flocking.of(p.turningRadius());
+        // Set pruneOutOfRangeLeaders while the exact out-of-range collapse is unbuilt; see ROADMAP.
+        // Approximate, and on because the exact out-of-range collapse is not built yet; see
+        // ROADMAP. Building all three arcs' tables costs about thirteen minutes and is paid on
+        // every run, since the tables are not yet persisted. Drop 4->0 for a fast pass.
+        CriticalEnvelope.pruneOutOfRangeLeaders = true;
+        auditCorpus(p, false, 202, 174, 191, -1, new int[][]{{2, 1}, {4, 0}, {5, 6}}, f,
+                f.diluted());
         if (true) return;
     }
 

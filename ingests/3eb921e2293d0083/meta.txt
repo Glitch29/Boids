@@ -1,0 +1,23 @@
+map        dabeone
+hash       3eb921e2293d0083
+sha256     3eb921e2293d00838988901d18fa3314fbd96115b22df8ccaf8f0637d85bbb90
+size       379x407
+oob        136126
+scoring    1649
+open       16478
+dead       1412 (shown as wall in display.png)
+radius     40
+navigable  BIDIRECTIONAL
+physics    2
+ingested   2026-08-17T04:53:28Z
+source     areas\dabeone\dabeone.png
+
+map.png is this map. It does not change, and it is the only file here that
+physics may be computed from. display.png is the same map with pixels no
+boid can occupy painted as wall; it is for rendering and reading, and
+rebuilding a navmap from it would give a smaller and wrong answer, because
+dead pixels lie on the swept paths of live ones.
+
+Anything derived from this version of dabeone — navmaps, renders, route traces,
+edge maps, analysis — belongs in here, and nothing in here refers to a
+version that is not this one.

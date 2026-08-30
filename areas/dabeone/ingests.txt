@@ -1,0 +1,14 @@
+# Ingest history for dabeone. Newest last; one line per distinct build.
+# Folders live in ingests/<hash>/. The options below all change what
+# gets ingested, so the hash already tells them apart; they are here
+# to say which is which, not to identify anything.
+#
+# 'dead' counts pixels no boid can occupy. They are wall in display.png
+# and untouched in map.png, which is what physics reads.
+#
+# hash             radius nav    trim phys  width height    oob scoring   open   dead
+3eb921e2293d0083     40 both   yes  p2      379    407 136126    1649  16478   1412
+082c077f29a19b52     40 both   yes  p2      379    407 135984    1649  16620   1406
+4f55e181bb4b654e     40 both   yes  p2      379    407 135284    1649  17320   1498
+8ab851c4299e6ae7     40 both   yes  p2      379    407 137174    1649  15430   1697
+609cffdb84be218c     40 both   yes  p2      379    407 137307    1649  15297   1541

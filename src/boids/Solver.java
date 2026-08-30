@@ -28,11 +28,6 @@ import java.util.List;
  */
 public final class Solver {
 
-    /** No single boid accounts for the arrangement. Recoverable, in principle. */
-    public static final class Unexplained extends RuntimeException {
-        public Unexplained(String message) { super(message); }
-    }
-
     /** The search ran further back than any dab-like map should need. */
     public static final class TooDeep extends RuntimeException {
         public TooDeep(String message) { super(message); }
@@ -82,27 +77,25 @@ public final class Solver {
      * yet — which is a real outcome and not a failure, since a scenario is allowed to be
      * ambiguous and saying so is better than picking.
      *
-     * @throws Unexplained if no boid at all survives, which means the account of what can
-     *                     steer a boid is incomplete rather than that the scene is hard
+     * An empty list is a real answer rather than a failure. It says no one boid accounts for
+     * everything the arrangement demands — which, on a scene with two boids off the stable
+     * cycle and no window to explain either, is exactly the truth.
      */
     public int[] candidates(Sim.State state) {
-        double[] odds = odds(state);
+        int[] odds = odds(state);
         List<Integer> out = new ArrayList<>();
         for (int i = 0; i < state.n; i++) if (odds[i] > 0) out.add(i);
-        if (out.isEmpty()) {
-            throw new Unexplained("every boid was excluded by some clue; " + report(state));
-        }
         int[] ids = new int[out.size()];
         for (int i = 0; i < ids.length; i++) ids[i] = out.get(i);
         return ids;
     }
 
-    /** The combined ratios, before they are read as a shortlist. */
-    public double[] odds(Sim.State state) {
-        double[] odds = new double[state.n];
+    /** The combined weights, before they are read as a shortlist. */
+    public int[] odds(Sim.State state) {
+        int[] odds = new int[state.n];
         Arrays.fill(odds, 1);
         for (Clue clue : clues) {
-            double[] each = clue.odds(facts, state);
+            int[] each = clue.odds(facts, state);
             if (each.length < state.n) {
                 throw new IllegalStateException("clue " + clue.name() + " returned "
                         + each.length + " odds for " + state.n + " boids");
@@ -125,9 +118,9 @@ public final class Solver {
         }
         s.append(System.lineSeparator());
         for (Clue clue : clues) {
-            double[] each = clue.odds(facts, state);
+            int[] each = clue.odds(facts, state);
             s.append(String.format("%-16s", clue.name()));
-            for (int i = 0; i < state.n; i++) s.append(String.format("%8.3g", each[i]));
+            for (int i = 0; i < state.n; i++) s.append(String.format("%8d", each[i]));
             s.append(System.lineSeparator());
         }
         s.append("(* marks an edge unsteered travel does not keep a boid on)");
