@@ -3106,8 +3106,8 @@ picks, never in what is available to it.
         Labelling lab = label(p, false, 202, 174, 191, -1);
         ExitAudit.Tables tabs = ExitAudit.Tables.of(p.ingest().outputDir("envelope"), lab.map(),
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
-        ThreeBoidPhase.run(p, lab, facts, tabs, 4, 0, 8, 8, 1, 600000, 1,
-                Path.of("render", "phase40.png"));
+        ThreeBoidPhase.run(p, lab, facts, tabs, 4, 0, 8, 8, 8, 1,
+                Long.MAX_VALUE, 600000, 1, Path.of("render", "phase40.png"));
         if (true) return;
     }
 

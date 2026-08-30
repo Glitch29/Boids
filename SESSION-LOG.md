@@ -11,6 +11,53 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-29 (end, 7) — the phase map gains routes, and saturates in twenty seconds
+
+**Routes are now part of the coordinate.** A sample lives in `(x, y, route, route)` — one simple
+loop from edge 4 back to itself for the psyboid, one for the third boid. There is no single lap
+length to wrap against because a lap's length depends which way round it went, but a *route* has
+a length, so each panel wraps cleanly and a phase relationship appears once rather than once per
+lap. Rebasing follows the route rather than the shortest path, since the offsets differ.
+
+**Dabeone has exactly three simple loops, and edge 6 is on none of them** — both as predicted:
+
+| route | length |
+| --- | --- |
+| `[4, 0, 3, 5, 8]` | 528.19 |
+| `[4, 2, 1, 5, 8]` | 528.30 |
+| `[4, 2, 7]` | 275.29 |
+
+The two exit routes agreeing to 0.11 ticks is a free check on the clock: nothing in the fit
+knows they are near-mirrors.
+
+**One simulation fills several cells.** Edges are shared between routes, so a boid on a common
+stretch belongs to every route through it — with a *different* phase in each. 821,901
+simulations filled 1,731,617 cells, about 2.1 apiece.
+
+**Compute is not the constraint.** Twenty seconds fills 1,713,837 cells; ten minutes fills
+1,731,617. **Thirty times the compute buys 1.0% more coverage.** The map saturates almost
+immediately, so the unfilled remainder is not undersampling — it is phase pairs no arrangement
+produces. Per-panel fill confirms the shape of that:
+
+- `[4,2,7] x [4,2,7]` — **100.0%**. On the main loop every phase pair occurs.
+- panels with one exit route — 98.3%.
+- panels with two exit routes — 96.6%.
+
+So the unreachable cells belong to the exit routes, whose timing is constrained in a way the
+main loop's is not. That is a structural fact about the map worth having.
+
+**Outcome over 125,763 exits:** 67,474 led by the psyboid, 31,863 by the third boid, **6** needing
+the diluted model, **26,426 unexplained (21%)**. `kPsyboid` is now 8 rather than the effective
+zero it was; the diluted count moved off zero, which it had been stuck at, but six cells is
+nothing.
+
+**Still unquantified.** The bands and regions are read by eye. Projecting exit counts onto each
+axis to locate bands numerically, then measuring each unexplained cell's distance to the nearest
+band, is what would separate a growth off a band from a genuinely detached region. Cheap, given
+the runtime, and not done.
+
+---
+
 ## 2026-08-29 (end, 6) — three-boid phase map
 
 **Built.** `ThreeBoidPhase`. Samples three-boid arrangements and maps them by the two phase

@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,26 +21,40 @@ import java.util.Random;
  * The two-boid problem was small enough to answer exactly in {@code (x, y, d)} — {@link TwoBoid}
  * enumerates every reachable arrangement. Three boids is not, and it is also where the
  * interesting failures live: the residue {@link ExitAudit} cannot account for is multi-leader,
- * and a pairwise table cannot represent it at any constants. So this samples rather than
- * enumerates, and it aggregates into {@code (edge, tau)} because that is the only space in which
+ * and no pairwise table represents that at any constants. So this samples rather than
+ * enumerates, and aggregates into {@code (edge, tau)} because that is the only space in which
  * "where is the other boid relative to me" is a single number.
+ *
+ * <h2>Routes are part of the coordinate</h2>
+ * There is no single lap length to wrap against — how long a lap takes depends on which way
+ * round the boid went. So a sample lives in {@code (x, y, route, route)}: one route for the
+ * psyboid, one for the third boid, each a <b>simple loop</b> from the suspect's edge back to
+ * itself. A route <em>does</em> have a length, so within a panel the axes wrap cleanly and the
+ * same phase relationship appears once instead of once per lap.
  * <p>
- * <b>Two axes, both phase differences in ticks.</b> Everything is rebased onto the edge the
- * suspect is leaving, by the shortest route, so a boid anywhere on the map reduces to one
- * coordinate: how far ahead or behind the suspect it is along the route. The psyboid supplies
- * one axis and the third boid the other. A cell is sampled once — the first arrangement to land
- * on it decides its colour — because the point is coverage of the plane rather than statistics
- * within a cell.
+ * <b>Rebasing follows the route, not the shortest path.</b> A boid's position is its tau plus
+ * the lengths of the route's edges before its own. The earlier shortest-path rebasing gave one
+ * number per state, which silently mixed boids that were on the same edge for different reasons.
  * <p>
- * <b>What the picture is expected to show.</b> Bands, horizontal and vertical, where one boid
- * alone induces the exit. A thickening where those bands cross, from arrangements that combine
- * an alignment leader with a separation one. Growths off the bands, which is what a baton pass
- * looks like when the leader changes partway through. And any region unattached to a band is
- * behaviour that exists only with three boids.
+ * <b>One simulation can fill several cells.</b> Edges are shared between routes, so a boid on a
+ * common stretch belongs to every route through it — and its phase difference is <em>different
+ * in each</em>, because the offsets differ. The trial is run once and every panel it speaks to
+ * is filled from it.
  * <p>
- * <b>This is not yet map-independent.</b> The override the psyboid flies is a permanent right
- * turn, which is the useful thing to hold on a dab-like map and is not general. See
- * {@code ROADMAP.md}.
+ * Edges outside every simple loop are dropped automatically, which is the intended behaviour:
+ * on dabeone that is edge 6, reachable only during warmup and otherwise noise.
+ *
+ * <h2>Reading it</h2>
+ * A vertical band is a phase at which the psyboid alone induces the exit; a horizontal band, the
+ * third boid alone. Where they cross, arrangements that combine two influences. Growths off a
+ * band are what a leader handover looks like. A region attached to neither is behaviour that
+ * exists only with three boids.
+ * <p>
+ * <b>Cells are sampled once and never averaged.</b> Density shows as dithering, which carries
+ * the actual data; a mean over a cell would invent a value no arrangement had.
+ * <p>
+ * <b>Not yet map-independent.</b> The override the psyboid flies is a permanent right turn,
+ * which is the useful thing to hold on a dab-like map and is not general.
  */
 public final class ThreeBoidPhase {
     private ThreeBoidPhase() {}
@@ -53,87 +68,116 @@ public final class ThreeBoidPhase {
     /** How long a single trial may run before its arrangement is abandoned as inconclusive. */
     private static final int PATIENCE = 2000;
 
-    /**
-     * What became of the suspect, and why.
-     *
-     * @param reason the account {@link ExitAudit} gave, or {@code null} if it did not exit
-     */
-    public record Cell(int x, int y, boolean exited, ExitAudit.Reason reason) {}
+    /** @param reason the account {@link ExitAudit} gave, or null if the suspect did not exit */
+    public record Cell(int route, int otherRoute, int x, int y, boolean exited,
+                       ExitAudit.Reason reason) {}
+
+    /** A simple loop from the suspect's edge back to itself, with where each edge sits on it. */
+    public record Route(int[] edges, double[] offset, double length) {
+        public String label() { return Arrays.toString(edges); }
+    }
 
     /**
-     * Samples the plane and writes the picture.
+     * Samples the plane and writes the grid.
      *
-     * @param band       width in ticks of the tau window the suspect starts in, centred on the
-     *                   middle of its edge
-     * @param k          how many unsteered steps the third boid is carried forward from a random
-     *                   state, which keeps it on a coasting trajectory rather than somewhere only
-     *                   steering could have put it
-     * @param resolution ticks per cell on both axes
+     * @param band    width in ticks of the tau window the suspect starts in, centred on its edge
+     * @param kBoid   unsteered steps the third boid is carried on from a random state
+     * @param kPsy    the same for the psyboid, which was previously always zero. Higher keeps a
+     *                boid on a coasting trajectory rather than somewhere only steering reaches,
+     *                at the cost of never sampling the early part of an unstable edge
+     * @param millis  wall-clock budget; sampling stops at whichever of this and {@code attempts}
+     *                comes first
      */
     public static void run(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
-                           ExitAudit.Tables tables, int from, int keep, double band, int k,
-                           double resolution, int attempts, long seed, Path out)
-            throws IOException {
+                           ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
+                           int kPsy, double resolution, long attempts, long millis, long seed,
+                           Path out) throws IOException {
         NavMap map = l.map();
         int[] edge = l.edge(), live = l.live();
         int liveCount = l.liveCount();
 
+        List<Route> routes = loops(f, from);
+        List<int[]>[] where = where(f, routes);
         boolean[] settled = CriticalEnvelope.settled(map, edge, live, liveCount, from);
         int[] starts = starts(map, edge, f, settled, live, liveCount, from, band);
-        double[] rebase = rebase(f, from);
 
         System.out.printf("%n=== %s @%s: three-boid phase map, arc %d->%d ===%n", preset.name(),
                 preset.ingest().hash(), from, keep);
-        System.out.printf("%d suspect starts in a %.0f-tick band, one per phase; k=%d, "
-                + "resolution %.0f, %,d attempts%n", starts.length, band, k, resolution, attempts);
+        for (int r = 0; r < routes.size(); r++) {
+            System.out.printf("  route %d  %-22s length %.2f%n", r, routes.get(r).label(),
+                    routes.get(r).length());
+        }
+        List<Integer> orphan = new ArrayList<>();
+        for (int e = 0; e < f.edges(); e++) if (where[e].isEmpty()) orphan.add(e);
+        System.out.printf("  edges on no loop, therefore never sampled: %s%n", orphan);
+        System.out.printf("%d suspect starts in a %.0f-tick band, one per phase; kBoid=%d "
+                        + "kPsyboid=%d, resolution %.0f%n", starts.length, band, kBoid, kPsy,
+                resolution);
 
         Boids2DEngine engine = new Boids2DEngine(preset);
         Random rng = new Random(seed);
         Map<Long, Cell> cells = new HashMap<>();
-        int tried = 0, offMap = 0, inconclusive = 0;
+        long began = System.nanoTime(), deadline = began + millis * 1_000_000L;
+        long tried = 0, simulated = 0, inconclusive = 0;
 
-        for (int a = 0; a < attempts; a++) {
+        for (long a = 0; a < attempts; a++) {
+            if ((a & 0x3FF) == 0 && System.nanoTime() > deadline) break;
+            tried++;
             int suspect = starts[rng.nextInt(starts.length)];
-            int other = coasted(map, live[rng.nextInt(liveCount)], k);
-            int psy = live[rng.nextInt(liveCount)];
-            if (other < 0) continue;
+            int other = coasted(map, live[rng.nextInt(liveCount)], kBoid);
+            int psy = coasted(map, live[rng.nextInt(liveCount)], kPsy);
+            if (other < 0 || psy < 0) continue;
+
+            int eb = f.edgeAt(x(map, other), y(map, other), h(other));
+            int ep = f.edgeAt(x(map, psy), y(map, psy), h(psy));
+            if (eb < 0 || ep < 0 || where[eb].isEmpty() || where[ep].isEmpty()) continue;
 
             double su = f.tickAt(x(map, suspect), y(map, suspect), h(suspect));
-            double po = place(map, f, rebase, psy), bo = place(map, f, rebase, other);
-            if (Double.isNaN(po) || Double.isNaN(bo) || Double.isNaN(su)) { offMap++; continue; }
+            double tb = f.tickAt(x(map, other), y(map, other), h(other));
+            double tp = f.tickAt(x(map, psy), y(map, psy), h(psy));
+            if (Double.isNaN(su) || Double.isNaN(tb) || Double.isNaN(tp)) continue;
 
-            int cx = (int) Math.round((po - su) / resolution);
-            int cy = (int) Math.round((bo - su) / resolution);
-            long key = ((long) cx << 32) | (cy & 0xFFFFFFFFL);
-            if (cells.containsKey(key)) continue;
+            // Every panel this one arrangement speaks to. The phase differs per route because
+            // the offsets do, so each target carries its own coordinates.
+            List<int[]> targets = new ArrayList<>();
+            for (int[] pw : where[ep]) {
+                Route rp = routes.get(pw[0]);
+                int cx = cell(tp + rp.offset()[pw[1]] - su, rp.length(), resolution);
+                for (int[] bw : where[eb]) {
+                    Route rb = routes.get(bw[0]);
+                    int cy = cell(tb + rb.offset()[bw[1]] - su, rb.length(), resolution);
+                    long key = key(pw[0], bw[0], cx, cy);
+                    if (!cells.containsKey(key)) targets.add(new int[]{pw[0], bw[0], cx, cy});
+                }
+            }
+            if (targets.isEmpty()) continue;
 
-            tried++;
-            // Half the arrangements get a psyboid that is genuinely steering, half a flock of
-            // three ordinary boids. Both belong on the same picture: the question is what the
-            // arrangement does, and an override is one of the things that can be true of it.
+            simulated++;
             PsyboidOverride[] overrides = rng.nextBoolean()
                     ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
                     : new PsyboidOverride[0];
-
-            Cell cell = trial(engine, map, edge, f, tables, from, keep, psy, other, suspect,
-                    overrides, cx, cy);
-            if (cell == null) { inconclusive++; continue; }
-            cells.put(key, cell);
+            Outcome o = trial(engine, f, tables, from, keep, psy, other, suspect, overrides);
+            if (o == null) { inconclusive++; continue; }
+            for (int[] t : targets) {
+                cells.put(key(t[0], t[1], t[2], t[3]),
+                        new Cell(t[0], t[1], t[2], t[3], o.exited(), o.reason()));
+            }
         }
 
-        report(cells.values(), tried, offMap, inconclusive);
-        draw(cells.values(), resolution, from, keep, out);
+        double secs = (System.nanoTime() - began) / 1e9;
+        report(cells.values(), tried, simulated, inconclusive, secs);
+        fill(cells.values(), routes, resolution);
+        draw(cells.values(), routes, resolution, from, keep, out);
         System.out.printf("wrote %s%n", out);
     }
 
-    /**
-     * One arrangement, flown until the suspect leaves the edge.
-     *
-     * @return null if it never left, which is a fact about the arrangement rather than a failure
-     */
-    private static Cell trial(Boids2DEngine engine, NavMap map, int[] edge, SolverFacts f,
-                              ExitAudit.Tables tables, int from, int keep, int psy, int other,
-                              int suspect, PsyboidOverride[] overrides, int cx, int cy) {
+    private record Outcome(boolean exited, ExitAudit.Reason reason) {}
+
+    /** One arrangement, flown until the suspect leaves the edge. Null if it never did. */
+    private static Outcome trial(Boids2DEngine engine, SolverFacts f, ExitAudit.Tables tables,
+                                 int from, int keep, int psy, int other, int suspect,
+                                 PsyboidOverride[] overrides) {
+        NavMap map = tablesMap(tables);
         int[] xs = {x(map, psy), x(map, other), x(map, suspect)};
         int[] ys = {y(map, psy), y(map, other), y(map, suspect)};
         int[] hs = {h(psy), h(other), h(suspect)};
@@ -147,36 +191,105 @@ public final class ThreeBoidPhase {
                 s = engine.tick(s);
                 int now = f.edgeAt(s.x[SUSPECT], s.y[SUSPECT], s.h[SUSPECT]);
                 if (now == from) continue;
-                boolean exited = now == keep;
                 ExitAudit.Reason reason = null;
                 for (ExitAudit.Exit e : audit.exits()) {
                     if (e.suspect() == SUSPECT && !e.reasons().isEmpty()) {
                         reason = e.reasons().get(0);
                     }
                 }
-                return new Cell(cx, cy, exited, reason);
+                return new Outcome(now == keep, reason);
             }
         } catch (RuntimeException e) {
-            return null;                      // a boid left the image; the arrangement is not one
+            return null;                      // a boid left the image; not an arrangement
         } finally {
             engine.trace(null);
         }
         return null;
     }
 
+    /** The navmap the tables were built against, so the trial and the tables cannot disagree. */
+    private static NavMap tablesMap(ExitAudit.Tables tables) { return tables.map(); }
+
+    // ---- routes -------------------------------------------------------------
+
+    /**
+     * Every simple loop from {@code from} back to itself, as edge lists with running offsets.
+     * <p>
+     * Simple meaning no edge repeats. That is what makes a route's length a lap length worth
+     * wrapping against: a route that revisited an edge would offer two different offsets for the
+     * same state and the coordinate would stop being a function.
+     */
+    public static List<Route> loops(SolverFacts f, int from) {
+        int n = f.edges();
+        List<List<Integer>> succ = new ArrayList<>();
+        for (int e = 0; e < n; e++) succ.add(new ArrayList<>());
+        for (int e = 0; e < n; e++) for (int p : f.predecessors(e)) succ.get(p).add(e);
+
+        List<int[]> found = new ArrayList<>();
+        walk(succ, from, from, new ArrayList<>(List.of(from)), new boolean[n], found);
+
+        List<Route> out = new ArrayList<>();
+        for (int[] edges : found) {
+            double[] offset = new double[edges.length];
+            double run = 0;
+            for (int i = 0; i < edges.length; i++) { offset[i] = run; run += f.length()[edges[i]]; }
+            out.add(new Route(edges, offset, run));
+        }
+        return out;
+    }
+
+    private static void walk(List<List<Integer>> succ, int from, int at, List<Integer> path,
+                             boolean[] on, List<int[]> out) {
+        on[at] = true;
+        for (int v : succ.get(at)) {
+            if (v == from) {
+                int[] r = new int[path.size()];
+                for (int i = 0; i < r.length; i++) r[i] = path.get(i);
+                out.add(r);
+            } else if (!on[v]) {
+                path.add(v);
+                walk(succ, from, v, path, on, out);
+                path.remove(path.size() - 1);
+            }
+        }
+        on[at] = false;
+    }
+
+    /** Per edge, every {route, position} it occupies. Empty for an edge on no loop. */
+    @SuppressWarnings("unchecked")
+    private static List<int[]>[] where(SolverFacts f, List<Route> routes) {
+        List<int[]>[] out = new List[f.edges()];
+        for (int e = 0; e < out.length; e++) out[e] = new ArrayList<>();
+        for (int r = 0; r < routes.size(); r++) {
+            int[] edges = routes.get(r).edges();
+            for (int i = 0; i < edges.length; i++) out[edges[i]].add(new int[]{r, i});
+        }
+        return out;
+    }
+
+    /** Phase difference folded into one lap of the route, then binned. */
+    private static int cell(double delta, double length, double resolution) {
+        double wrapped = ((delta % length) + length) % length;
+        return (int) Math.floor(wrapped / resolution);
+    }
+
+    private static long key(int rp, int rb, int x, int y) {
+        return ((long) (rp * 8 + rb) << 44) | ((long) x << 22) | y;
+    }
+
+    // ---- starts -------------------------------------------------------------
+
     /**
      * One start per phase, in a tau band across the middle of the edge.
      * <p>
      * A ~4 px step means states a tick apart along one trajectory sit four pixels apart, and the
-     * states between them belong to trajectories that never touch it. Keeping every settled state
-     * in the band would therefore sample the same trajectory several times over. Dropping any
-     * state whose own unsteered successor is also in the band keeps the last of each chain, which
-     * is one representative per phase.
+     * states between belong to trajectories that never touch it. Dropping any state whose own
+     * unsteered successor is also in the band keeps the last of each chain, which is one
+     * representative per phase.
      */
     private static int[] starts(NavMap map, int[] edge, SolverFacts f, boolean[] settled,
                                 int[] live, int liveCount, int from, double band) {
-        double lo = f.tickLo()[from], hi = f.tickHi()[from];
-        double mid = (lo + hi) / 2, half = band / 2;
+        double mid = (f.tickLo()[from] + f.tickHi()[from]) / 2, half = band / 2;
         List<Integer> in = new ArrayList<>();
         for (int i = 0; i < liveCount; i++) {
             int s = live[i];
@@ -196,44 +309,6 @@ public final class ThreeBoidPhase {
         return out;
     }
 
-    /**
-     * The shortest route-sum from {@code from} to every edge, so any state can be expressed as a
-     * distance along the suspect's own route.
-     * <p>
-     * Dijkstra over the edge graph, weighted by the length of the edge being left — which is the
-     * same accumulation {@link EdgeDistance} makes, since lengths add and a route contributes the
-     * length of everything on it except the last.
-     */
-    private static double[] rebase(SolverFacts f, int from) {
-        int n = f.edges();
-        List<List<Integer>> succ = new ArrayList<>();
-        for (int e = 0; e < n; e++) succ.add(new ArrayList<>());
-        for (int e = 0; e < n; e++) for (int p : f.predecessors(e)) succ.get(p).add(e);
-
-        double[] dist = new double[n];
-        java.util.Arrays.fill(dist, Double.POSITIVE_INFINITY);
-        dist[from] = 0;
-        boolean[] done = new boolean[n];
-        for (int round = 0; round < n; round++) {
-            int at = -1;
-            for (int e = 0; e < n; e++) if (!done[e] && (at < 0 || dist[e] < dist[at])) at = e;
-            if (at < 0 || Double.isInfinite(dist[at])) break;
-            done[at] = true;
-            for (int v : succ.get(at)) {
-                double through = dist[at] + f.length()[at];
-                if (through < dist[v]) dist[v] = through;
-            }
-        }
-        return dist;
-    }
-
-    /** A state's position measured along the suspect's route, or NaN if it is not on one. */
-    private static double place(NavMap map, SolverFacts f, double[] rebase, int state) {
-        int e = f.edgeAt(x(map, state), y(map, state), h(state));
-        if (e < 0 || Double.isInfinite(rebase[e])) return Double.NaN;
-        return f.tickAt(x(map, state), y(map, state), h(state)) + rebase[e];
-    }
-
     /** Where a boid ends up after coasting {@code k} ticks, or -1 if it leaves the map. */
     private static int coasted(NavMap map, int state, int k) {
         int at = state;
@@ -251,26 +326,26 @@ public final class ThreeBoidPhase {
     // ---- output -------------------------------------------------------------
 
     private static final int GROUND = 0x14171C;
-    private static final int AXIS = 0x39404D;
+    private static final int PANEL = 0x1E2129;
     private static final int TEXT = 0xB9C1CE;
+    private static final int FAINT = 0x6C7583;
     private static final int CONTINUED = 0x2A2F38;
 
     /**
-     * One colour per account, tonally close so that structure reads rather than any one class
+     * One colour per account, tonally close so structure reads rather than any one class
      * shouting — except an exit nothing explains, which is the whole reason for looking.
      */
     private static int colour(Cell c) {
         if (!c.exited()) return CONTINUED;
-        if (c.reason() == null) return 0xFFFFFF;                    // nothing accounts for it
+        if (c.reason() == null) return 0xFFFFFF;
         if (c.reason().level() == ExitAudit.Level.PSYBOID) return 0x7A6BB5;
-        boolean byPsyboid = c.reason().leader() == PSYBOID;
         boolean widened = c.reason().level() == ExitAudit.Level.ENVELOPE_WIDENED;
-        if (byPsyboid) return widened ? 0xB5734A : 0xC8913F;        // led by the psyboid
-        return widened ? 0x3F7FA8 : 0x4FA8C8;                       // led by the third boid
+        return c.reason().leader() == PSYBOID ? (widened ? 0xB5734A : 0xC8913F)
+                                              : (widened ? 0x3F7FA8 : 0x4FA8C8);
     }
 
-    private static void report(java.util.Collection<Cell> cells, int tried, int offMap,
-                               int inconclusive) {
+    private static void report(java.util.Collection<Cell> cells, long tried, long simulated,
+                               long inconclusive, double secs) {
         int exits = 0, none = 0, byPsy = 0, byOther = 0, wide = 0;
         for (Cell c : cells) {
             if (!c.exited()) continue;
@@ -279,24 +354,51 @@ public final class ThreeBoidPhase {
             if (c.reason().level() == ExitAudit.Level.ENVELOPE_WIDENED) wide++;
             if (c.reason().leader() == PSYBOID) byPsy++; else byOther++;
         }
-        System.out.printf("%,d cells filled from %,d trials (%,d off the route, %,d never left)%n",
-                cells.size(), tried, offMap, inconclusive);
+        System.out.printf("%,d cells from %,d simulations out of %,d attempts in %.0fs "
+                + "(%,d never left)%n", cells.size(), simulated, tried, secs, inconclusive);
         System.out.printf("  %,d exited, %,d continued%n", exits, cells.size() - exits);
         System.out.printf("  of the exits: %,d led by the psyboid, %,d by the third boid, "
                 + "%,d needed the diluted model, %,d UNEXPLAINED%n", byPsy, byOther, wide, none);
     }
 
-    private static void draw(java.util.Collection<Cell> cells, double resolution, int from,
-                             int keep, Path out) throws IOException {
-        int lox = 0, hix = 0, loy = 0, hiy = 0;
-        for (Cell c : cells) {
-            lox = Math.min(lox, c.x()); hix = Math.max(hix, c.x());
-            loy = Math.min(loy, c.y()); hiy = Math.max(hiy, c.y());
+    /**
+     * How much of each panel got sampled.
+     * <p>
+     * A panel is a fixed rectangle — one lap of each route — so an unfilled cell is either a
+     * phase pair nothing reached in the budget or one no arrangement can produce. Reporting the
+     * rate keeps those two from being read off the picture as if they were the same thing.
+     */
+    private static void fill(java.util.Collection<Cell> cells, List<Route> routes,
+                             double resolution) {
+        int n = routes.size();
+        int[][] have = new int[n][n];
+        for (Cell c : cells) have[c.route()][c.otherRoute()]++;
+        System.out.println("  panel fill:");
+        for (int rp = 0; rp < n; rp++) {
+            for (int rb = 0; rb < n; rb++) {
+                long total = (long) Math.ceil(routes.get(rp).length() / resolution)
+                        * (long) Math.ceil(routes.get(rb).length() / resolution);
+                System.out.printf("    psyboid %-14s x boid %-14s %,9d of %,9d  %5.1f%%%n",
+                        routes.get(rp).label(), routes.get(rb).label(), have[rp][rb], total,
+                        100.0 * have[rp][rb] / total);
+            }
         }
-        int w = hix - lox + 1, h = hiy - loy + 1;
-        int scale = Math.max(1, Math.min(6, 1400 / Math.max(w, h)));
-        int pad = 60, foot = 96;
-        BufferedImage img = new BufferedImage(w * scale + pad * 2, h * scale + pad + foot,
+    }
+
+    private static void draw(java.util.Collection<Cell> cells, List<Route> routes,
+                             double resolution, int from, int keep, Path out) throws IOException {
+        int n = routes.size();
+        int[] w = new int[n], h = new int[n];
+        for (int r = 0; r < n; r++) {
+            w[r] = (int) Math.ceil(routes.get(r).length() / resolution);
+            h[r] = w[r];
+        }
+        int gap = 34, pad = 108, head = 66, foot = 44;
+        int[] cx = new int[n + 1], cy = new int[n + 1];
+        for (int r = 0; r < n; r++) cx[r + 1] = cx[r] + w[r] + gap;
+        for (int r = 0; r < n; r++) cy[r + 1] = cy[r] + h[r] + gap;
+
+        BufferedImage img = new BufferedImage(pad + cx[n] + pad, head + cy[n] + foot,
                 BufferedImage.TYPE_INT_RGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
@@ -304,34 +406,44 @@ public final class ThreeBoidPhase {
         g.setColor(new Color(GROUND));
         g.fillRect(0, 0, img.getWidth(), img.getHeight());
 
-        g.setColor(new Color(AXIS));
-        int zx = pad + (0 - lox) * scale, zy = pad + (0 - loy) * scale;
-        g.drawLine(zx, pad, zx, pad + h * scale);
-        g.drawLine(pad, zy, pad + w * scale, zy);
-
+        for (int rp = 0; rp < n; rp++) {
+            for (int rb = 0; rb < n; rb++) {
+                g.setColor(new Color(PANEL));
+                g.fillRect(pad + cx[rp], head + cy[rb], w[rp], h[rb]);
+            }
+        }
         for (Cell c : cells) {
             g.setColor(new Color(colour(c)));
-            g.fillRect(pad + (c.x() - lox) * scale, pad + (c.y() - loy) * scale, scale, scale);
+            int px = pad + cx[c.route()] + c.x(), py = head + cy[c.otherRoute()] + c.y();
+            if (c.x() < w[c.route()] && c.y() < h[c.otherRoute()]) img.setRGB(px, py, colour(c));
         }
 
         g.setColor(new Color(TEXT));
-        g.setFont(new Font("SansSerif", Font.BOLD, 14));
-        g.drawString(String.format("three-boid phase map, arc %d->%d   (%.0f ticks per cell)",
-                from, keep, resolution), pad, 26);
+        g.setFont(new Font("SansSerif", Font.BOLD, 15));
+        g.drawString(String.format("three-boid phase map, arc %d->%d   %.0f tick(s) per cell   "
+                + "columns: psyboid route, rows: third-boid route", from, keep, resolution),
+                pad, 24);
         g.setFont(new Font("SansSerif", Font.PLAIN, 12));
-        g.drawString("x: psyboid tau minus suspect tau        y: third boid tau minus suspect tau",
-                pad, 44);
-        String[] key = {"exit, nothing accounts for it", "exit led by the psyboid",
-                "exit led by the third boid", "diluted model needed", "suspect continued"};
+        g.setColor(new Color(FAINT));
+        g.drawString("each panel wraps one lap of its own route, so a phase relationship appears "
+                + "once rather than once per lap", pad, 42);
+
+        g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        for (int rp = 0; rp < n; rp++) {
+            g.setColor(new Color(TEXT));
+            g.drawString(routes.get(rp).label(), pad + cx[rp], head - 6);
+        }
+        for (int rb = 0; rb < n; rb++) {
+            g.setColor(new Color(TEXT));
+            g.drawString(routes.get(rb).label(), 6, head + cy[rb] + 12);
+        }
+
+        String[] key = {"nothing accounts for it", "led by the psyboid", "led by the third boid",
+                "diluted model needed", "continued"};
         int[] swatch = {0xFFFFFF, 0xC8913F, 0x4FA8C8, 0xB5734A, CONTINUED};
-        // Laid out from the width actually available rather than a fixed pitch, so a narrow
-        // picture wraps to a second row instead of losing entries off the right edge.
-        int usable = img.getWidth() - pad * 2;
-        int perRow = Math.max(1, usable / 240);
-        int pitch = usable / perRow;
+        int usable = img.getWidth() - pad * 2, per = Math.max(1, usable / 220), pitch = usable / per;
         for (int i = 0; i < key.length; i++) {
-            int col = i % perRow, row = i / perRow;
-            int lx = pad + col * pitch, ly = pad + h * scale + 24 + row * 18;
+            int lx = pad + (i % per) * pitch, ly = head + cy[n] + 20 + (i / per) * 18;
             g.setColor(new Color(swatch[i]));
             g.fillRect(lx, ly - 9, 10, 10);
             g.setColor(new Color(TEXT));

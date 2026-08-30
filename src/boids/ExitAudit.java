@@ -157,6 +157,15 @@ public final class ExitAudit implements Boids2DEngine.Trace {
             return new Tables(map, edge, normal.rFlock() * normal.rFlock(), arcs);
         }
 
+        /**
+         * The navmap these tables were built against.
+         * <p>
+         * Exposed so a caller placing boids by hand cannot place them against a different one.
+         * The tables are indexed by state, so a map that disagreed by a single live state would
+         * make every lookup answer a slightly different question without failing.
+         */
+        public NavMap map() { return map; }
+
         /** How many pairings are held, per arc, for reporting what a build produced. */
         public String summary() {
             StringBuilder s = new StringBuilder();
