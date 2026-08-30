@@ -362,8 +362,9 @@ which was one edge. **Purely a bootstrapping tool** for calculating edges before
 implemented. No longer needed and not to be regenerated.
 
 **The five circuits A–E and their traces.** Routes are now a series of edges. The traces in
-`routes/` and `ingests/48b46d3d06e54c75/routes/` are stale — they were generated from dabnt
-start state `(270, 156, 32)`, which is **dead under physics 2**. `constrainTurn` returns the
+The traces were stale and `routes/` has been deleted; `ingests/48b46d3d06e54c75/routes/` remains
+on disk unversioned. They were generated from dabnt start state `(270, 156, 32)`, which is
+**dead under physics 2**. `constrainTurn` returns the
 proposed turn unchanged from a dead state, so tracing still produced paths and the edge map
 built on them validated against itself. The check was circular, not sound.
 

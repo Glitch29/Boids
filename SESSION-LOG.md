@@ -11,6 +11,32 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-29 (end) — first real commit, and the tree tidied
+
+**Pushed.** The session landed as two commits on `main` — 103 files, +10,306/−1,042 — against a
+history that until now was twenty-five commits all named "Periodic check-in". **Seven source
+files had never reached GitHub at all** (`MapStore`, `PsyboidBits`, `PsyboidCorpus`,
+`SceneRender`, plus the three written today); that gap was recorded in `ROADMAP.md` and is now
+closed.
+
+Git works directly from the shell here, contrary to an old note claiming otherwise: identity,
+remote and `main → origin/main` tracking all read correctly and `push` needs no prompt.
+
+**Deleted by the user:** `cases/` and `transcript.pdf` (27th), then `routes/`,
+`psyboid-packet.zip`, `Proposal.txt` and `ANSWER-KEY.txt` (29th).
+
+**`.gitignore`:** `areas/scratch/` added — maps mid-edit are not worth history, since a map only
+becomes real once ingested. The stale comment on `analysis/` naming a producer that no longer
+exists was corrected.
+
+**Staging needs care in this repo.** Several large or retired paths are untracked but *not*
+ignored, so `git add -A` sweeps them in. Stage by explicit path and read
+`git diff --cached --stat` first. Note that `ingests/*/{map.png,display.png,meta.txt}` look like
+build output and must be committed — a frozen map is what an old label replays against and
+cannot be recovered once the source PNG moves on.
+
+---
+
 ## 2026-08-29 (close, 2) — `SolverScore` replaces the `3·TP + TN` tally
 
 **Verified before building.** The proposed score — a Brier score over the K-weighted psyboid rate

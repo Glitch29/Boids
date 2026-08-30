@@ -8,7 +8,8 @@ render/
 # Sweep output: one CSV per seed, ~1 MB each.
 data/
 
-# Summary tables derived from data/ by Analyze.
+# Summary tables that were derived from data/. Their producer no longer exists, so these
+# are neither regenerable nor current; the directory is kept locally and not versioned.
 analysis/
 
 # Java
@@ -39,3 +40,7 @@ transcripts/
 # The 'latest' pointer is a machine-local directory junction.
 areas/*/latest
 areas/*/latest.txt
+
+# Working copies of maps mid-edit. A map only becomes real once it is ingested, and the
+# ingest is what anything downstream reads, so intermediate drawings are not worth history.
+areas/scratch/

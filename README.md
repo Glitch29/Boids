@@ -207,11 +207,19 @@ a map that has since been edited.
 | `<ingest>/solver/facts.bin` | `SolverStore` | everything a solver may know. One per map version |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
-**Retired.** `routes/`, `packet/`, `psyboid-packet.zip`, `analysis/` (its producer `Analyze`
-no longer exists), `data/` (sweeps for maps no longer worked on), `<ingest>/routes/` on dabnt
-(hand-annotated edge maps, superseded by programmatic decomposition), `cases/` and
-`transcript.pdf` (deleted 2026-08-27). The shipped case packet was invalidated wholesale by
-physics 2 and will be rebuilt as the last step of the project, not restored.
+**Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,
+`Proposal.txt` and `ANSWER-KEY.txt`. The shipped case packet was invalidated wholesale by
+physics 2; it will be rebuilt as the last step of the project rather than restored, so its
+artifacts and the answer key to them carried no value. `routes/` was superseded by programmatic
+decomposition, and its traces started from a state that is dead under physics 2.
+
+**Kept locally, not versioned.** `packet/` (the stale assembled packet), `analysis/` (its
+producer no longer exists), `data/` (sweeps for maps no longer worked on), `render/`,
+`transcripts/`, and `<ingest>/routes/` on dabnt — hand-annotated edge maps, superseded.
+
+`Proposal.txt` held the original brief. It is worth knowing it existed and that the shipped
+format diverged from it substantially: it described 25 case folders, Python, and a
+`culprits.json` answer file, none of which is what the project became.
 
 ## Documents
 
@@ -228,7 +236,6 @@ physics 2 and will be rebuilt as the last step of the project, not restored.
 | `BACKLOG.md` | parked work, with the reasoning for parking it. Ageing |
 | `SESSION-LOG.md` | what each session did. Append before ending |
 | `PROMPTS.md` | every prompt given about this project, deduplicated. Ends 2026-08-25 |
-| `Proposal.txt` | the original brief. Historical; the shipped format diverged from it |
 
 Reading order for someone picking this up: this file, then `HINTS.md` §0a, then `EDGES.md`,
 then `ROADMAP.md`.
