@@ -186,8 +186,26 @@ follows the `TwoBoid` rules — leader has free choice, exiting boid follows ord
 > **Expect multi-leader residue to be worst on whichever arcs are alignment-carried.**
 >
 > This is also why the diluted model helps `2->1` and does nothing here: it zeroes alignment, so
-> it has nothing to say where alignment is the whole story. A fallback aimed at alignment would
-> be a different object, not a retuning of this one.
+> it has nothing to say where alignment is the whole story. It is **inert rather than weak** —
+> with nobody inside `rSep` its desired vector is exactly zero and every neighbour reads `+0`.
+> A fallback aimed at alignment would be a different object, not a retuning of this one.
+>
+> ⚠ **The residue rejects genuine led exits, which is worse than its size suggests.** Drawn at
+> map scale (`SimTest.renderTick`), the exit at tick 9489 on seed 9 is a textbook one: boid 0 was
+> 42 ticks *ahead of the suspect on edge 4*, took the `4->0` exit itself, and the suspect followed
+> sixty ticks later. It is refused because boid 0 sits at 148.2 px against an `rFlock` of 150 —
+> on the perception boundary — and alone loses to straight by 2.15 inside a 3.4375 bias. The
+> across-component that turns the boid comes from a third boid on edge 2 across the map, which
+> works only because boid 0 cancels *its* cohesion.
+>
+> **The solver's whole argument is "a boid at the front had nothing to follow".** An unexplained
+> exit therefore reads as evidence toward the suspect, so a residue concentrated on real
+> leader-follower pairs is a wrong answer in a specific direction rather than noise. Weight that
+> above the 5.6% when deciding what to do about it.
+>
+> Note for whoever picks the fallback back up: **halving the straight bias would not have caught
+> this one** — boid 0 needs the bias under 1.29 and half is 1.72. A `wCoh = 0` model does, by
+> crediting the third boid. Checked at one tick only.
 
 ### "Settled" states
 

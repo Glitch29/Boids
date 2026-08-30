@@ -2991,6 +2991,104 @@ picks, never in what is available to it.
                 : "NO SINGLE BOID ACCOUNTS FOR THE WHOLE WINDOW -- multi-leader");
     }
 
+    /**
+     * Draws one exit on the whole map, with the critical envelope tinted into the background.
+     * <p>
+     * The cropped view {@link ExitRender} gives answers who could see whom, which is the right
+     * frame for an influence question and the wrong one for a structural one. At map scale the
+     * question becomes where everybody is on the route: which edge each boid is on, how far the
+     * suspect is from the branch, and whether the boid carrying the turn is somewhere the map
+     * makes likely rather than somewhere it happened to be.
+     * <p>
+     * The envelope goes into the background rather than being drawn over the flock, so it reads
+     * as a region of the map — which is what it is — rather than as an annotation on this
+     * particular arrangement.
+     */
+    public static void renderTick(PresetScenarioParameter preset, boolean horizontal, int line,
+                                  int lo, int hi, int dir, int from, int keep, long crossing,
+                                  int suspect, int[] before, EdgeWeights.Scheme scheme,
+                                  double[][] chain, Flocking flock, Path out) throws IOException {
+        SolverFacts f = SolverStore.prepare(preset,
+                new SolverFacts.Gate(horizontal, line, lo, hi, dir), scheme, chain, flock);
+        Labelling l = label(preset, horizontal, line, lo, hi, dir);
+        CriticalEnvelope.Envelope env = CriticalEnvelope.envelope(l.map(), l.edge(), l.live(),
+                l.liveCount(), from, keep);
+
+        // Tint every pixel some envelope state passes through. A pixel can carry states on
+        // several edges, so this is a projection and deliberately coarse — it says "the envelope
+        // runs through here", which is the only thing the eye can use at map scale anyway.
+        BufferedImage bg = javax.imageio.ImageIO.read(preset.ingest().display().toFile());
+        int w = bg.getWidth(), turns = Params.TURNS;
+        for (int[] set : new int[][]{env.onFrom(), env.onKeep()}) {
+            boolean onKeep = set == env.onKeep();
+            for (int s : set) {
+                int cell = s / turns, x = cell % w, y = cell / w;
+                int rgb = bg.getRGB(x, y);
+                int r = (rgb >> 16) & 255, g2 = (rgb >> 8) & 255, b = rgb & 255;
+                // The edge being left and the edge being entered get different tints, so the
+                // boundary the boid is about to cross is visible rather than implied.
+                bg.setRGB(x, y, onKeep
+                        ? (Math.min(255, r + 10) << 16) | (Math.min(255, g2 + 70) << 8) | b / 2
+                        : (Math.min(255, r + 90) << 16) | (g2 / 2 << 8) | (b / 2));
+            }
+        }
+        Path tinted = out.resolveSibling("background-envelope.png");
+        if (tinted.getParent() != null) Files.createDirectories(tinted.getParent());
+        javax.imageio.ImageIO.write(bg, "png", tinted.toFile());
+
+        // Find the plan holding this exit, then replay it capturing the wanted ticks.
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        for (String label : PsyboidCorpus.labels(preset.ingest())) {
+            PsyboidBits.Replay plan = PsyboidBits.parse(label);
+            long last = 0;
+            for (PsyboidOverride o : plan.overrides()) {
+                last = Math.max(last, (long) o.onset() + o.duration());
+            }
+            if (crossing > last) continue;
+            Sim.State s = engine.init(plan.seed());
+            for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+            s = withOverrides(s, plan.overrides());
+
+            Map<Long, Sim.State> want = new java.util.HashMap<>();
+            java.util.List<Long> ticks = new ArrayList<>();
+            for (int b : before) ticks.add(crossing - b);
+            ticks.add(crossing);
+            // The boid is still on the edge it is leaving at the crossing tick; it stands on
+            // the exit edge only once that tick has been executed.
+            ticks.add(crossing + 1);
+            while (s.tick <= last) {
+                if (ticks.contains(s.tick)) want.put(s.tick, s);
+                s = engine.tick(s);
+            }
+            if (want.size() < ticks.size()) continue;
+            // The right plan is the one where this boid really is crossing here.
+            Sim.State on = want.get(crossing), off = want.get(crossing + 1);
+            int was = f.edgeAt(on.x[suspect], on.y[suspect], on.h[suspect]);
+            int now = f.edgeAt(off.x[suspect], off.y[suspect], off.h[suspect]);
+            if (was != from || now != keep) continue;
+            ticks.remove(crossing + 1);
+            java.util.Collections.sort(ticks);
+
+            List<SceneRender.Panel> panels = new ArrayList<>();
+            for (long t : ticks) {
+                panels.add(new SceneRender.Panel(t == crossing ? "tick " + t + " — crosses"
+                        : "tick " + t + "  (" + (crossing - t) + " ticks earlier)",
+                        want.get(t), suspect));
+            }
+            SceneRender.write(tinted, out, f,
+                    String.format("%s  exit %d->%d at tick %d, boid %d — no single leader accounts"
+                            + " for it", preset.name(), from, keep, crossing, suspect),
+                    String.format("boid %d is the suspect. envelope tint is faint by nature: it is "
+                            + "%d states on edge %d and %d on edge %d, which project to a few "
+                            + "dozen pixels", suspect, env.onFrom().length, from,
+                            env.onKeep().length, keep),
+                    panels, preset.turningRadius(), 2);
+            System.out.printf("wrote %s (seed %d)%n", out, plan.seed());
+            return;
+        }
+        System.out.println("no plan in the corpus holds that crossing");
+    }
+
     public static void main(String[] args) throws IOException {
         // Output goes inside the map's own ingest, so a route trace or an edge map can
         // never be read against a dabnt that has been edited since it was produced.
@@ -3001,7 +3099,10 @@ picks, never in what is available to it.
         // ROADMAP. Building all three arcs' tables costs about thirteen minutes and is paid on
         // every run, since the tables are not yet persisted. Drop 4->0 for a fast pass.
         CriticalEnvelope.pruneOutOfRangeLeaders = true;
-        steeringHistory(p, false, 202, 174, 191, -1, new int[][]{{4, 0}}, f, f.diluted(), 70);
+        double[][] chain = EdgeWeights.blend(new double[][]{{1,1,1},{1,1,1},{1,1,1}}, 0);
+        renderTick(p, false, 202, 174, 191, -1, 4, 0, 9489, 2, new int[]{1, 25, 60},
+                EdgeWeights.Scheme.MOMENTUM, chain, f,
+                Path.of("render", "tick9489.png"));
         if (true) return;
     }
 

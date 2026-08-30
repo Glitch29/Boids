@@ -11,6 +11,59 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-29 (end, 5) — the residue rejects genuine led exits
+
+**Built.** `SimTest.renderTick` draws one exit at whole-map scale across several ticks, with the
+critical envelope tinted into the background and every boid labelled with its edge and tau. The
+cropped `ExitRender` view answers *who could see whom*; this one answers *where everybody is on
+the route*, which is the question the residue turned out to need.
+
+**Corrected count.** Five of the twenty `4->0` exits have no sufficient leader at the entry under
+*dual* physics, not six — the earlier tally was computed under the true constants alone, since
+the `alone` column of `renderUnexplained` calls `steer(..., normal)` only.
+
+**The diluted model is inert, not weak, on this arc.** It zeroes alignment and cohesion, so with
+nobody inside `rSep` the desired vector is exactly `(0,0)` and every neighbour reads `+0`.
+Fourteen of the twenty have nobody inside `rSep`, so the second model cannot contribute to them
+at all — which is the real reason the corpus showed `0 needing the diluted model` here.
+
+**Tick 9489 (seed 9), taken apart.** Suspect boid 2 on edge 4; forward is `(0,-1)`, right is
+`(+1,0)`.
+
+| | | |
+| --- | --- | --- |
+| boid 0 | 148.2 px, annulus, in FOV | `L +85.144  S +90.709  R +88.560` → `+0` |
+| boid 1 | 44.8 px, inside `rSep` | **behind the FOV**, contributes nothing |
+| boid 3 | 121.5 px, annulus, in FOV | `L -50.448  S -44.344  R -44.655` → `+0` |
+
+Alignment sums the neighbours' heading unit vectors and *then* renormalises: `(-0.098,-0.995)`
+and `(+0.831,+0.556)` largely cancel — the sum keeps 0.855 of a possible 2 — and the residual is
+scaled back to the full 70, giving across `+60.04`. **Partial cancellation followed by
+renormalisation amplifies whatever survives.** Cohesion meanwhile flips from backward
+`(+29.55,+47.78)` for boid 3 alone to forward `(+2.35,-29.91)` for the pair, because boid 0 is
+ahead-right and boid 3 behind-left.
+
+**The finding the map view gave, which the cropped view could not.** Boid 0 was 42 ticks *ahead
+of the suspect on edge 4* at tick 9429, took the `4->0` exit itself, and the suspect followed
+about sixty ticks later. **That is a textbook led exit, and the analysis credits nobody for it.**
+Boid 0 is refused because at 148.2 px against an `rFlock` of 150 it sits on the perception
+boundary and loses to straight by 2.15 inside a 3.4375 bias. The across-component that does the
+work comes from boid 3, which is on edge 2 across the map with no structural relation to the
+exit.
+
+**So the residue is biased against exactly the cases the project's central argument is about.**
+The solver rests on *a boid at the front had nothing to follow*. Here something was being
+followed, and the audit says unexplained — which reads as evidence toward the suspect. That is a
+wrong answer in a direction that matters, not noise.
+
+**Two consequences for the fallback.** Halving the straight bias would *not* have caught this:
+boid 0 needs the bias under 1.29 and half is 1.72. A `wCoh = 0` model does catch it, by making
+boid 3 alone sufficient — checked at this tick only. It would credit a boid no human would name
+as the leader, which is acceptable for the audit's purpose (something other than an override
+accounts for the turn) but worth knowing.
+
+---
+
 ## 2026-08-29 (end, 4) — arc `4->0`'s residue is the same baton pass, far more common
 
 **All 20 unexplained exits on arc `4->0` are multi-leader.** Over a 70-tick window ending at
