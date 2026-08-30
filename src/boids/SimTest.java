@@ -3001,7 +3001,7 @@ picks, never in what is available to it.
         // ROADMAP. Building all three arcs' tables costs about thirteen minutes and is paid on
         // every run, since the tables are not yet persisted. Drop 4->0 for a fast pass.
         CriticalEnvelope.pruneOutOfRangeLeaders = true;
-        auditCorpus(p, false, 202, 174, 191, -1, new int[][]{{4, 0}}, f, f.diluted());
+        steeringHistory(p, false, 202, 174, 191, -1, new int[][]{{4, 0}}, f, f.diluted(), 70);
         if (true) return;
     }
 

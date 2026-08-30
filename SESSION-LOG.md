@@ -11,6 +11,49 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-29 (end, 4) — arc `4->0`'s residue is the same baton pass, far more common
+
+**All 20 unexplained exits on arc `4->0` are multi-leader.** Over a 70-tick window ending at
+envelope entry, **no single boid accounts for the whole window in any of the twenty**, and 19 of
+the 20 windows do reach settled ground, so the window is long enough for the question to be
+well posed. Images in `render/unexplained40/`.
+
+**A 24-tick window gives the wrong answer**, and it is worth knowing why. At 24 ticks, 10 of 20
+looked as though one boid covered everything. Edge 4's unsteered chains run to 48 ticks and only
+19% of the edge is settled, so 24 ticks does not reach settled ground; the leader only appears
+constant because the handover has not happened yet. **Set the lookback from the edge's chain
+depth, not by eye.**
+
+**The influence shape is the opposite of arc `2->1`'s**, and that is what explains the
+order-of-magnitude difference in residue (5.6% against 0.36%):
+
+| | `2->1` | `4->0` |
+| --- | --- | --- |
+| dominant term | separation, +90 to +117 | **alignment, +20 to +70** |
+| boids inside `rSep` | two, in 7 of 8 | **none, in 14 of 20** |
+| entry state in the tables | 8 of 8 | 20 of 20 |
+| a single neighbour suffices at entry | 7 of 8 | 14 of 20 |
+
+**Alignment-dominated exits are structurally more prone to multi-leader histories.** Alignment
+is long-range, weak and diffuse — several boids each contribute a little, so which one is "the"
+leader shifts easily along the history. Separation is short-range and decisive, so one boid
+dominates for a whole stretch. That is a claim about the physics rather than about this corpus,
+and it predicts the residue is worst on whichever arcs are alignment-carried.
+
+**It also explains "0 needed the diluted model" on this arc.** The diluted model zeroes
+alignment, so it contributes nothing at all where alignment is what carries the turn. **The
+fallback we built is separation-shaped and this arc's residue is alignment-shaped**; they do not
+meet. That is not a defect in the fallback — it was designed for the case it was designed for —
+but it means the diluted model cannot be expected to help here, and a second fallback aimed at
+alignment would be a different object.
+
+**Open.** Six of the twenty have no single sufficient neighbour even at the entry, so they are
+superposition as well as multi-leader. The remaining fourteen are pairwise-representable at the
+entry and fail only in the history. One window (case 8) never reaches settled ground even at 70
+ticks and wants a longer lookback.
+
+---
+
 ## 2026-08-29 (end, 3) — the negative memo was written and never read
 
 **Diagnosed the stalled arc `4->0` build**, after adding the progress reporting whose absence

@@ -171,6 +171,23 @@ follows the `TwoBoid` rules — leader has free choice, exiting boid follows ord
 > When multi-boid classification is taken up, the overlap is the lever: the handover needs no
 > unexplained step, so "the leader may change at a tick where both account" is a far tighter rule
 > than free switching, and both of these fall to it.
+>
+> **Arc `4->0` is the same phenomenon and much more common — 20 of 355, 5.6%.** All twenty are
+> multi-leader over a 70-tick window, none has a single boid covering it, and 19 of 20 reach
+> settled ground so the question is well posed. *A 24-tick window says the opposite for half of
+> them*: edge 4's unsteered chains run to 48 ticks, so a short window catches the history before
+> the handover. Set the lookback from the edge's chain depth.
+>
+> **The two arcs fail for opposite reasons, and that predicts where the residue will be worst.**
+> `2->1` is separation-carried (+90 to +117, two boids inside `rSep` in 7 of 8); `4->0` is
+> alignment-carried (+20 to +70, *no* boid inside `rSep` in 14 of 20). Alignment is long-range,
+> weak and diffuse, so several boids each contribute a little and which one leads shifts easily
+> along a history; separation is short-range and decisive, so one boid holds a whole stretch.
+> **Expect multi-leader residue to be worst on whichever arcs are alignment-carried.**
+>
+> This is also why the diluted model helps `2->1` and does nothing here: it zeroes alignment, so
+> it has nothing to say where alignment is the whole story. A fallback aimed at alignment would
+> be a different object, not a retuning of this one.
 
 ### "Settled" states
 
