@@ -445,9 +445,10 @@ and a canonical name in `GLOSSARY.md` for any analysis expected to be reused.**
 `ExitAudit.Exit.suspectTick`, and `EdgeSlice`. `Sim.State.tick` and `ExitAudit.Exit.tick` keep
 their meaning as simulation time. Docs already use `tau`.
 
-**Commit hygiene.** Twenty commits named "Periodic check-in", and `git add` has never added a
-new file — `MapStore`, `PsyboidBits`, `PsyboidCorpus` and `SceneRender` exist only on this
-machine.
+**Commit hygiene.** ~~Twenty commits named "Periodic check-in", and `git add` has never added a
+new file.~~ Resolved 2026-08-29: every source file is now on GitHub, and the session landed as
+one described commit. Worth keeping up — the previous history carries no information about what
+changed when.
 
 **Known robustness gaps.** `refine` gives up silently above 63 edges. Lifted weight balancing
 does not fully converge (worst node flow ~0.05 after 2000 passes), and neither does the flat
