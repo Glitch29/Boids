@@ -11,6 +11,42 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-29 (end, 3) — the negative memo was written and never read
+
+**Diagnosed the stalled arc `4->0` build**, after adding the progress reporting whose absence
+made it undiagnosable. The first attempt printed only between entry states and emitted nothing
+in seven minutes, which was itself the finding: the run was stuck inside the leader loop for a
+single entry state. Reporting from inside the search showed why.
+
+At 291 s it was still on **entry state 1**, having done 3,766 admits, each exhausting a fresh
+65k–550k pair component. Nothing hit the 2M budget and the heap was churning but not exhausted,
+so neither the budget nor memory was the constraint. The cost is
+`entries × leaders × component size` — one entry state matched thousands of leaders, each
+spawning its own search, across ~59 entry states. That product is about 1e13.
+
+**The defect: `rejected` was written and never read.** It was consulted only for the *start*
+pair, never inside the BFS, so 6.2 million cached rejections pruned nothing and every search
+re-expanded ground a previous one had already proved barren. One line — skip a polled pair
+already known rejected — and the arc went from **unfinished after 2h46m to 64 s**.
+
+That in turn exposed searches genuinely larger than the 2M probe budget, since the prune lets
+them get much further. `BUDGET` raised 2M → 12M; biggest component seen, 2,489,608. The store's
+refusal to write a table that hit its budget worked exactly as intended in between: it completed
+the analysis, noticed entries were missing, and declined to persist it.
+
+**First figures for arc `4->0`**, 40 plans, 982,752 decisions: **355 exits, 175 under an
+override, 160 with a leader under the true constants, 0 needing the diluted model, 20
+unexplained (5.6%).** Causes are alignment-and-cohesion dominated — L0 103, L1 38, L2 SEP 17.
+The 5.6% residue is an order of magnitude worse than arc `2->1`'s 0.36% and is uninvestigated.
+
+**Two proposed optimisations, judged against the measurement.** Precomputing the physics on
+`(dx, dy, d, d_leader)` is not the lever — a table would be ~290 MB per model and buys a constant
+factor against a 1e13 product. Early termination at the first settled state is closer, but the
+measured shape says most admits *fail*, and a failure has to exhaust its component to be a
+failure; the win was in not re-exhausting components already known barren.
+
+---
+
 ## 2026-08-29 (end, 2) — correction: the arc 4->0 table was never built
 
 **A claim in the previous session report was wrong.** Arc `4->0`'s envelope table under the

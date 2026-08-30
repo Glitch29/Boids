@@ -257,7 +257,7 @@ public final class CriticalEnvelope {
     // ---- entries and their leaders -----------------------------------------
 
     /** How many pairs the admission search may look at before it gives up and says so. */
-    public static final long BUDGET = 2_000_000L;
+    public static final long BUDGET = 12_000_000L;
 
     /**
      * Drop leader placements beyond flocking range while walking a pair's history backwards.
@@ -333,9 +333,17 @@ public final class CriticalEnvelope {
         Map<Long, Long> admitted = new HashMap<>();
         Set<Long> rejected = new HashSet<>();
 
+        // A build can run for hours, and without this there is no way to tell one that is
+        // working from one that has stalled — which is exactly what happened once, and cost the
+        // run. The memo sizes and the heap are here because they are what actually binds: the
+        // pair space is |edge| x |live|, and holding a visited pair costs far more memory than
+        // visiting it costs time.
+        Progress progress = new Progress(from, keep);
+
         for (int i = 0; i < liveCount; i++) {
             int p = live[i];
             if (edge[p] != from || inEnv[p]) continue;
+            progress.entries++;
             int pd = p % turns, pc = p / turns, px = pc % w, py = pc / w;
             for (int t = -1; t <= 1; t += 2) {
                 int u = map.successor(p, t);
@@ -354,7 +362,10 @@ public final class CriticalEnvelope {
                     boolean thin = !plain
                             && EdgeInfluence.steer(pd, dx, dy, l % turns, alt) == t;
                     if (!plain && !thin) continue;
-                    Admission a = admit(map, edge, settled, from, p, l, f, alt, admitted, rejected);
+                    progress.admits++;
+                    Admission a = admit(map, edge, settled, from, p, l, f, alt, admitted,
+                            rejected, progress);
+                    if (a.budgetHit()) progress.budgetHits++;
                     probed += a.probed();
                     budgetHit |= a.budgetHit();
                     if (!a.admitted()) continue;
@@ -416,7 +427,8 @@ public final class CriticalEnvelope {
      */
     private static Admission admit(NavMap map, int[] edge, boolean[] settled, int from,
                                    int boid, int leader, Flocking f, Flocking alt,
-                                   Map<Long, Long> admitted, Set<Long> rejected) {
+                                   Map<Long, Long> admitted, Set<Long> rejected,
+                                   Progress progress) {
         long start = pack(boid, leader);
         if (admitted.containsKey(start)) {
             return new Admission(true, trail(edge, admitted, start), 0, false);
@@ -437,7 +449,13 @@ public final class CriticalEnvelope {
         int[] bPred = new int[3], lPred = new int[3];
         while (!queue.isEmpty()) {
             if (++probed > BUDGET) return new Admission(false, NO_PATH, probed, true);
+            if ((probed & 0xFFFF) == 0) progress.tick(probed, admitted.size(), rejected.size());
+            if (probed > progress.biggest) progress.biggest = probed;
             long cur = queue.poll();
+            // Already known to reach nothing settled, so there is no point walking behind it.
+            // Without this the negative memo is written and never read, and every search
+            // re-expands ground a previous one already proved barren.
+            if (rejected.contains(cur)) continue;
             seen.add(cur);
             int b = (int) (cur >>> 32), l = (int) cur;
 
@@ -496,6 +514,38 @@ public final class CriticalEnvelope {
     }
 
     private static final int[] NO_PATH = new int[0];
+
+    /**
+     * A running account of a build, printed every ten seconds.
+     * <p>
+     * Here because a build can run for hours and, without it, one that is working cannot be told
+     * from one that has stalled — which happened, and cost a run that was killed at 2h46m with no
+     * way to judge how close it was. The three numbers worth watching are the entry state (the
+     * outer loop, and the only real measure of progress), whether anything is hitting the budget,
+     * and the size of the memo, since that is what the search is trading memory for.
+     */
+    private static final class Progress {
+        private final int from, keep;
+        private final long began = System.nanoTime();
+        private long nextReport = began + 10_000_000_000L;
+        int entries, admits, budgetHits;
+        long biggest;
+
+        Progress(int from, int keep) { this.from = from; this.keep = keep; }
+
+        /** Called on a coarse probe boundary, so the clock read is not itself a cost. */
+        void tick(long probed, int admitted, int rejected) {
+            long now = System.nanoTime();
+            if (now <= nextReport) return;
+            nextReport = now + 10_000_000_000L;
+            Runtime rt = Runtime.getRuntime();
+            System.out.printf("    %d->%d %5.0fs  entry %d  admits %,d (%,d hit budget)  "
+                            + "this component %,d  biggest %,d  memo %,d/%,d  heap %,d MB%n",
+                    from, keep, (now - began) / 1e9, entries, admits, budgetHits, probed,
+                    biggest, admitted, rejected, (rt.totalMemory() - rt.freeMemory()) >> 20);
+            System.out.flush();
+        }
+    }
 
     /**
      * Whether a leader this far out of range is too far out to have been in it.
