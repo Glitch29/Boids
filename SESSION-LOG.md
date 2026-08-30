@@ -11,6 +11,45 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-29 (end, 6) — three-boid phase map
+
+**Built.** `ThreeBoidPhase`. Samples three-boid arrangements and maps them by the two phase
+differences: psyboid tau minus suspect tau on one axis, third boid tau minus suspect tau on the
+other, everything rebased onto the suspect's edge by the shortest route (Dijkstra over the edge
+graph weighted by the length of the edge being left). Suspect starts from a settled state in an
+8-tick band across the middle of edge 4, one representative per phase — states whose own
+unsteered successor is also in the band are dropped, keeping the last of each chain. Third boid
+starts `k = 8` unsteered steps on from a random state; psyboid anywhere; override is a permanent
+right turn on half the trials. One sample per cell.
+
+**Fast.** 600,000 attempts in **7.3 s**, filling 222,476 cells. The sanity pass at resolution 5
+with 2,000 attempts ran in 4.6 s. This is cheap enough to iterate on.
+
+**Result at resolution 1, 600,000 attempts:** 14,850 exits against 207,626 continuations.
+Of the exits, 7,734 led by the psyboid, 3,675 by the third boid, **0 needing the diluted model**,
+**3,441 unexplained (23%)**. The diluted zero is consistent with it being inert on this arc.
+
+**The 23% is not comparable to the corpus's 5.6%** and should not be quoted as if it were.
+Random placements explore arrangements a searched psyboid never produces, so this is a far
+harsher test — which is the point of it.
+
+**The predicted structure is there.** Vertical orange bands where the psyboid alone induces the
+exit, horizontal blue bands where the third boid alone does, both appearing **twice** rather than
+once. Unexplained cells concentrate where bands cross and extend off them, and there are sizeable
+white regions riding *along* the blue horizontals at large x — the third boid in a leading
+position, the account still failing, which is where a handover would land.
+
+**That reading is visual and unquantified.** The obvious next step is to project exit counts onto
+each axis to locate the bands numerically, then measure each unexplained cell's distance to the
+nearest band — which would separate "growth off a band" from "genuinely detached region" instead
+of leaving it to the eye.
+
+**Known limits.** One sample per cell, so a colour is one draw and not a majority. The axes do
+not wrap, so the plane spans more than one lap and the same relationship can appear at several
+x. The psyboid's permanent-right override is dab-specific, as flagged when it was asked for.
+
+---
+
 ## 2026-08-29 (end, 5) — the residue rejects genuine led exits
 
 **Built.** `SimTest.renderTick` draws one exit at whole-map scale across several ticks, with the

@@ -266,6 +266,12 @@ a spread of them partially cancels, while a neighbour inside `rSep` keeps pushin
 strength. **Not the same as halving the straight bias**, which amplifies alignment and cohesion
 exactly where a crowd suppresses them.
 
+**three-boid phase map** — a sampled map of what three boids do to each other, with both axes
+phase differences in ticks: the psyboid's tau minus the suspect's on one, the third boid's on
+the other, everything rebased onto the suspect's edge by the shortest route. `ThreeBoidPhase`.
+One sample per cell, so a colour is one draw rather than a majority. Sampling rather than
+enumeration because three boids will not fit in `(x, y, d)` the way `TwoBoid` does.
+
 **two-model boid** — the exiting boid in critical-envelope analysis picks the true constants or
 the diluted model **independently on every tick**, at the entry and throughout its history. A
 history in which the crowd tipped one decision and not the next is then expressible, where a
@@ -342,6 +348,7 @@ anything not listed.
 | **critical-envelope analysis** | `EdgeInfluence` + `EdgeSlice`, driven by `SimTest.windows` | `<ingest>/windows/window_<from>_<to>.tsv` |
 | two-boid reachability | `TwoBoid` | `<ingest>/twoboid/` |
 | critical-envelope tables | `CriticalEnvelope`, stored by `CriticalEnvelopeStore` | `<ingest>/envelope/` |
+| three-boid phase map | `ThreeBoidPhase` | `render/phase<f>_<t>.png` |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |

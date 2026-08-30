@@ -3100,9 +3100,14 @@ picks, never in what is available to it.
         // every run, since the tables are not yet persisted. Drop 4->0 for a fast pass.
         CriticalEnvelope.pruneOutOfRangeLeaders = true;
         double[][] chain = EdgeWeights.blend(new double[][]{{1,1,1},{1,1,1},{1,1,1}}, 0);
-        renderTick(p, false, 202, 174, 191, -1, 4, 0, 9489, 2, new int[]{1, 25, 60},
-                EdgeWeights.Scheme.MOMENTUM, chain, f,
-                Path.of("render", "tick9489.png"));
+        CriticalEnvelope.pruneOutOfRangeLeaders = true;
+        SolverFacts facts = SolverStore.prepare(p, new SolverFacts.Gate(false, 202, 174, 191, -1),
+                EdgeWeights.Scheme.MOMENTUM, chain, f);
+        Labelling lab = label(p, false, 202, 174, 191, -1);
+        ExitAudit.Tables tabs = ExitAudit.Tables.of(p.ingest().outputDir("envelope"), lab.map(),
+                lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
+        ThreeBoidPhase.run(p, lab, facts, tabs, 4, 0, 8, 8, 1, 600000, 1,
+                Path.of("render", "phase40.png"));
         if (true) return;
     }
 
