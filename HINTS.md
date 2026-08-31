@@ -6,7 +6,7 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-08-28. This file is also the *training-wheels* condition of the evaluation —
+**Status:** 2026-08-30. This file is also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
 
@@ -573,6 +573,40 @@ well enough to be useful and is **map-independent by construction**.
 
 ---
 
+## 10a. Superposition — why one neighbour is not the unit of explanation
+
+Established 2026-08-29 by drawing every exit a full-information classifier could not account
+for. This is physics rather than bookkeeping, and it limits what *any* pairwise analysis can do.
+
+**Each rule normalises before weighting** (§1). The consequence is that a rule's output is a
+direction with a fixed magnitude, and adding neighbours changes the direction, not the strength.
+Three things follow, all of them observed:
+
+- **Two close boids push along their vector mean.** Separation sums its neighbours' pushes and
+  *then* normalises to `W_SEP`, so two boids inside `rSep` produce one full-strength push in a
+  direction belonging to neither. A boid that turns under both, where neither alone turns it, is
+  not a tolerance problem — no pairwise table represents it at any constants.
+- **Partial cancellation is amplification.** Two alignment vectors that largely cancel leave a
+  short residual which normalisation scales back up to the full `W_ALI`. Measured on one exit:
+  two headings whose sum retained 0.855 of a possible 2, renormalised to an across-heading
+  component of `+60` against a straight bias of `3.44`.
+- **A neighbour can matter by cancelling another neighbour's term.** In the same exit, one boid
+  contributed almost no alignment itself; its role was to cancel the *cohesion* that was
+  defeating the boid which did. Cohesion pulls toward a neighbour where separation pushes away,
+  so for a separation-dominated or a behind-you neighbour, cohesion is an obstacle and a crowd
+  removes it.
+
+**Which rule dominates predicts how hard the exit is to account for.** Separation is short-range
+and decisive, so one boid holds a whole stretch of history. Alignment is long-range, weak and
+diffuse, so several boids each contribute a little and which one leads shifts along the history.
+Measured: an alignment-carried arc left fifteen times the unaccounted residue of a
+separation-carried one on the same map.
+
+**And the residue is not random with respect to the argument.** It concentrates on genuine
+leader-follower pairs — a real leader present at the edge of perception, doing the leading, and
+refused because it is not individually sufficient. Since an unexplained turn reads as evidence
+*toward* the suspect, that is a wrong answer in a specific direction rather than noise.
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.
@@ -632,7 +666,7 @@ Documents:
 - `CONTRACTS.md` — what a play area guarantees. Partly historical.
 - `BACKLOG.md` — parked work, with the reasoning for parking it. Ageing.
 - `SESSION-LOG.md` — what each session did.
-- `PROMPTS.md` — every prompt given about this project, deduplicated. Ends 2026-08-25.
+- `PROMPTS.md` — every prompt given about this project. Append yours; not required reading.
 
 ## 13. Open threads
 

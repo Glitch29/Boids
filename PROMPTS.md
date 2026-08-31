@@ -1,8 +1,15 @@
 # Every prompt given about Boids
 
-Extracted verbatim from the seven session logs, in order. Tool results,
-slash-command output, system reminders and compaction notices are dropped;
-everything else the human typed is here unedited.
+Every prompt, in order. Tool results, slash-command output, system reminders and compaction
+notices are dropped; everything else the human typed is here unedited.
+
+Sessions 01-07 were extracted from the JSONL transcripts afterwards. From session 08 on, each
+session appends its own prompts as it goes -- the transcript does not exist until the session
+ends, so waiting means the record is only ever one session behind.
+
+**Not required reading.** This file exists so a later session can search what was already asked
+without opening 60 MB of transcript. Read `README.md` first; come here when you need the exact
+wording of something.
 
 
 ---
@@ -2286,3 +2293,341 @@ It might actually be helpful to create a document that was just all the prompts 
 I'm pretty sure there's enough context left for the code cleanup to run unfettered.
 
 That said, I'm handing off to you for the night.
+
+---
+
+## Session 08 — 2026-08-27 to 2026-08-30
+
+> **Appended live rather than extracted from a log.** Sessions 01–07 were pulled out of the
+> JSONL transcripts afterwards; this one was written down during the session itself, because the
+> transcript for it did not exist yet. The text is taken from the conversation as it happened.
+> Mid-turn interjections — messages sent while a turn was still running — are marked.
+
+### 1
+
+Alright! The boids project has gotten big enough that there's starting to be problems with context, compacting, and clearing.
+
+A troubling pattern has been that I'll ask for some analysis that exists by reference. Claude will come up with a brand new way of supplying it, filling in a lot of ambiguities. Then I'll stop it and remind it that the analysis already exists. Then Claude will proceed to bulldoze through the existing analysis, overwriting it with its new invented methods. I want to make sure that this doesn't happen again.
+
+I'd like you to take this turn to just look over the project, all the code files, and the docs, and come up with an organization plan. Take stock of what's documented and what isn't. Ask questions about anything you don't understand.
+
+At the end of the next few turns, I'd like to have an effective README that will allow any new session to be up-to-date on what does and doesn't already exist. I'd also like a dictionary of terms. Beyond that, I'm open to your expertise about sound organizational decisions.
+
+This turn isn't about writing though. It's your chance to familiarize yourself with the project, ask me any questions, and convey any advice you might have about managing Claude Code projects effectively.
+
+### 2
+
+1) Gates are never canonical. They're just a hack to get some programmatic measurements, and they should be almost entirely deprecated at this point.
+
+There are three different measurement spaces representing various levels of abstraction. Micro navigation takes place in (x,y,d)-space. Macro navigation takes place in (edge, tau) space. (x,y) solely exists for visualizations. The fact that gates also exist in (x,y)-space is evidence of the fact that they're not fit for purpose for any serious analysis.
+
+The only time it's okay to continue to use gates is for bootstrapping purposes when generating actual edges.
+
+The edges themselves exist in (x,y,d) space, and are defined with relation to one another. A document should detail exactly how.
+
+It's possible that some recent bugs that were due to gates being evaluated instead of the correct edge definitions.
+
+Annotated edge maps were solely a bootstrapping tool for calculating edges. They're no longer needed.
+
+2) routes/ is stale and won't be regenerated. It's effectively been depreciated since programmatic edge decomposition came online. Routes can now be described as a series of edges.
+
+The cases and other artifacts for the packet are also stale. Rebuilding similar artifacts will be the ultimate or penultimate step of this project. But the current artifacts hold little value.
+
+Unless there's a good reason not to, I think I'm going to delete the contents of routes and the stale packet between now and the next prompt. Let me know if you've noticed any other folders that could also go.
+
+3) No specific freeze is on. That was for a deadline rush a while ago. Although that backlog list is so old now that many items may be no longer relevant.
+
+4) The work was up to tuning the first clue in the solver to maximize results against a corpus. But in that process I discovered the corpus was scuffed. And in the process of trying to fix the corpus, the classifier (effectively the solver but omnipotent rather than being limited to info from a single snapshot) appears to have been broken. Unclear whether it was broken by rogue edits, or if it was always broken.
+
+So reconfirming the classifier and the corpus will bring us back to work on the solver.
+
+5) The README is for future Claude sessions. Leaking an answer key is not an actual concern. The GitHub repo is now private and will stay that way.
+
+6) Feel free to make improvements to the glossary. I've tried to avoid clashes, but haven't been perfect. Let me know what terms are being changed, and I'm happy to adopt the new lingo.
+
+Extra answers:
+
+7) I've noticed that a few emphatic warnings appear in the docs that don't reflect real problems. Answer key leakage is one of those fictionalized concerns. You can clean up any references to that. If anything other documented concerns look strange or possibly hallucinated, ask me about them and I'll confirm whether they're real or not.
+
+8) I legitimately crashed out a bit in the last session, and tried to work through some problems when I didn't have the energy or focus to. I definitely gave some short-sighted prohibitions in a desperate bid to make things work. If you point me toward any notes made about that, I'd probably like to edit or delete some things.
+
+9) It would be good if the README could provide a good book-keeping prompt. I'm not sure what that looks like. But it would be good if every session came online with the understanding that it should be taking notes. I've worked in other environments where these prompts have existed, and they seem to work.
+
+Regarding the documentation revised plan: Sounds good. Make it so.
+
+1) Having looked through HINTS.md, I think I understand the disconnect and am prepared to better-define the solution.
+
+ExitAudit's purpose should be to note exactly when an exit occurs and propose the most plausible mechanisms for that exit. We will doing testing to ensure that it's always generating at least one candidate, but that's not a guarantee that the function itself can make without writing reckless contingencies using its own geometric reasoning. It should pull all its info from precomputed tables for both speed and accuracy sake. If there are genuinely multiple candidates it will report them all. This is necessary because some consumers will want to know if a psyboid took an exit but didn't need to use an override to do so.
+
+The best that ExitAudit can guarantee is 1) no reasonless exits were found in a corpus, and 2) an attempt has been made to order reasons from highest-reliability to lowest-reliability.
+
+We'd like to anchor the exit log to a single tick. This will be the tick at which a boid actually leaves the edge. (The boid starts the tick on the edge). Due to edge definitions, this is synonymous with the tick that a decision of which edge to leave to is locked in. This might not be the same tick that the influence occurred.
+
+The highest-reliability exit reason is that the exiting boid is a psyboid. Exits are assumed to be intentional.
+
+Since exits sometimes involve coordination over several ticks, measurement at a single tick without additional data is not going to be sufficient for quality results. The critical-envelope analysis from the 2-boid simulation gave an exact set of coordinated pairs that can induce an exit, and it's the second highest quality indication.
+
+The critical-envelope analysis is also where discrete exit windows should be defined, including the edge path of the leader, phase offsets, and {SEPARATION, ALIGNMENT_AND_COHESION} cause. Alignment and cohesion are a joint cause, as there is no clean distinction between the two and they frequently work in tandem. This represents how ExitAudit should be getting most of its labels (with the notable exception being for psyboids taking exits).
+
+Note: The critical-envelope analysis may contain a flaw that needs to be addressed regarding the size of the envelope and whether it covers the earliest possible influence. That's going to be priority #1 after documentation updates.
+
+It would be overkill to track a leader's exact approach sequence to an exit. If the suspect/leader state combo on the exit tick is contained in the critical-envelope analysis, that is sufficient.
+
+If no matches are found with the normal physics windows from the critical-envelope analysis, check the modified physics separation window. This window should theoretically always implicate at least two boids, but we will only credit the separation boid, as it's the only one we get measurements for in the 2-boid simulation.
+
+Theoretically there should not be any exits which escape this net. Whether that's actually the case needs to be tested against a corpus. The potential critical-envelope analysis flaw, and potential unanticipated near-misses in 3+ boid simulations aren't entirely ruled out.
+
+Ideally this means that ExitAudit won't be doing any geometry calculations. I'd really like it to remain that way unless we've exhausted the critical-envelope analysis from the 2-boid simulations and are still missing exits.
+
+2) Thumbs-up on tau.
+
+3) I've deleted transcript.pdf and cases/
+
+4) Agreed. I have not been giving explicit instructions about where bits and bobs should go. But more structure is better.
+
+At any given point I don't have a great idea of where anything's going to live or what it's going to be named. Descriptive class names at least give me a fighting chance to find relevant code if I need to audit its behavior.
+
+We should get in a habit of establishing canonical names for analysis that's expected to be reused. I've had a bad habit of referring to things by the same name repeatedly without explicitly confirming how it's named in the code. This can cause post-compact confusion.
+
+* One such thing that I should check in about now is what I keep referring to as "the [exit] classifier". If I understand correctly that's called ExitAudit in the code? That's a good name, I'll start using it.
+* Another is the critical-envelope analysis. I have no idea what that's named in the code.
+
+### 3
+
+You're correct. I forgot that the TwoBoid analysis doesn't actually drive the critical-envelope analysis. And it would be a mistake if it did, since it would overly restrict where the boid could be leading into the turn.
+
+The critical-envelope analysis produces its own two-boid data. Rather than focusing on achievable states in a 2-boid simulation it takes admits any navigable position for the leader. And for the suspect it uses a fairly crude approximation of potential starting states by intersecting unsteered travel from the beginning of the edge with an expanded envelope of critical states.
+
+I'm realizing there's a much better way to calculate the critical envelope. Rather than using a band around the straight-navigation edge, instead we should calculate all states that can be reverse-navigated to from the exit edge.
+
+By definition, unsteered navigation from the start of an edge will never lead to a non-straight transition off the edge. So this envelope is guaranteed to terminate. Additionally, every boid that exits is guaranteed to have been steered onto a state in the envelope. This envelope should include the states on the downstream edge that unsteered backwards navigate to the current edge in 1 tick, since the first tick of steering could potentially land directly on the downstream edge (if the cost to leave was exactly 1).
+
+The tick where the boid navigates onto this envelope is the position to be analyzed when deciding who is the leader.
+
+For ExitAudit, this should just be lookup into windows produced by critical-envelope analysis. In order to do this, ExitAudit will need to be able to access the most recent state when the exiting boid moved onto the critical envelope from a state off of it. It will also need to be alerted when the actual exit is taken. (Note: By this accounting, only the final movement onto the critical envelope will be analyzed. But this is unlikely to ever be relevant, as it would require multiple complete reversals from right to left steering.)
+
+Windows created by the analysis should be a list of windows properties and dual states on envelope entrance, where the dual states are Map<Boid (x,y,d) before movement onto envelope, Set<Leader (x,y,d)>>
+
+In order for an 2-boid state to become part of this map it must be possible for the boids to pairwise reverse navigate back to a "stable" state for the exiting boid, where forwards-navigation follows the same rules as the TwoBoid simulation (leader has free choice, exiting boid follows boid logic). However the "stable" state is tricky to define. The last way that this was done, which seemed moderately successful, was in the vicinity of: Take the the union of all unsteered paths through the edge, add all the states reachable from them by a single unsteered partial forward tick (turn according to unsteered rules, but navigate to any of the intermediate points on the OOB check used to create the NavMap), then close all of those states under forward navigation.
+
+Information that needs to be recorded for this pairwise backwards navigation includes:
+
+* the edge path of the leader (normally just 1 edge, but maybe more). For all possible paths that lead to the same (boid, leader) entrance to the critical envelope, consider only those that where no other possible path is a strict subpath.
+
+Information that needs to be recorded from movement onto the critical envelope includes:
+
+* boid, leader positions immediately prior
+* cause: separation or alignment/cohesion (Note: This should be clearly bimodal in almost any way it's measured. But the most robust is checking which set of influences (subject to range limits) has the larger component orthogonal to the travel direction with the correct sign for the turn being executed.)
+
+You have free reign over how to store data. Java structures I referenced are for illustration and are not binding.
+
+The translation from states into (edge, tau) will be done as part of the process of adding solver windows. Critical-envelope analysis info is just somewhat annotated paired states tables for ExitAnalysis to use. Critical-envelope analysis needs to be run a second time at half straight bias to produce the level-3 check.
+
+The reason the solver windows is currently empty is that the goal is to populate it only with windows that appear in a training corpus and with ranges that appear in said corpus. There are several windows that won't ever appear in any corpus because they can only be achieved by counterproductive psyboid behavior.
+
+Please ask questions if anything is still unclear. I had a lot of distractions while writing this and might have left a concept hanging.
+
+### 4
+
+I see. If I understand correctly, adjusting the straight bias would produce a different admission set, since it would change the range at which a leader was able to influence the other boid to move. This could account for the increased influence of multiple boids. But the issue is that it wouldn't capture all the possible shapes of that increased influence as actually exerted by multiple boids. That sort of analysis would change a large number of straights to turns, but a position in the corpus might require only some precise subset of those straights to become turns.
+
+If this is the case, then the secondary analysis isn't to calculate a new set of pairwise entries routes using half-bias physics. It's to calculate the set of pairwise entries that are allowed to use either set of physics interchangeably.
+
+So the leader can choose any steering direction. The exiting boid uses boid steering under a choice of either physics.
+
+I'm going to relent at this point on the straight-bias versus separation weight at this point. I has occurred to me that for separation-dominated leaders, alignment and cohesion are generally obstacles. Additional boids might dilute these away, even if those additional boids don't otherwise make significant contributions. The half-bias model amplifies these effects when the actual multi-boid simulation is going to dilute them.
+
+Therefore I think the two physics models we should allow boids to choose from in the second pass are (default physics, alignment=0, cohesion=0, separation*=2). This should also hopefully prevent any incidental recalculation of alignment/cohesion dominated windows.
+
+*(follow-up, same turn)* Sorry. That should have been (default physics) or (alignment = 0, cohesion = 0, and separation*=2)
+
+### 5
+
+Go ahead! I'm feeling really good about how well-communicated everything is this time.
+
+I expect that the actual space explored in the leader-boid backwards navigation step will be an incredibly small fraction of the total space. I was going to give some advice for BFS versus DFS, but they both are likely to be very fast for completely independent reasons.
+
+Envelope and settled set should be pretty straight-forward.
+
+The only thing I could see going wrong is accidentally reverse-navigating to dead cells. For the bidirectional navigation maps (which is all of them right now) any state that can't navigate backwards infinitely is considered dead. One of the many reasons to use the navigation helper functions is to avoid searching over that space.
+
+With that said, get it done! I'm kicking off my shoes for the night.
+
+If you get as far as doing tests to confirm whether ExitAudit is catching all the exits, that would be a good place to stop. If you do get there, print out the exit logs for a 1000-tick warmed up run. I don't think I've ever seen just how often the psyboid takes the first exit compared to the second.
+
+### 6 *(mid-turn)*
+
+The memoization is definitely a good call for the search. I'm a bit concerned about the in-range pruning though. It's probably fine, but has at least the potential to be problematic, since not every movement of the exiting boid needs to be steered. And it's the kind of the geometric reasoning I'd like to avoid being present in ExitAudit, just because it is a potential source of bugs. Could you check whether memoization alone is sufficient to do the calculation in a reasonable amount of time?
+
+### 7
+
+That all makes sense, and is sufficient reasoning for pruning to be appropriate. If a boid hasn't reached a stable edge, by definition it requires additional steering in order to be able to hit one. I was going to suggest giving a small buffer zone. But that won't even be required in most cases, since any pruned state has to be reached from an unpruned state, meaning that the boids are actively navigating further away from each other. The only case where pruning might not be appropriate is if both boids are moving just slightly of of parallel.
+
+I'm going to propose a relatively small grace period for pruning, that I think is internally consistent in how defines recoverable states. In other words, it should prune early if pruning is inevitable based on current positions, give or take some pixel rounding and small-angle approximations.
+
+distance = sqrt((x_l-x_s)^2+(y_l-y_s)^2)
+If distance > INTERACTION_RANGE, prune when
+SPEED * pi/64 * (d_l-d_s)^2 +  (distance - INTERACTION_RANGE) > GRACE_INTERVAL
+
+Assuming that adding this doesn't cause ballooning calculations, GRACE_INTERVAL being 2*SPEED seems like a reasonable window.
+
+Regarding checking against a corpus, I think we need a psyboid in order to see a significant number of exits. By design, exits should settle down to very low numbers in the absence of psyboids.
+
+There was a search method that created overrides for dabeone specifically. It was part of a session that collapsed, so I can't guarantee that the code is in working state, but I think that it is. That should be good for generating a small 4-boid (1-psyboid) corpus. Or there might be a corpus that already exists.
+
+### 8
+
+Could you get me visualizations for the 8 unexplained exits? Normally I'd go 1-at-a-time and reevaluate after each. But 8 is a low enough number that I think I can visually classify what's going on.
+
+My expectations is that most/all of these will involve both separation and alignment. Multiple alignment/cohesion boids proportionally dilute each other's contribution. As do multiple separation boids. But if one boid is in separation range (but outside of any window), and N-1 boids are in alignment range (but just outside of the leader window), they can contribute up to 1 + (N-1)/N times the necessary signal to cause an exit.
+
+### 9
+
+Okay. This is the first instance we've seen of a genuinely multi-leader exit. Other exits involved multiple boids combining influence at a single tick, and those could be accounted for by overestimating a single boid's influence.
+
+But this isn't failing to be detected because it's in some fixed-width cover around an existing window. It's a genuinely new window that only exists in 3-boid space. One boid is responsible for the early ticks through alignment/cohesion, and another boid is primarily responsible for the later ticks through separation. There's a baton pass in the middle.
+
+If I'm right about that, I think the correct call is that these are genuinely unclassified right now. And will continue to be unclassified until/unless we start classifying multi-boid exits.
+
+But let's confirm that I'm correct first. That means looking at adding another column to confirm that one of the boids can individually account for the want at the ticks in question.
+
+### 10
+
+Persist the CEA tables so they don't rebuild every run. That's a must. The reason I keep harping on ExitAnalysis being lookup only, no geometric reasoning, etc. is that it's going to be called a lot of times by a lot of threads.
+
+### 11
+
+Are permissions set up properly for you to commit and push to GitHub? Go ahead and try to do so now.
+
+### 12
+
+Yeah, go ahead and do that. You've got full permission to manage the .gitignore in sensible ways. I've deleted routes/, the proposal, the zip, and ANSWER-KEY.
+
+You've also got the go-ahead to commit and push periodically.
+
+### 13
+
+Could you check if there's a hanging task? I see something listed as "OpenJDK Platform binary" and I'm not sure what it is or if it needs to be killed.
+
+### 14
+
+Just to confirm, the build that hung was dual physics with out-of-range pruning w/grace? That was the one we were planning to proceed with, and not one of the earlier experiments.
+
+Could you check the total numbers for (edge 4 states) * (all map states)? I would have thought that with memoization, even the worst case where expand all of that would conclude within 3 hours.
+
+### 15 *(mid-turn)*
+
+One potential speed-up that I'm not sure if we're currently implementing is to precompute all the physics based on delta x, delta y, d, d_leader.
+
+I'm also curious if we're taking advantage of all the early termination available. If we're able to pairwise backwards navigate to any stable state, that's sufficient to terminate. The only reason to keep exploring would be if doing so required the leader visiting multiple edges, in which case we'd want to exclude the final edge visited by the leader and see if a more contained navigation is possible.
+
+### 16
+
+Let's look at the 20 unexplained exits on 4->0.
+
+### 17
+
+Are the ones that have no sufficient neighbor even at the entry, does that include with dual physics? Until now I thought that dual physics always found at least one leader at each steered tick.
+
+If that's no longer the case, I'd like to see one specific tick where it fails.
+
+### 18
+
+Could you render that tick for me? I understand what you're saying. But there might be more insight to be had when looking at it in the context of the map.
+
+### 19
+
+I would call this well into the realm of 3-boid mechanics. And well outside of what can be solved by simple geometric reasoning.
+
+While the 2-boid problem could be solved explicitly in (x,y,d)-space, 3 boids is a much better candidate for solving via simulation in (x,y,d)-space aggregated over (edge, tau)-space and visualized on (x, y) plane.
+
+Let's just run some simulations. Get a selection of starting states that are stable states on edge 4 in a tau band of length 8 centered roughly about halfway along its edge by tau value. Collapse these into a single representative from each offset, by removing potential starting locations that are unsteered predecessors of another potential starting location.
+
+Choose a tau/pixel resolution and a number of attempts.
+
+Then run 3-boid simulations where
+
+* the suspect boid is in one of the predetermined starting states
+* another boid is in the Kth unsteered successor of any random state
+* a psyboid is in any random state
+* psyboid has randomly {no override, always right override}
+
+Rebase the starting locations backwards to edge 4, using the shortest possible (by tau) path.
+x = (psyboid_tau-suspect_tau)/resolution
+y = (boid_tau-suspect_tau)/resolution
+
+If (x,y) has already been calculated, continue.
+Else, color (x,y) by whether the suspect boid exits or continues, giving a different color for each ExitAudit reason, with no reason being particularly distinct.
+
+Repeat for the fixed number of attempts.
+
+I think reasonable parameters would be K=8, resolution = 1, attempts = 50,000.
+
+Although let's start with resolution = 5, attempts = 2000 just to sanity check the runtime and output.
+
+I'd like to make this simulation map-independent, which it isn't currently as the override setup relies on specifics of dabeone. But for right now I'd like to just confirm that this works.
+
+Expectation is to see some horizontal and vertical bands related to 1-boid exits. Then some slightly expanded hits around the intersection of those bands, related to those exits combining 1 alignment and 1 separation boid. Baton-passes are likely to be growths off of the bands, likely near intersections but not necessarily. Then the most purely 3-boid behavior exits would be entirely independent regions.
+
+### 20
+
+Unfortunately, there's no clean lap length. It depends on which path is taken. That's why I went with rebasing to a common edge in each lap.
+
+One way to fix this problem and also deal with overlapping features would be a toggle for different routes for both the non-suspect boid and the psyboid. In this case a route is a simple (not self-intersecting) loop from edge 4 to itself.
+
+Each sampled data point would then be in (x,y,route,route)-space, rather than (x,y)-space. Each simulation could populate multiple pixels at the same time if it were on common sections of routes. This would allow modular wrapping since routes do have lengths.
+
+Note: If a single simulation is used to populate multiple pixels, x and y might not be the same on each. Rebasing to edge 4 should be based on the route, not the shortest length as was the case before routes were included.
+
+Note: Dabeone should have 3 simple loops.
+
+Note: Edge 6 is not part of any simple loops. That's good. Edge 6 is effectively inaccessible outside of the warmup period and would just contribute noise.
+
+Regarding sampling density - noted. But I think it's more informative to see the actual data in the form of dithering patterns than to do any color averaging. This will be true at least until resolution is low enough that the image size becomes unwieldy.
+
+Regarding unnatural positioning of the boid: That's what K is meant to compensate for. Applying higher K to the boid, and potentially to the psyboid as well (the psyboid's K is effectively zero). The downside to higher K is that it can preclude all sampling from early parts of unstable edges.
+
+Go ahead and make whatever changes you think you can tackle. And if it's working, give me a resulting image (I guess it would have to be a webpage or a series of images if routes are included) representing about 10 minutes of compute.
+
+### 21
+
+A few notes:
+
+* 'led by psyboid' and 'diluted model needed' use colors that I can't distinguish between
+* resolution can meaningfully go as low as 0.25, if there's ever a request for another high-compute run
+* It would make the most sense for the governing parameters of each run's compute to be 'resolution' and 'target_fill' where target_fill is the desired saturation of the grid. In practice this would be implemented by halting after (1-target_fill)^(-1) consecutive misses. That is on average correct(-ish) and automatically compensates for any unfillable regions. Technically the -1 would be a map-specific constant very close to -1 based on uneven distribution of states per tau, but -1 is close enough.
+* While we're only simulating 3 boids, it's possible in larger simulations that a 4th boid would induce a non-psyboid exit. So even if the setup is slightly less feasible, I think we should still be populating the unsampled regions of the graph. Whatever K we start with should be lowered by the end to let these areas fill in, even if they all implicate recent steering.
+   * If combined with target_fill, this could mean setting K to 0 the first time N consecutive misses occur, then terminating the analysis the second time that N consecutive misses occur. Or some similar regime with more slower annealing. That slightly disconnects target_fill with it's namesake metric, but its still a fine name for the ballpark effect.
+* For the same issue regarding the psyboid, rather than reducing K, it should be sufficient to advance either unsteered or right-steered, according to whether or not the psyboid has a right override.
+
+Some analysis:
+
+* We're seeing white bands across the colored bands. These are almost certainly baton passes, as they extend slightly past the colored bands as predicted.
+   * Some of these baton-pass regions seem to preclude 1-boid exits, while others do not. Finer resolution would make this distinction clearer.
+* I am seeing slightly wider tolerances around intersections as predicted, but it's unclear how many unique phenomenon are at play.
+* There's a clear artifact where an edge 1 psyboid induces the regular boid to enter edge 0, and whether or not the suspect boid exits is contingent on that success. Even without direct data as to whether the regular boid exited, I'm pretty sure that's what I'm seeing in the small down-right blue diagonal near the top of all the images in the middle column. Anywhere that a down-right diagonal exists, it indicates that the phase difference between the two non-suspect boids is likely an important factor. I'm inferring that this is because of an exit decision by a non-suspect boid, but it could also just be a repositioning within an edge.
+* There are a couple of patchy thin horizontal and vertical columns that are unconnected to anything colored. I suspect that these are purely 3-boid objects. It could be a baton pass where one of the two legs is much more constrained. But I think my best guess is a separation event where an extra boid is required to redirect alignment. The exact composition of effects is really hard to guess from the image alone.
+   * It would be possible to detect if they're "near" a 2-boid exit that barely didn't materialized by seeing if they'd show up in 2-boid physics with ~80% bias. I'm not big on this theory, but it's easily testable.
+
+This is a bit to chew on. I'm signing off for the night. I'm giving you free reign to tackle any analysis you think you can do on your own. It would probably make sense to start with one more pass that in addition to having finer resolution recorded the information needed to replay any given result.
+
+If you can verify or disprove any of my analysis, that would be awesome. But feel free to go off and investigate anything else that seems pertinent.
+
+One bit of precompute that might save you some hassle, or provide insight: Some 1-dimensional analysis could be done to see which (edge, tau) ever come within separation range.
+
+I'd mostly shoot for low-hanging fruit. If you find yourself getting confused or unable to explain a result it's better to move on (or just stop if it's the last thing on your to do list).
+
+### 22
+
+How are we doing on documentation?
+
+There's going to have to be a compact before we go over these results, and I'd like to quickly revisit the discussion we had at the beginning of this thread before that happens and it is lost.
+
+I'm happy with the 1-off improvements that were made to the documentation at the beginning of this session. But I want to make sure that everything's been kept fresh through this session, the that the next session is going to know to keep everything fresh as well.
+
+This basically boils down:
+
+* the markdown files in the root directory (with the quasi-exception of BACKLOG.md and CONTRACTS.md which are mostly historical) being up to date.
+* the next session knowing to read these and keep them up to date
+   * Exception: PROMPTS.md is available as a cheap way to navigate through previous prompts. It doesn't need to be read at the beginning of each session. But it does need to be kept up to date by appending new prompts.
+* the next session knowing that it has permission to manage gitignore, and make commits and pushes

@@ -22,9 +22,12 @@ then overwriting the answer with the invention.
 **Before proposing a method for any of the following, find the existing one in `README.md`'s
 artifact index and say what it is:**
 
-- edge decomposition · the clock (tau values, edge lengths) · leader windows and the
-  critical envelope · two-boid reachability · transition weights · exit classification ·
-  the solver, its clues and its grading
+- edge decomposition · the clock (tau values, edge lengths) · the critical envelope and its
+  pairing tables · exit classification · two-boid reachability · three-boid phase mapping ·
+  transition weights · the solver, its clues and its grading · how the solver is scored
+
+`GLOSSARY.md` ends with a table of every named analysis and the class that owns it. That table
+is the fastest way to find out whether something already exists.
 
 If you have read the existing answer and believe it is wrong, **say so and stop.** Do not
 replace it in the same turn you found it. Reporting a suspected defect is always the right
@@ -77,3 +80,45 @@ Two rules that keep the log useful:
   `ROADMAP.md` — "building X, lives at Y, unverified" — at the moment you begin. Work that is
   only recorded on completion is exactly the work that never gets recorded, and it is the work
   most likely to be reinvented.
+
+### Keeping the root documents fresh
+
+**The markdown files in the root are state, not history, and a session that leaves them behind
+has broken the one thing that stops the next session reinventing its work.** This has already
+happened once: the docs were confident, detailed and three days out of date, and a session read
+them, believed them, and rebuilt something that existed.
+
+So before ending, check each against what changed:
+
+| file | keep current with |
+| --- | --- |
+| `README.md` | any new class, artifact path, or headline figure |
+| `GLOSSARY.md` | any analysis given a name, and its code name |
+| `EDGES.md` | anything about edges, routes, tau or leader windows |
+| `ROADMAP.md` | what is being built now, and what just stopped being true |
+| `PIPELINE.md` | any new step, or a step that has become unsound |
+| `HINTS.md` | findings about the *physics* that transfer beyond this codebase |
+| `SESSION-LOG.md` | append every session |
+| `PROMPTS.md` | **append the session's prompts verbatim.** Not required reading — it exists as the cheap way to search past prompts without opening 60 MB of transcript |
+
+`BACKLOG.md` and `CONTRACTS.md` are largely historical. Read them for reasoning, not for state,
+and do not feel obliged to refresh them.
+
+**Every document carries a `**Status:**` line with a date.** Update it when you touch the file.
+A doc whose status is older than the last session is a doc to distrust.
+
+## Standing permissions
+
+Granted 2026-08-29, no need to ask again:
+
+- **Commit and push to `main` periodically.** That is the convention here — private, solo, whole
+  history on `main`. Commit at natural stopping points with a message saying what changed and
+  why, never "Periodic check-in".
+- **Manage `.gitignore`** as makes sense.
+
+**Stage by explicit path; never `git add -A` blindly.** Large or retired directories sit
+untracked and unignored, and `ingests/*/{map.png,display.png,meta.txt}` look like build output
+but must be committed — a frozen map is what an old label replays against. Read
+`git diff --cached --stat` before committing.
+
+Deleting files, rewriting history and force-pushing still need asking.

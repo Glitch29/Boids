@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-08-29. Verified against dabeone ingest `609cffdb84be218c` unless stated.
+**Status:** 2026-08-30. Verified against dabeone ingest `609cffdb84be218c` unless stated.
 Every figure below carries the ingest it was measured on; a figure without one is not
 reproducible and should not be trusted.
 
@@ -138,10 +138,12 @@ kernel, successors, predecessors, the veto).
 stored by `CriticalEnvelopeStore` · `EdgeInfluence` (`steer`, the single-neighbour closed form) ·
 `EdgeSlice` (bands at a fixed tau) · `Flocking` (constants as an argument, and `diluted()`).
 
-**Exhaustive** — `TwoBoid` (all reachable pairs).
+**Exhaustive and sampled** — `TwoBoid` (all reachable two-boid arrangements) ·
+`ThreeBoidPhase` (three-boid arrangements sampled and mapped by phase difference, since three
+will not enumerate).
 
 **Solving** — `SolverFacts` (what a solver may know) · `SolverStore` (builds and stores it) ·
-`Solver` · `Clue` · `UnstableEdgeClue`.
+`Solver` · `Clue` · `UnstableEdgeClue` · `SolverScore` (how an answer is graded).
 
 **Psyboid** — `PsyboidBits` (bit-string search over branch decisions) · `PsyboidCorpus`
 (plans, verified by replay).
@@ -178,6 +180,15 @@ ways → 6 edges.
 | `solve` | grade the solver on synthetic overrides |
 | `graded` | grade the solver on the plan corpus |
 | `solverInvariants` | assert what the solver must do with no windows |
+| `envelope` | build one arc's critical-envelope table and report it |
+| `chains` | how far a history walks back inside an edge, and by what |
+| `census` | audit plain seeds — few exits, so mostly a smoke test |
+| `auditCorpus` | audit the psyboid corpus. **The one that has enough exits to mean anything** |
+| `renderUnexplained` | draw every exit nothing accounts for, with its influence decomposition |
+| `steeringHistory` | per tick, what *every* neighbour accounts for — finds multi-leader histories |
+| `renderTick` | one exit at whole-map scale, for structural rather than influence questions |
+
+`ThreeBoidPhase.run` is the other entry point and does not live in `SimTest`.
 
 `SimTest.main` is a scratch dispatcher, not an interface. `PIPELINE.md` gives the real
 invocations in order with expected numbers.
@@ -205,6 +216,8 @@ a map that has since been edited.
 | `<ingest>/audit/exits_*.tsv` | `ExitAudit` | every classified exit. **Currently unsound** |
 | `<ingest>/psyboid/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact |
 | `<ingest>/solver/facts.bin` | `SolverStore` | everything a solver may know. One per map version |
+| `render/phase<f>_<t>.png` | `ThreeBoidPhase` | the three-boid phase map, one panel per route pair |
+| `render/phase<f>_<t>-replays.tsv` | `ThreeBoidPhase` | every exit in it, with the three start states, so any cell can be flown again |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,
@@ -235,7 +248,7 @@ format diverged from it substantially: it described 25 case folders, Python, and
 | `CONTRACTS.md` | what a play area guarantees. Partly historical — see its header |
 | `BACKLOG.md` | parked work, with the reasoning for parking it. Ageing |
 | `SESSION-LOG.md` | what each session did. Append before ending |
-| `PROMPTS.md` | every prompt given about this project, deduplicated. Ends 2026-08-25 |
+| `PROMPTS.md` | every prompt given about this project. **Append yours; not required reading** |
 
 Reading order for someone picking this up: this file, then `HINTS.md` §0a, then `EDGES.md`,
 then `ROADMAP.md`.

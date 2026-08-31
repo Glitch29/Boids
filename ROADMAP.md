@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-08-29. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-08-30. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it.
 
 ---
@@ -47,15 +47,17 @@ Outstanding: the out-of-range collapse under "Cost", and the full minimal-subpat
 shortest leader path is recorded, which is minimal among those found but is not the whole
 minimal set).
 
-> **Arc `4->0` has no table under the two-model boid.** A build was killed after 2h46m of CPU
-> and 8.3 GB of a 10 GB heap without finishing — more than four times what tripling the
-> single-model 754 s would predict. Edge 4 is the worst case for admission breadth, and the
-> second model doubles the branching on top of it. **Every corpus figure so far is arcs `2->1`
-> and `5->6` only.** The out-of-range collapse below is what makes that arc runnable, not merely
-> faster.
+> **Arc `4->0` builds in 64 seconds.** It previously did not finish at all — a run was killed at
+> 2h46m and 8.3 GB — and the cause was a one-line defect rather than the problem being large:
+> `rejected` was written on every exhausted search and then only ever consulted for the
+> *starting* pair, never inside the BFS, so six million cached rejections pruned nothing and
+> every search re-expanded ground already proved barren. Reading the memo inside the loop fixed
+> it. `BUDGET` is 12M, largest component seen 2,489,608.
 >
-> `CriticalEnvelope.analyse` also emits no progress, so a long build cannot be told from a hung
-> one. Worth fixing before the next long run.
+> The lesson generalises: **a negative cache that is written and not read looks exactly like an
+> intractable problem.** `CriticalEnvelope.analyse` now reports progress every ten seconds, which
+> is what made this diagnosable — before that, a working build and a hung one were
+> indistinguishable.
 
 ### What it produces, and what it is not
 

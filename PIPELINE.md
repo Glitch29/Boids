@@ -10,9 +10,9 @@ Worked throughout on **dabeone**: 379×407 px, turning radius 40, ingest hash
 Nothing here is wired into a single entry point — steps are invoked from a driver class in the
 package. Making that unnecessary is one of this era's landmark goals.
 
-**Status:** 2026-08-28. Steps 1–10 are current. **Step 11 is unsound** — `ExitAudit` is being
-respecified, see `ROADMAP.md` §2 — and its numbers should not be relied on. Steps 12–14 were
-added 2026-08-28.
+**Status:** 2026-08-30. Steps 1-10 are current. **Step 11 was rewritten** on 2026-08-29:
+`ExitAudit` is now table lookup over `CriticalEnvelope` and the invocation below is out of date,
+though the plumbing it describes is not. Steps 12-16 were added 2026-08-28 to 30.
 
 **Terminology.** This file writes *tick* in places where it means **tau**, a state's position
 along its own edge. Canonical now: **tau** for position, **tick** for simulation time.
@@ -337,6 +337,46 @@ Three things that decide what the grade means:
   samples; the plan is the sample.
 - **Sample while the override is still running.** A scene taken only after a plan finishes
   contains no psyboid — just a boid that used to be one.
+
+---
+
+## 15. Build the critical-envelope tables, and audit a corpus against them
+
+```java
+CriticalEnvelope.pruneOutOfRangeLeaders = true;          // approximate; see ROADMAP §1
+ExitAudit.Tables tables = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        l.map(), l.edge(), l.live(), l.liveCount(),
+        new int[][]{{2, 1}, {4, 0}, {5, 6}}, flock, flock.diluted());
+SimTest.auditCorpus(preset, false, 202, 174, 191, -1, arcs, flock, flock.diluted());
+```
+
+Minutes per arc on a first call and **nothing at all afterwards** — the tables are content-
+addressed into the ingest and shared immutably, so one build serves every consumer and every
+thread. Bump `CriticalEnvelopeStore.FORMAT` whenever the meaning of a table changes.
+
+`auditCorpus` replays the plan corpus rather than plain seeds, because **a settled flock almost
+never leaves the main loop**: 553 exits from 40 plans against 15 from a comparable unsteered
+run. A psyboid is what makes exits happen.
+
+Expect on dabeone, arcs `2->1` and `5->6`: 300 under an override, 250 with a leader, 1 needing
+the diluted model, 2 unclassified. Arc `4->0` separately: 175 / 160 / 0 / 20.
+
+## 16. Map the three-boid phase space
+
+```java
+ThreeBoidPhase.run(preset, l, facts, tables, 4, 0, /*band=*/8, /*kBoid=*/8, /*kPsy=*/8,
+                   /*resolution=*/0.5, /*targetFill=*/0.9995, seed, out);
+```
+
+Where the residue lives. Two axes of phase difference — psyboid and third boid, each against the
+suspect — one panel per pair of **simple loops** from the suspect's edge back to itself. Run
+length is coverage rather than compute: it stops after `1/(1-targetFill)` consecutive attempts
+that land only on known cells, and anneals `k` to zero once on the way so that placements a
+coasting boid cannot reach still get sampled.
+
+Resolution 0.5 fills 7.05M cells to 99–100% per panel in **86 seconds**, so this is cheap to
+iterate on; 0.25 is affordable. Every exit is written with its three start states, so any cell in
+the picture can be flown again.
 
 ---
 

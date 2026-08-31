@@ -11,6 +11,38 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-30 (close) — documentation audit
+
+**Audited the root docs against what this session actually built**, rather than assuming they
+had kept up. They had not:
+
+- `ThreeBoidPhase` appeared in one document, `SolverScore` in two, `auditCorpus` in none.
+- `PIPELINE.md` still warned that step 11 was unsound; `ExitAudit` had been rebuilt the day
+  before.
+- `ROADMAP.md` still said arc `4->0` had no table; it builds in 64 s.
+- `GLOSSARY.md` was dated three days stale.
+- **`PROMPTS.md` was missing the entire session** — 22 prompts.
+
+All fixed. `EDGES.md` gained simple loops and why they are the unit that wraps; `HINTS.md`
+gained §10a on superposition, which is physics that transfers rather than bookkeeping;
+`PIPELINE.md` gained steps 15 and 16; `README.md`'s code map, artifact index and entry-point
+table now cover everything.
+
+**The durable fix is in `CLAUDE.md`**, which now carries three things it did not:
+
+1. A table of which document owns what, and the instruction to check each before ending. The
+   failure this prevents already happened once — confident, detailed docs three days out of
+   date, read and believed, and work rebuilt that existed.
+2. **The standing permissions** — commit and push to `main`, manage `.gitignore` — which had
+   been granted mid-session and lived only in memory, where a fresh session would not see them.
+3. `PROMPTS.md` is append-only and **not required reading**; its own header now says so, and
+   that sessions append live because the transcript does not exist until the session ends.
+
+Every document now carries a dated `**Status:**` line, and a doc older than the last session is
+explicitly one to distrust.
+
+---
+
 ## 2026-08-30 — phase map: target fill, replayability, and two claims tested
 
 **Changed.** Diluted is magenta rather than a brown indistinguishable from psyboid-amber. The

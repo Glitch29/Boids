@@ -224,6 +224,31 @@ independent evidence.
 **A route is a series of edges.** That is the whole representation. Positions along it come
 from tau plus the accumulated lengths of everything crossed.
 
+### Simple loops, and why they are the unit that wraps
+
+**There is no single lap length on a dab-like map** — how long a lap takes depends which way the
+boid went round. So there is nothing to take a phase difference modulo, and a phase relationship
+measured against "a lap" appears once per possible lap rather than once.
+
+A **simple loop** fixes that: a cycle from an edge back to itself with no edge repeated. It has
+one unambiguous length, so a phase difference wraps cleanly against it. Simple meaning *no
+repeats* is load-bearing — a route that revisited an edge would offer two offsets for the same
+state, and the coordinate would stop being a function.
+
+Dabeone has exactly three from edge 4, enumerated by `ThreeBoidPhase.loops`:
+
+| loop | length |
+| --- | --- |
+| `[4, 0, 3, 5, 8]` | 528.19 |
+| `[4, 2, 1, 5, 8]` | 528.30 |
+| `[4, 2, 7]` | 275.29 |
+
+The two exit loops agreeing to **0.11 ticks** is a free correctness check of the same kind as
+inverse edge pairs: nothing in the clock's fit knows they are near-mirrors.
+
+**Edge 6 lies on no simple loop**, which is correct and useful — it is reachable only during
+warmup, and anything keyed on loops drops it without needing to special-case it.
+
 On dabeone the only unsteered cycle is `2 → 7 → 4 → 2`, with an exit branching off edges 4 and
 2. Everything else on the map is reached by taking one of those exits.
 
