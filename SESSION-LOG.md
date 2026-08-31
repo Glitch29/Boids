@@ -107,6 +107,45 @@ unbuilt.
 `unrecoverable` is package-visible now so the diagnostic can report the real prune rather than a
 copy of it.
 
+**Then: stable+, specified by the user and built behind an interface.** The point: admission
+terminates on *settled*, which is what a boid **alone** can hold, and no boid in a scene is alone.
+`StateSet` is the algebra (`partialTick`, `closed`, `expandByAgreement`), `MapStates` binds it to
+a map and supplies `pureStable` and the straight-travel cycles. Interface first because the
+definition is expected to change.
+
+`pureStable(1)` on dabeone is **278 states in exactly one loop** — the user predicted one to four
+— covering edges 2:96, 4:93, 7:89, which is one lap of `2 → 7 → 4 → 2`. Its 278 ticks sit against
+the clock's independently fitted 275.29 for loop `[4, 2, 7]`. `.partialTick.closed` takes it to
+**1,610**.
+
+Ratio sweep, `expandByAgreement(pureStable(1), r)`:
+
+| ratio | quorum | states | edges |
+| --- | --- | --- | --- |
+| 2, 4 | 139, 69 | 1,610 (no growth) | 2, 4, 7 |
+| 8 | 34 | 7,044 | 2, 4, 7 |
+| 14 | 19 | 13,322 | 2, 4, 7 |
+| **16** | **17** | **13,624** | **2, 4, 7** |
+| 18 | 15 | 14,687 | + 0, 3, 5, 8 |
+| 20 | 13 | 15,382 | + 0, 1, 3, 5, 8 |
+
+**16 is the largest ratio that adds no edge, and 18 leaks onto four at once** — a sharp boundary,
+so the user's own criterion picks the parameter rather than a taste call. The ratio-8 guess works
+in the sense that it stays on {2, 4, 7}, but it is too strict to matter for `R20`.
+
+**And it settles `R20`.** At ratio 16 the suspect is on stable+ through tick 13, off 14–24, back
+on **25–41**, off for the last four. The window a leader must cover becomes **41–45 rather than
+13–45**, and the psyboid alone covers all five, every one demanding. `R20` is a **one-leader
+exit** once stable+ is the ground, with the leader on **edge 2**. At ratio 8 it is not — the path
+is still last on stable+ at tick 13, so 8 is a false negative here.
+
+Measured on the flown history only. Making it a classification means giving
+`CriticalEnvelope.admit` stable+ instead of `settled` as its terminal set, which is not done.
+
+Also settled a detail of the user's description: the two neighbours are on **edge 7** (the one
+that knocks the suspect off stable at tick 13) and **edge 2** (the leader, 41–45). Neither is on
+edge 3.
+
 ---
 
 ## 2026-08-30 (close, later still) — HAPPY.md

@@ -119,7 +119,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 42 files.
+One package, `src/boids`, 46 files.
 
 **Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
 the single definition of what a boid perceives) · `Boids2DEngine` (one tick in index order,
@@ -137,6 +137,10 @@ kernel, successors, predecessors, the veto).
 **Critical envelope** — `CriticalEnvelope` (the envelope, settled states, admitted pairings),
 stored by `CriticalEnvelopeStore` · `EdgeInfluence` (`steer`, the single-neighbour closed form) ·
 `EdgeSlice` (bands at a fixed tau) · `Flocking` (constants as an argument, and `diluted()`).
+
+**State sets** — `StateSet` (the algebra: `partialTick`, `closed`, `expandByAgreement`) ·
+`MapStates` (that algebra bound to one map, plus `pureStable` and the straight-travel cycles).
+Behind an interface because stable+ is not yet defined and is expected to change.
 
 **Exhaustive and sampled** — `TwoBoid` (all reachable two-boid arrangements) ·
 `ThreeBoidPhase` (three-boid arrangements sampled and mapped by phase difference, since three
@@ -188,6 +192,8 @@ ways → 6 edges.
 | `renderUnexplained` | draw every exit nothing accounts for, with its influence decomposition |
 | `steeringHistory` | per tick, what *every* neighbour accounts for — finds multi-leader histories |
 | `renderTick` | one exit at whole-map scale, for structural rather than influence questions |
+| `stablePlus` | the map-wide stable set and what agreement expands it to, per edge |
+| `stablePlusSweep` | the same over a range of agreement ratios, against one flown path |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` is the per-region counterpart of

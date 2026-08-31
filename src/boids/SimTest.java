@@ -3089,6 +3089,114 @@ picks, never in what is available to it.
         System.out.println("no plan in the corpus holds that crossing");
     }
 
+    /**
+     * The map-wide stable set, its straight-travel loops, and what agreement expands it to.
+     * <p>
+     * The test this is here to run: stable+ should be <b>larger</b> than stable, because ordinary
+     * traffic does knock boids off the states a lone boid holds, and should reach <b>no new
+     * edges</b>, because an edge only reachable once jostling is allowed is a route rather than a
+     * wobble — and a route is precisely what the solver is supposed to find remarkable.
+     */
+    /**
+     * The same, over a range of agreement ratios, against one flown path.
+     * <p>
+     * The ratio is the only free parameter in stable+ and there is no principle fixing it, so the
+     * thing to look at is where the set stops growing gracefully. Two numbers say that: the
+     * <b>edges</b> it reaches, which must not grow at all, and how far along a real approach the
+     * boid is still on ordinary ground, which is what decides whether an exit has a single-leader
+     * account.
+     */
+    public static void stablePlusSweep(PresetScenarioParameter preset, Labelling l, SolverFacts f,
+                                       Flocking flock, int[] ratios, int[] path) {
+        MapStates m = MapStates.of(l.map(), flock, l.live(), l.liveCount());
+        StateSet pure = m.pureStable(1);
+        StateSet stable = pure.partialTick(StateSet.Steering.STRAIGHT)
+                .closed(StateSet.Steering.STRAIGHT);
+
+        System.out.printf("%n=== %s @%s: stable+ against the agreement ratio ===%n",
+                preset.name(), preset.ingest().hash());
+        System.out.printf("pureStable(1) %,d, stable %,d, path %d ticks%n", pure.size(),
+                stable.size(), path.length);
+        System.out.printf("%n%6s %8s %10s %8s %9s   %s%n", "ratio", "quorum", "states",
+                "vs stable", "last tick", "edges");
+        for (int r : ratios) {
+            StateSet plus = stable.expandByAgreement(pure, r);
+            int last = -1;
+            for (int t = 0; t < path.length; t++) if (plus.contains(path[t])) last = t;
+            boolean[] had = new boolean[f.edges()];
+            for (int s : stable.toArray()) if (l.edge()[s] >= 0) had[l.edge()[s]] = true;
+            StringBuilder added = new StringBuilder();
+            for (int s : plus.toArray()) {
+                int e = l.edge()[s];
+                if (e >= 0 && !had[e]) { had[e] = true; added.append(" +").append(e); }
+            }
+            StringBuilder on = new StringBuilder();
+            for (int t = 0; t < path.length; t++) on.append(plus.contains(path[t]) ? '#' : '.');
+            System.out.printf("%6d %8d %,10d %8.1fx %9d   %s%s%n", r, pure.size() / r,
+                    plus.size(), plus.size() / (double) stable.size(), last,
+                    MapStates.byEdge(plus, l.edge(), f.edges()), added);
+            System.out.printf("       path tick 0..%d on stable+: %s%n", path.length - 1, on);
+        }
+
+        // What the path itself asks for, tick by tick, so the ratio is chosen from the geometry
+        // rather than from a sweep.
+        System.out.printf("%n%6s %8s %8s   of %d influencers%n", "tick", "ask left", "ask right",
+                pure.size());
+        for (int t = 0; t < path.length; t++) {
+            int[] a = m.agreement(pure, path[t]);
+            System.out.printf("%6d %8d %8d   left needs ratio <= %s, right <= %s%n", t, a[0],
+                    a[1], a[0] == 0 ? "-" : String.valueOf(a[2] / a[0]),
+                    a[1] == 0 ? "-" : String.valueOf(a[2] / a[1]));
+        }
+    }
+
+    public static StateSet stablePlus(PresetScenarioParameter preset, Labelling l, SolverFacts f,
+                                      Flocking flock, int agreementRatio) {
+        MapStates m = MapStates.of(l.map(), flock, l.live(), l.liveCount());
+        System.out.printf("%n=== %s @%s: map-wide stable and stable+ ===%n", preset.name(),
+                preset.ingest().hash());
+
+        long t0 = System.nanoTime();
+        StateSet pure = m.pureStable(1);
+        java.util.List<int[]> loops = m.cycles(pure);
+        System.out.printf("pureStable(1)              %,8d states in %.1fs%n", pure.size(),
+                (System.nanoTime() - t0) / 1e9);
+        System.out.printf("  %d straight-travel loops, lengths %s (speed %.2f)%n", loops.size(),
+                loops.stream().map(a -> String.format("%,d", a.length)).toList(),
+                Params.speed(preset.turningRadius()));
+        System.out.printf("  edges  %s%n", MapStates.byEdge(pure, l.edge(), f.edges()));
+
+        t0 = System.nanoTime();
+        StateSet stable = pure.partialTick(StateSet.Steering.STRAIGHT)
+                .closed(StateSet.Steering.STRAIGHT);
+        System.out.printf("%n.partialTick.closed        %,8d states in %.1fs  (x%.1f)%n",
+                stable.size(), (System.nanoTime() - t0) / 1e9,
+                stable.size() / (double) pure.size());
+        System.out.printf("  edges  %s%n", MapStates.byEdge(stable, l.edge(), f.edges()));
+
+        t0 = System.nanoTime();
+        StateSet plus = stable.expandByAgreement(pure, agreementRatio);
+        System.out.printf("%n.expandByAgreement(pure,%d) %,8d states in %.1fs  (x%.1f)%n",
+                agreementRatio, plus.size(), (System.nanoTime() - t0) / 1e9,
+                plus.size() / (double) stable.size());
+        System.out.printf("  edges  %s%n", MapStates.byEdge(plus, l.edge(), f.edges()));
+        System.out.printf("  %d turns hit the cap instead of ending%n", m.capped());
+
+        // The headline test, stated as the two things that could go wrong.
+        StateSet fresh = plus.minus(stable);
+        boolean[] had = new boolean[f.edges()], now = new boolean[f.edges()];
+        for (int s : stable.toArray()) if (l.edge()[s] >= 0) had[l.edge()[s]] = true;
+        for (int s : plus.toArray()) if (l.edge()[s] >= 0) now[l.edge()[s]] = true;
+        java.util.List<Integer> added = new ArrayList<>();
+        for (int e = 0; e < f.edges(); e++) if (now[e] && !had[e]) added.add(e);
+        System.out.printf("%n%,d states added over stable; new edges reached: %s%n", fresh.size(),
+                added.isEmpty() ? "NONE — stable+ stays on the edges stable already touched"
+                        : added.toString());
+        System.out.printf("  the added states lie on  %s%n",
+                MapStates.byEdge(fresh, l.edge(), f.edges()));
+        return plus;
+    }
+
     public static void main(String[] args) throws IOException {
         // Output goes inside the map's own ingest, so a route trace or an edge map can
         // never be read against a dabnt that has been edited since it was produced.
@@ -3106,9 +3214,13 @@ picks, never in what is available to it.
         Labelling lab = label(p, false, 202, 174, 191, -1);
         ExitAudit.Tables tabs = ExitAudit.Tables.of(p.ingest().outputDir("envelope"), lab.map(),
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
+        int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
+                Path.of("render", "phase40-replays.tsv"));
+        stablePlusSweep(p, lab, facts, f, new int[]{8, 12, 14, 16, 18, 20, 24, 28, 32}, path);
+        StateSet plus = stablePlus(p, lab, facts, f, 16);
         ThreeBoidSamples.explain(p, lab, facts, tabs, 4, 0, /*route=*/2, /*otherRoute=*/1,
                 /*cell=*/158, 255, Path.of("render", "phase40-replays.tsv"), f, f.diluted(),
-                Path.of("render", "phase40-R20-approach.png"));
+                plus, null);
         if (true) return;
     }
 

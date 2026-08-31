@@ -626,6 +626,33 @@ Free ticks never break a negative result, because they only ever *add* coverage;
 fails to cover the window when free ticks are counted in its favour has certainly failed. They
 break positive ones, and the handover rule is a positive one.
 
+
+## 10b. Straight travel collapses almost everything into one orbit
+
+Measured 2026-08-30 on dabeone. Straight steering is a *function* on live states — one successor
+each — so its graph is rho-shaped: every trajectory runs into a cycle and stays there. The union
+of those cycles is small in a way worth knowing about.
+
+**Of 136,276 live states, 278 lie on a straight-travel cycle, and they form a single loop.** Not
+one loop per phase of the step lattice, as the four-pixel step would suggest; one. The veto is
+what does it — a request it refuses snaps two trajectories that were a pixel apart onto the same
+state, and after enough wall-following everything has been merged. That is the same phenomenon as
+offset lock seen from the other side.
+
+Two consequences:
+
+- **A lone boid on a dab-like map has almost no long-run freedom.** Whatever it starts as, it is
+  on one of 278 states within a few laps. Anything a scene shows that is not on or near that orbit
+  is evidence that something else is in the picture — which is the whole basis of the
+  requires-explanation test, now stated map-wide rather than per edge.
+- **A free correctness check.** The loop is 278 states, so one lap is 278 ticks; the clock,
+  fitted independently, gives 275.29 ticks for the simple loop `[4, 2, 7]` over the same edges.
+  Two measurements that know nothing about each other, agreeing to 1%.
+
+The set only becomes usable after **one partial tick** — turn as the rules say, advance partway,
+land on the samples the collision test walks — which takes it from 278 to 1,610. Without that it
+is a measure-zero curve that no boid knocked sideways by a pixel is ever on again.
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.

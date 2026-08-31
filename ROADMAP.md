@@ -109,6 +109,75 @@ inside `rFlock` and the third boid goes out. Whether admission would have found 
 psyboid with the prune off is untested, and testing it needs the exact out-of-range collapse §1
 lists as unbuilt.
 
+
+### Stable+ — the ground a history has to reach
+
+Specified by the user 2026-08-30, first implementation the same day, **behind an interface
+because it is expected to change**: `StateSet` (the operations) and `MapStates` (the algebra bound
+to a map), driven by `SimTest.stablePlus` and `SimTest.stablePlusSweep`.
+
+**The problem it solves.** Admission terminates when the exiting boid's history reaches a
+*settled* state, and settled is what a boid **alone** can hold. No boid in a scene is alone. The
+flock knocks everyone slightly off it constantly, without any of that needing a psyboid or
+anything unusual, so a history that merely starts a little off stable is treated as unexplained
+when it should not be. Stable+ names the states ordinary multi-boid traffic reaches.
+
+**The chain**, exactly as specified:
+
+```java
+StateSet stable = pureStable(1).partialTick(STRAIGHT).closed(STRAIGHT);
+StateSet plus   = stable.expandByAgreement(pureStable(1), agreementRatio);
+```
+
+**Measured on dabeone `609cffdb84be218c`:**
+
+| set | states | edges touched |
+| --- | --- | --- |
+| `pureStable(1)` | **278**, in exactly **one** straight-travel loop | 2:96 4:93 7:89 |
+| `.partialTick.closed` — map-wide stable | **1,610** | 2:567 4:560 7:483 |
+| `.expandByAgreement(pure, 16)` | **13,624** (8.5×) | 2:5,768 4:2,573 7:5,283 |
+
+One loop rather than the predicted one-to-four, and its 278 ticks sit against the clock's 275.29
+for loop `[4, 2, 7]` — two measurements that know nothing about each other agreeing to 1%.
+
+**The ratio is fixed by the edges, and the boundary is sharp.** Stable+ must be bigger than
+stable and must reach no new edge; an edge reachable only once jostling is allowed is a route, not
+a wobble, and a route is what the solver is supposed to find remarkable.
+
+| ratio | quorum | states | edges |
+| --- | --- | --- | --- |
+| 8 | 34 | 7,044 | 2, 4, 7 |
+| 14 | 19 | 13,322 | 2, 4, 7 |
+| **16** | **17** | **13,624** | **2, 4, 7** |
+| 18 | 15 | 14,687 | **+ 0, 3, 5, 8** |
+| 20 | 13 | 15,382 | + 0, 1, 3, 5, 8 |
+
+**16 is the largest ratio that adds no edge**, and 18 leaks onto four at once. Ratios 2 and 4
+expand nothing at all — no state has 69 of the 278 placements agreeing.
+
+### It settles `R20`
+
+At ratio 16 the suspect is on stable+ through tick 13, off it 14–24, **back on it 25–41**, and off
+for the last four ticks as it is steered onto the envelope. So the window a leader must cover is
+**41–45, not 13–45** — and the psyboid alone covers all five ticks, every one of them demanding.
+
+> **`R20` is a one-leader exit once stable+ is the ground**, with the leader on **edge 2**. At
+> ratio 8 it is not: the set is 4.4× stable but the path is still last on it at tick 13, so 8 was
+> a false negative here and 14 is the smallest ratio tested that flips it.
+
+⚠ **Measured on the flown history only.** Admission explores every backward pair chain, not one
+witness, so turning this into a classification means giving `CriticalEnvelope.admit` stable+ as
+its terminal set instead of `settled`. That has **not** been done — what is shown is that the
+witness exists.
+
+**Open on the definition itself:**
+
+- `pureStable(n)`'s argument is read here as **how many boids are in play**, which is the reading
+  that makes "all the states a boid could end up in on a map by itself" true. Unconfirmed.
+- The ratio is chosen on one map and one arc. Whether 16 is a dabeone number or a general one is
+  untested.
+- Nothing yet applies stable+ to the other nineteen regions, or to the corpus.
+
 ---
 
 ## 1. Critical-envelope analysis — redesign — **priority one**

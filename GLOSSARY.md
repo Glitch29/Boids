@@ -289,6 +289,36 @@ representative is the cell nearest the region's centroid whose recorded account 
 the region was painted over — nearest-the-middle because a region shades into its neighbours at
 the edge, and a sample taken there would be a picture of the boundary.
 
+
+**map-wide stable** — the states a boid **alone** can end up in: the states straight travel
+returns to itself, plus all their partial-tick straight successors, closed under straight travel.
+`MapStates.pureStable(1).partialTick(STRAIGHT).closed(STRAIGHT)`. The map-wide counterpart of the
+per-edge *stable edge*, which took the closure from every way into the edge instead. On dabeone:
+**1,610 states, on edges 2, 4 and 7** — exactly the unsteered cycle.
+
+**pureStable(n)** — the states straight travel returns to themselves. Straight travel is a
+function, so its graph is rho-shaped and this is the union of its cycles. `n` is how many boids
+are in play and **only `pureStable(1)` is defined**. On dabeone it is **one cycle of 278 states**,
+96 on edge 2, 93 on edge 4, 89 on edge 7 — one lap of `2 → 7 → 4 → 2`, and 278 ticks against the
+clock's 275.29 for the same loop, which nothing in either knows about the other.
+
+**stable+** — a genre, not yet a definition: the states a boid reaches in **ordinary multi-boid
+traffic**, visited without psyboid activity or abnormal circumstances. Wanted because *stable* is
+what a lone boid holds and no boid in a scene is alone — the flock knocks everyone slightly off it
+constantly — so a history that merely starts a little off stable should not thereby be
+unexplained. Built by `StateSet.expandByAgreement`. **Under construction; expect the definition to
+change.**
+
+**agreement ratio** — the one free parameter in stable+. A turn is admitted into the set when
+`|influencers| / ratio` of the influencer placements would induce it, so a turn only one contrived
+position produces is refused while one a broad swathe of ordinary traffic produces is not. **A
+larger ratio is a weaker requirement**, since it is a divisor. Chosen by the edges it reaches: on
+dabeone `4->0`, **16 is the largest ratio that adds no new edge**, and 18 leaks onto four.
+
+**influencers** — the set of places the other boid may be, when expanding by agreement. Must be
+closed under straight travel, because the coalition is carried forward by coasting.
+`pureStable(1)` is the first choice.
+
 **two-model boid** — the exiting boid in critical-envelope analysis picks the true constants or
 the diluted model **independently on every tick**, at the entry and throughout its history. A
 history in which the crowd tipped one decision and not the next is then expressible, where a
@@ -368,6 +398,7 @@ anything not listed.
 | three-boid phase map | `ThreeBoidPhase` | `render/phase<f>_<t>.png` |
 | region overlay | hand | `analysis/3BoidAreasOfInterest.png` |
 | region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
+| map-wide stable, stable+ | `StateSet` + `MapStates`, driven by `SimTest.stablePlus` | — |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |

@@ -406,6 +406,65 @@ public final class ThreeBoidSamples {
     // ---- why one region's exit has no account ---------------------------------
 
     /**
+     * The suspect's state at every tick from the start of a sampled trial to its envelope entry.
+     * <p>
+     * Separate from {@link #explain} because the interesting question about a definition of
+     * "ordinary ground" is which of these states it contains, and answering that for a dozen
+     * candidate definitions should not mean flying the arrangement a dozen times.
+     */
+    public static int[] suspectPath(PresetScenarioParameter preset, SolverFacts f,
+                                    ExitAudit.Tables tables, int from, int route, int otherRoute,
+                                    int cellX, int cellY, Path replays) throws IOException {
+        int key = panelKey(route, otherRoute, cellX << 11 | cellY);
+        Row row = rows(replays, java.util.Set.of(key)).get(key);
+        if (row == null) return new int[0];
+        NavMap map = tables.map();
+        PsyboidOverride[] overrides = row.overridden()
+                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                : new PsyboidOverride[0];
+        int[] xs = {x(map, row.psy()), x(map, row.other()), x(map, row.suspect())};
+        int[] ys = {y(map, row.psy()), y(map, row.other()), y(map, row.suspect())};
+        int[] hs = {h(row.psy()), h(row.other()), h(row.suspect())};
+
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        ExitAudit audit = new ExitAudit(tables, overrides);
+        audit.reset(3, overrides);
+        engine.trace(audit);
+        Sim.State s = new Sim.State(3, xs, ys, hs, 0, 0, new long[3], "path", overrides);
+        try {
+            for (int t = 0; t < PATIENCE; t++) {
+                s = engine.tick(s);
+                if (f.edgeAt(s.x[SUSPECT], s.y[SUSPECT], s.h[SUSPECT]) != from) break;
+            }
+        } finally {
+            engine.trace(null);
+        }
+        ExitAudit.Exit exit = null;
+        for (ExitAudit.Exit e : audit.exits()) {
+            if (e.suspect() == SUSPECT && e.fromEdge() == from) exit = e;
+        }
+        if (exit == null) return new int[0];
+
+        long entry = exit.entryTick();
+        int[] path = new int[(int) entry + 1];
+        Boids2DEngine.Trace recorder = (tick, i, boids, want) -> {
+            if (i != SUSPECT || tick > entry) return;
+            path[(int) tick] = map.index(boids.x()[i], boids.y()[i], boids.h()[i]);
+        };
+        engine.trace(recorder);
+        s = new Sim.State(3, xs, ys, hs, 0, 0, new long[3], "path", overrides);
+        try {
+            for (int t = 0; t < PATIENCE; t++) {
+                s = engine.tick(s);
+                if (f.edgeAt(s.x[SUSPECT], s.y[SUSPECT], s.h[SUSPECT]) != from) break;
+            }
+        } finally {
+            engine.trace(null);
+        }
+        return path;
+    }
+
+    /**
      * The whole approach to one sampled exit, tick by tick, and what the tables make of it.
      * <p>
      * The sheet says an exit has no account. This says <em>where the account was lost</em>, which
@@ -422,7 +481,8 @@ public final class ThreeBoidSamples {
     public static void explain(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
                                ExitAudit.Tables tables, int from, int keep, int route,
                                int otherRoute, int cellX, int cellY, Path replays,
-                               Flocking normal, Flocking alt, Path out) throws IOException {
+                               Flocking normal, Flocking alt, StateSet ground, Path out)
+            throws IOException {
         NavMap map = l.map();
         boolean[] settled = CriticalEnvelope.settled(map, l.edge(), l.live(), l.liveCount(), from);
         Set<Integer> one = Set.of(panelKey(route, otherRoute, cellX << 11 | cellY));
@@ -478,13 +538,13 @@ public final class ThreeBoidSamples {
         boolean[][] holds = new boolean[3][(int) entry + 1];
         boolean[] demands = new boolean[(int) entry + 1];
         int[][] frames = new int[(int) entry + 1][];
-        long[] lastSettled = {-1};
+        long[] lastSettled = {-1}, lastGround = {-1};
         int[] ticks = {0};
         double speed = Params.speed(map.radius());
-        System.out.printf("%n%6s %5s %6s %5s %8s %9s  %-8s", "tick", "want", "actual", "edge",
-                "settled", "leader?", "accounts");
+        System.out.printf("%n%6s %5s %6s %5s %8s %8s %9s  %-8s", "tick", "want", "actual", "edge",
+                "settled", "stable+", "leader?", "accounts");
         for (int j = 0; j < 3; j++) {
-            if (j != SUSPECT) System.out.printf("   %-26s", "boid " + j + "  d/dil dist prune");
+            if (j != SUSPECT) System.out.printf("   %-30s", "boid " + j + " d/dil dist edge prune");
         }
         System.out.println();
 
@@ -501,6 +561,8 @@ public final class ThreeBoidSamples {
             // and must not be counted as coverage.
             demands[(int) tick] = map.successor(state, 0) != went;
             if (settled[state]) lastSettled[0] = tick;
+            boolean onGround = ground != null && ground.contains(state);
+            if (onGround) lastGround[0] = tick;
             frames[(int) tick] = new int[]{boids.x()[0], boids.y()[0], boids.h()[0],
                     boids.x()[1], boids.y()[1], boids.h()[1], bx, by, bd};
             StringBuilder cells = new StringBuilder(), who = new StringBuilder();
@@ -514,12 +576,13 @@ public final class ThreeBoidSamples {
                 boolean cut = CriticalEnvelope.unrecoverable(dx, dy, bd, lh, normal, speed);
                 holds[j][(int) tick] = ok;
                 if (ok) who.append(who.isEmpty() ? "" : ",").append(j);
-                cells.append(String.format("   %+2d/%+2d %5.0f %5s", p1, p2,
-                        Math.hypot(dx, dy), cut ? "CUT" : ""));
+                cells.append(String.format("   %+2d/%+2d %5.0f %4d %5s", p1, p2,
+                        Math.hypot(dx, dy), l.edge()[map.index(lx, ly, lh)], cut ? "CUT" : ""));
             }
-            System.out.printf("%6d %+5d %+6d %5d %8s %9s  %-8s%s%s%n", tick, want,
+            System.out.printf("%6d %+5d %+6d %5d %8s %8s %9s  %-8s%s%s%n", tick, want,
                     map.constrainTurn(bx, by, bd, want), l.edge()[state],
-                    settled[state] ? "yes" : "", demands[(int) tick] ? "DEMANDS" : "free",
+                    settled[state] ? "yes" : "", onGround ? "yes" : "",
+                    demands[(int) tick] ? "DEMANDS" : "free",
                     who.isEmpty() ? "NOBODY" : "{" + who + "}",
                     cells, tick == entry ? "   ENTERS" : "");
         };
@@ -593,6 +656,37 @@ public final class ThreeBoidSamples {
         System.out.printf("  %d demanding ticks admit both, so the handover window on the ticks "
                 + "that matter is %s%n", overlap,
                 overlap == 0 ? "EMPTY -- the two coverages do not touch" : "non-empty");
+
+        // The same question with stable+ as the ground a history has to reach. If ordinary
+        // traffic can leave a boid there, a chain back to it is a complete account, and a window
+        // that no single leader could cover from settled ground may be covered from here.
+        if (ground != null) {
+            int glo = (int) lastGround[0];
+            System.out.printf("%nwith stable+ as the ground: last on it at tick %d, so the window "
+                    + "is %d..%d (%d ticks)%n", glo, glo, hi, hi - glo + 1);
+            if (glo < 0) {
+                System.out.println("  never on stable+ -- this arrangement is not reachable that "
+                        + "way and the question does not arise");
+            } else {
+                boolean covered = false;
+                for (int j = 0; j < 3; j++) {
+                    if (j == SUSPECT) continue;
+                    int held = 0, onDemanding = 0;
+                    for (int t = glo; t <= hi; t++) {
+                        if (holds[j][t]) held++;
+                        if (demands[t]) onDemanding++;
+                    }
+                    boolean all = held == hi - glo + 1;
+                    covered |= all;
+                    System.out.printf("  boid %d holds %d of %d (%d of them demanding)%s%n", j,
+                            held, hi - glo + 1, onDemanding, all ? "  <-- covers the whole window" : "");
+                }
+                System.out.printf("  %s%n", covered
+                        ? "A SINGLE LEADER COVERS IT from stable+ -- this is a one-leader exit "
+                                + "once stable+ is the ground"
+                        : "still no single leader, even from stable+");
+            }
+        }
 
         if (out != null) {
             // Four moments, because the finding is a sequence rather than a state: the last tick
