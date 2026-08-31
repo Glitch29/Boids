@@ -34,6 +34,28 @@ public final class ExitRender {
     private static final int TEXT = 0xF0F3F8;
     private static final int SHADE = 0x0E1116;
 
+    /** Height of the caption band above the arrangement. */
+    private static final int HEADER = 74;
+
+    /**
+     * Where a map pixel lands in the picture {@link #image} returns.
+     * <p>
+     * Published so that a caller assembling several of these can annotate the arrangement — put
+     * a marker on a particular boid, say — without restating the crop arithmetic. It depends on
+     * nothing but the suspect's position, the flocking radius and the scale.
+     */
+    public record Frame(int left, int top, int scale, int header) {
+        public int px(int mapX) { return (mapX - left) * scale + scale / 2; }
+
+        public int py(int mapY) { return (mapY - top) * scale + scale / 2 + header; }
+    }
+
+    /** The crop {@link #image} will take for a suspect standing at {@code (x, y)}. */
+    public static Frame frame(int x, int y, double turningRadius, int scale) {
+        int margin = (int) Math.ceil(Params.flock(turningRadius)) + 24;
+        return new Frame(x - margin, y - margin, scale, HEADER);
+    }
+
     /**
      * @param background the play area to draw over; only its pixels are used, so the display
      *                   copy is the right one rather than the frozen physics map
@@ -42,6 +64,20 @@ public final class ExitRender {
     public static void write(Path background, Path out, ExitAudit.Exit e, int[] x, int[] y,
                              int[] h, int n, MovementLogic rules, double turningRadius,
                              int scale) throws IOException {
+        BufferedImage img = image(background, e, x, y, h, n, rules, turningRadius, scale);
+        if (out.getParent() != null) Files.createDirectories(out.getParent());
+        ImageIO.write(img, "png", out.toFile());
+    }
+
+    /**
+     * The same picture, handed back rather than written.
+     * <p>
+     * Split out so a caller assembling several of these into one sheet does not have to write
+     * each to disk and read it back. {@link #write} is this plus a file.
+     */
+    public static BufferedImage image(Path background, ExitAudit.Exit e, int[] x, int[] y,
+                                      int[] h, int n, MovementLogic rules, double turningRadius,
+                                      int scale) throws IOException {
         double rSep = Params.separation(turningRadius);
         double rFlock = Params.flock(turningRadius);
         // The suspect is read out of the arrangement rather than off the exit, because an exit
@@ -50,11 +86,12 @@ public final class ExitRender {
         final int ex = x[e.suspect()], ey = y[e.suspect()], eh = h[e.suspect()];
         BufferedImage map = ImageIO.read(background.toFile());
 
+        Frame frame = frame(ex, ey, turningRadius, scale);
         int margin = (int) Math.ceil(rFlock) + 24;
-        int left = ex - margin, top = ey - margin;
+        int left = frame.left(), top = frame.top();
         int span = margin * 2 + 1;
 
-        BufferedImage img = new BufferedImage(span * scale, span * scale + 74,
+        BufferedImage img = new BufferedImage(span * scale, span * scale + HEADER,
                 BufferedImage.TYPE_INT_RGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -72,11 +109,11 @@ public final class ExitRender {
                 int dim = ((rgb >> 16 & 255) * 45 / 100) << 16
                         | ((rgb >> 8 & 255) * 45 / 100) << 8 | (rgb & 255) * 45 / 100;
                 g.setColor(new Color(dim));
-                g.fillRect(px * scale, py * scale + 74, scale, scale);
+                g.fillRect(px * scale, py * scale + HEADER, scale, scale);
             }
         }
 
-        int cx = (ex - left) * scale + scale / 2, cy = (ey - top) * scale + scale / 2 + 74;
+        int cx = frame.px(ex), cy = frame.py(ey);
 
         g.setStroke(new BasicStroke(1.5f));
         ring(g, cx, cy, rSep * scale, SEP_RING);
@@ -97,7 +134,7 @@ public final class ExitRender {
         for (int j = 0; j < n; j++) {
             if (j == e.suspect()) continue;
             boolean seen = rules.perceived(ex, ey, eh, x[j], y[j]) >= 0;
-            boid(g, (x[j] - left) * scale + scale / 2, (y[j] - top) * scale + scale / 2 + 74,
+            boid(g, frame.px(x[j]), frame.py(y[j]),
                     h[j], seen ? VISIBLE : UNSEEN, scale, String.valueOf(j));
         }
         boid(g, cx, cy, eh, SUSPECT, scale, String.valueOf(e.suspect()));
@@ -115,9 +152,7 @@ public final class ExitRender {
                         + "   |  red ring = separation %.0f, blue = flocking %.0f, blue rays"
                         + " = blind arc", e.seen(), e.reasons().size(), rSep, rFlock), 10, 58);
         g.dispose();
-
-        if (out.getParent() != null) Files.createDirectories(out.getParent());
-        ImageIO.write(img, "png", out.toFile());
+        return img;
     }
 
     private static void ring(Graphics2D g, int cx, int cy, double r, int rgb) {

@@ -568,7 +568,7 @@ public final class CriticalEnvelope {
      * headings, give or take pixel rounding and the small-angle assumption, not a proof about
      * their history. The exact treatment is the out-of-range collapse in {@code ROADMAP.md}.
      */
-    private static boolean unrecoverable(int dx, int dy, int boidHeading, int leaderHeading,
+    static boolean unrecoverable(int dx, int dy, int boidHeading, int leaderHeading,
                                          Flocking f, double speed) {
         double dist2 = (double) dx * dx + (double) dy * dy;
         if (dist2 <= f.rFlock() * f.rFlock()) return false;

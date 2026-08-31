@@ -10,9 +10,9 @@ Worked throughout on **dabeone**: 379×407 px, turning radius 40, ingest hash
 Nothing here is wired into a single entry point — steps are invoked from a driver class in the
 package. Making that unnecessary is one of this era's landmark goals.
 
-**Status:** 2026-08-30. Steps 1-10 are current. **Step 11 was rewritten** on 2026-08-29:
+**Status:** 2026-08-30 (later). Steps 1-10 are current. **Step 11 was rewritten** on 2026-08-29:
 `ExitAudit` is now table lookup over `CriticalEnvelope` and the invocation below is out of date,
-though the plumbing it describes is not. Steps 12-16 were added 2026-08-28 to 30.
+though the plumbing it describes is not. Steps 12-17 were added 2026-08-28 to 30.
 
 **Terminology.** This file writes *tick* in places where it means **tau**, a state's position
 along its own edge. Canonical now: **tau** for position, **tick** for simulation time.
@@ -377,6 +377,49 @@ coasting boid cannot reach still get sampled.
 Resolution 0.5 fills 7.05M cells to 99–100% per panel in **86 seconds**, so this is cheap to
 iterate on; 0.25 is affordable. Every exit is written with its three start states, so any cell in
 the picture can be flown again.
+
+## 17. Sample the marked regions of the phase map
+
+```java
+ThreeBoidSamples.run(preset, facts, tables, 4, 0, /*resolution=*/0.5,
+                     Path.of("analysis", "3BoidAreasOfInterest.png"),
+                     Path.of("render", "phase40.png"),
+                     Path.of("render", "phase40-replays.tsv"),
+                     /*columns=*/4, /*scale=*/2, out);
+```
+
+**A human marks the regions first.** Open the phase map, paint each distinct feature over in
+**rose `#FFAEC9`**, and paint **green `#22B14C`** over any region believed to hold more than one
+behaviour. Save it beside the original, not over it — the overlay is an input and is versioned;
+`render/` is not.
+
+Then this reads the two pictures, recovers each painted patch as a connected component (joining
+cells within 6 of each other, since paint lands only on cells of the class being marked and those
+are dithered), picks the cell nearest each region's centroid whose recorded account matches what
+the region was painted over, replays it out of the `-replays.tsv`, and draws the arrangement at
+**critical-envelope entry** with a 200-cell crop of the marked map inset in the corner.
+
+Expect on the dabeone `4->0` overlay: **20 regions, 21 tiles** (the green region is sampled twice,
+split by whether the psyboid was under an override), 15 over unexplained white, 2 over
+third-boid-led cyan, 4 over psyboid-led amber. Seconds, once the envelope tables are on disk.
+
+⚠ **The overlay is bound to the exact pixels of the phase map it was painted on.** The dimension
+check catches a changed resolution or route set; it cannot catch a phase map whose sampling
+changed while its size did not. Repaint after any change to `ThreeBoidPhase`'s sampling.
+
+
+To ask why one region's exit has no account, name its cell:
+
+```java
+ThreeBoidSamples.explain(preset, l, facts, tables, 4, 0, /*route=*/2, /*otherRoute=*/1,
+                         /*cell=*/158, 255, replays, flock, flock.diluted(), out);
+```
+
+`steeringHistory` for an arrangement out of the phase map rather than the plan corpus, plus the
+two things that decide admission — whether the suspect was on settled ground, and whether the
+prune would have cut the step. **Read the `leader?` column first.** A tick marked `free` is one
+coasting would have produced anyway, so every neighbour on the map "accounts" for it; only the
+`DEMANDS` ticks carry information, and the summary restates coverage over just those.
 
 ---
 

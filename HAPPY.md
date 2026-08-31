@@ -38,3 +38,18 @@ one. Where an entry and a hard rule in `CLAUDE.md` disagree, the rule wins.
 ---
 
 <!-- The user's notes go below. Append freely; no format, ordering or date is required. -->
+
+When trying to determine the cause of missed identifications or classifications within a corpus,
+analysis of a specific instance of failure has historically been more fruitful than trying to make
+inferences from aggregated data.
+
+When diagnosing an unknown issue with the user, proactively rendering some of the involved states
+is often helpful. Especially when it would not require writing additional code to identify and
+render those states.
+
+The user puts significant effort into the avoidance of conflicting specifications. Sometimes the
+user will make a mistake and you will identify a conflict. The user appreciates when these are
+explicitly identified, and a mutual understanding about the amended specification is reached.
+
+The user is good at geometrical inference. Sometimes passing the turn back to them with questions
+is the best way to make progress on a problem.

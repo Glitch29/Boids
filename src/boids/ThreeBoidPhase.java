@@ -416,17 +416,25 @@ public final class ThreeBoidPhase {
     private static final int CONTINUED = 0x2A2F38;
 
     /**
+     * The account palette. Public because the picture is also an input: {@link ThreeBoidSamples}
+     * reads a hand-annotated copy back and has to know which class each pixel underneath stood
+     * for, and a second transcription of these values would be a silent way to mislabel a region.
+     */
+    public static final int UNEXPLAINED = 0xFFFFFF, PSYBOID_LED = 0xC8913F,
+            THIRD_LED = 0x4FA8C8, DILUTED = 0xE040D0, SELF_OVERRIDDEN = 0x66C070;
+
+    /**
      * One colour per account, tonally close so structure reads rather than any one class
      * shouting — except an exit nothing explains, which is the whole reason for looking.
      */
     private static int colour(Cell c) {
         if (!c.exited()) return CONTINUED;
-        if (c.reason() == null) return 0xFFFFFF;
-        if (c.reason().level() == ExitAudit.Level.PSYBOID) return 0x66C070;
+        if (c.reason() == null) return UNEXPLAINED;
+        if (c.reason().level() == ExitAudit.Level.PSYBOID) return SELF_OVERRIDDEN;
         // Leader identity is the amber/cyan axis. The diluted model is rare and needs to be
         // findable rather than tonally polite, so it gets magenta whichever boid led.
-        if (c.reason().level() == ExitAudit.Level.ENVELOPE_WIDENED) return 0xE040D0;
-        return c.reason().leader() == PSYBOID ? 0xC8913F : 0x4FA8C8;
+        if (c.reason().level() == ExitAudit.Level.ENVELOPE_WIDENED) return DILUTED;
+        return c.reason().leader() == PSYBOID ? PSYBOID_LED : THIRD_LED;
     }
 
     private static void report(java.util.Collection<Cell> cells, long tried, long simulated,
@@ -470,20 +478,48 @@ public final class ThreeBoidPhase {
         }
     }
 
+    /**
+     * Where every panel sits in the rendered sheet.
+     * <p>
+     * Extracted from {@link #draw} so that reading the picture back — mapping a
+     * {@code (route, route, x, y)} cell to the pixel carrying it, which is what
+     * {@link ThreeBoidSamples} does — runs the same arithmetic that drew it. A second copy of
+     * these constants somewhere else is a silent misalignment waiting to happen.
+     */
+    public record Layout(int[] dim, int[] origin, int pad, int head, int foot, int gap) {
+        /** Image column carrying cell {@code x} of the panel whose psyboid route is {@code r}. */
+        public int px(int r, int x) { return pad + origin[r] + x; }
+
+        /** Image row carrying cell {@code y} of the panel whose third-boid route is {@code r}. */
+        public int py(int r, int y) { return head + origin[r] + y; }
+
+        /** A panel's side in cells; panels are square because both axes are the same route. */
+        public int span(int r) { return dim[r]; }
+
+        public int width() { return pad + origin[dim.length] + pad; }
+
+        public int height() { return head + origin[dim.length] + foot; }
+    }
+
+    /** The panel geometry for one set of routes at one resolution. */
+    public static Layout layout(List<Route> routes, double resolution) {
+        int n = routes.size();
+        int gap = 34;
+        int[] dim = new int[n], origin = new int[n + 1];
+        for (int r = 0; r < n; r++) {
+            dim[r] = (int) Math.ceil(routes.get(r).length() / resolution);
+            origin[r + 1] = origin[r] + dim[r] + gap;
+        }
+        return new Layout(dim, origin, 108, 66, 44, gap);
+    }
+
     private static void draw(java.util.Collection<Cell> cells, List<Route> routes,
                              double resolution, int from, int keep, Path out) throws IOException {
         int n = routes.size();
-        int[] w = new int[n], h = new int[n];
-        for (int r = 0; r < n; r++) {
-            w[r] = (int) Math.ceil(routes.get(r).length() / resolution);
-            h[r] = w[r];
-        }
-        int gap = 34, pad = 108, head = 66, foot = 44;
-        int[] cx = new int[n + 1], cy = new int[n + 1];
-        for (int r = 0; r < n; r++) cx[r + 1] = cx[r] + w[r] + gap;
-        for (int r = 0; r < n; r++) cy[r + 1] = cy[r] + h[r] + gap;
+        Layout lay = layout(routes, resolution);
+        int pad = lay.pad(), head = lay.head();
 
-        BufferedImage img = new BufferedImage(pad + cx[n] + pad, head + cy[n] + foot,
+        BufferedImage img = new BufferedImage(lay.width(), lay.height(),
                 BufferedImage.TYPE_INT_RGB);
         Graphics2D g = img.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
@@ -494,19 +530,24 @@ public final class ThreeBoidPhase {
         for (int rp = 0; rp < n; rp++) {
             for (int rb = 0; rb < n; rb++) {
                 g.setColor(new Color(PANEL));
-                g.fillRect(pad + cx[rp], head + cy[rb], w[rp], h[rb]);
+                g.fillRect(lay.px(rp, 0), lay.py(rb, 0), lay.span(rp), lay.span(rb));
             }
         }
         for (Cell c : cells) {
             g.setColor(new Color(colour(c)));
-            int px = pad + cx[c.route()] + c.x(), py = head + cy[c.otherRoute()] + c.y();
-            if (c.x() < w[c.route()] && c.y() < h[c.otherRoute()]) img.setRGB(px, py, colour(c));
+            int px = lay.px(c.route(), c.x()), py = lay.py(c.otherRoute(), c.y());
+            if (c.x() < lay.span(c.route()) && c.y() < lay.span(c.otherRoute())) {
+                img.setRGB(px, py, colour(c));
+            }
         }
 
         g.setColor(new Color(TEXT));
         g.setFont(new Font("SansSerif", Font.BOLD, 15));
-        g.drawString(String.format("three-boid phase map, arc %d->%d   %.0f tick(s) per cell   "
-                + "columns: psyboid route, rows: third-boid route", from, keep, resolution),
+        // %.0f would round a half-tick cell up to "1" and misreport the scale of the picture.
+        g.drawString(String.format("three-boid phase map, arc %d->%d   %s tick(s) per cell   "
+                + "columns: psyboid route, rows: third-boid route", from, keep,
+                new java.math.BigDecimal(String.valueOf(resolution)).stripTrailingZeros()
+                        .toPlainString()),
                 pad, 24);
         g.setFont(new Font("SansSerif", Font.PLAIN, 12));
         g.setColor(new Color(FAINT));
@@ -516,19 +557,19 @@ public final class ThreeBoidPhase {
         g.setFont(new Font("SansSerif", Font.PLAIN, 11));
         for (int rp = 0; rp < n; rp++) {
             g.setColor(new Color(TEXT));
-            g.drawString(routes.get(rp).label(), pad + cx[rp], head - 6);
+            g.drawString(routes.get(rp).label(), lay.px(rp, 0), head - 6);
         }
         for (int rb = 0; rb < n; rb++) {
             g.setColor(new Color(TEXT));
-            g.drawString(routes.get(rb).label(), 6, head + cy[rb] + 12);
+            g.drawString(routes.get(rb).label(), 6, lay.py(rb, 12));
         }
 
         String[] key = {"nothing accounts for it", "led by the psyboid", "led by the third boid",
                 "diluted model needed", "continued"};
-        int[] swatch = {0xFFFFFF, 0xC8913F, 0x4FA8C8, 0xE040D0, CONTINUED};
+        int[] swatch = {UNEXPLAINED, PSYBOID_LED, THIRD_LED, DILUTED, CONTINUED};
         int usable = img.getWidth() - pad * 2, per = Math.max(1, usable / 220), pitch = usable / per;
         for (int i = 0; i < key.length; i++) {
-            int lx = pad + (i % per) * pitch, ly = head + cy[n] + 20 + (i / per) * 18;
+            int lx = pad + (i % per) * pitch, ly = head + lay.origin()[n] + 20 + (i / per) * 18;
             g.setColor(new Color(swatch[i]));
             g.fillRect(lx, ly - 9, 10, 10);
             g.setColor(new Color(TEXT));

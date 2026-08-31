@@ -11,6 +11,104 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-30 (following session) — one sample per marked region of the phase map
+
+**Asked for:** a render of the critical-envelope entry tick for each region the user painted onto
+the three-boid phase map between sessions, with a crop of the phase map inset so a tile can be
+matched to its region, stitched into a single 4-wide sheet. Render only; the analysis is next
+turn.
+
+**Read the overlay first, rather than trusting the eye.** `analysis/3BoidAreasOfInterest.png`
+turns out to be `render/phase40.png` with 14,783 pixels repainted and nothing else changed. Two
+colours, both MS Paint defaults: **rose `#FFAEC9`** (11,767 px) and **green `#22B14C`** (3,016
+px). What they cover is not uniform:
+
+| paint | covers | count |
+| --- | --- | --- |
+| green | psyboid-led amber | 3,016 (100%) |
+| rose | unexplained white | 10,598 |
+| rose | third-boid-led cyan | 1,164 |
+| rose | psyboid-led amber | 5 |
+
+The five rose-over-amber pixels are the whole of regions `R05` (1 cell) and `R06` (4 cells), which
+is why they are probably overspill rather than marks. The renderer's own green `0x66C070`
+(`Level.PSYBOID`) appears **zero** times in the base, because the suspect is index 2 and is never
+the overridden boid, so the hand green collides with nothing.
+
+**Built `ThreeBoidSamples`.** Reads the overlay against the base, recovers each painted patch as a
+connected component joining cells within 6 (paint lands only on cells of the class being marked
+and those are dithered, so a stroke arrives as a scatter), picks the cell nearest each region's
+centroid whose recorded account matches the class painted over, replays it from
+`phase40-replays.tsv`, and draws it at envelope entry via `ExitRender` with a 200-cell crop of the
+marked map inset. **20 regions, 21 tiles** — green sampled twice, split by override —
+`render/phase40-samples.png`, 2842x5198.
+
+**Every replay reproduced the account recorded for its cell.** No `[REPLAY DISAGREES]`, no skips,
+no region without a replayable cell of its own class.
+
+**The first sheet was unreadable and the reason is worth keeping.** `ExitRender` crops to the
+flocking radius, which on dabeone is 150 px against a 379x407 map — so the crop is very nearly the
+whole play area and three boids in it are three specks. Twenty-one tiles of the same grey map.
+Fixed by ringing each boid in its role colour, reusing the phase map's own amber/cyan so
+"psyboid" and "third boid" mean the same colour in both pictures. `ExitRender` gained a published
+`Frame` so a caller can annotate without restating the crop arithmetic.
+
+**Two supporting changes.** `ThreeBoidPhase.layout` extracts the panel geometry `draw` computed
+inline, so reading a cell back to a pixel runs the arithmetic that drew it; and its palette is now
+named constants rather than literals, since the picture is also an input. The title bug flagged at
+the start of the session is fixed: `%.0f` rendered resolution 0.5 as **"1 tick(s) per cell"**, and
+every panel dimension says it was 0.5.
+
+**`.gitignore` now versions the overlay.** `analysis/` is ignored as stale derived output, but a
+region overlay is an *input* — it is what a region detector will be scored against and it cannot
+be regenerated. `analysis/*` plus a negation for the one file.
+
+**Open, and for the user to settle:**
+
+- `R01`/`R03` are 13 cells apart in the same x-range, and `R04`/`R05` 4 cells apart. Above the
+  6-cell join threshold, so they are separate regions here, but close enough to be one stroke.
+- `R05` and `R06` may be overspill onto the amber band rather than marks.
+- The overlay is bound to one rendering of the phase map and only its *dimensions* are checked;
+  a sampling change that kept the size would silently rename every region.
+
+**Then: why `R20` has no account.** Asked because two cells looks like a single-leader window
+missed by a whisker. Built `ThreeBoidSamples.explain` — `steeringHistory` for a phase-map
+arrangement — and the guess does not survive it. The suspect *does* reach settled ground (it is
+settled through tick 13) and its entry state *is* in the tables. The account is not narrowly
+missing; it is split between two boids whose coverages **abut without overlapping**.
+
+| ticks | what happens | who can explain it |
+| --- | --- | --- |
+| 0–12 | coasting on settled ground | free |
+| **13–17** | a `-1` off settled ground | **third boid only**, 149 px against `rFlock` 150 |
+| 18–40 | the veto overrides every request | free |
+| **41–45** | the `+1` onto the envelope | **psyboid only**, closing 94 → 82 px |
+
+Raw coverage says 28 of 33 each and a 23-tick overlap, which reads like an easy handover. **Ten
+of the 33 ticks actually demand a leader, five each, intersection empty.** The difference is the
+collision veto: on ticks 18–40 the map refused the request and every turn collapsed to the same
+successor, so any neighbour — including one 230 px away contributing nothing — "accounts" for
+those ticks.
+
+That is a defect in a measurement this project already quotes. `SimTest.replayHistory` uses the
+same test, so the "20, 21 and 14 of 24" coverage figures in `ROADMAP.md` §1 are inflated the same
+way, and **"the two coverages overlap for three ticks" — the observation the proposed handover
+rule rests on — needs rechecking on demanding ticks.** The multi-leader conclusion is unaffected:
+free ticks only add coverage, so a failure counted with them in the candidate's favour is a real
+failure. Reported and not fixed, per the rule about not replacing an existing answer in the turn
+that finds it. Written up in `HINTS.md` §10a and `ROADMAP.md` §0.
+
+Also noticed, untested: the prune marks CUT on one of the two neighbours for almost the whole
+window, the two swapping at tick 32. Whether admission would find a psyboid history with
+`pruneOutOfRangeLeaders` off is unknown, and needs the exact out-of-range collapse §1 lists as
+unbuilt.
+
+`render/phase40-R20-approach.png` draws the four moments side by side. `CriticalEnvelope`'s
+`unrecoverable` is package-visible now so the diagnostic can report the real prune rather than a
+copy of it.
+
+---
+
 ## 2026-08-30 (close, later still) — HAPPY.md
 
 Added `HAPPY.md`, a user-maintained file of standing feedback on what has and has not been worth

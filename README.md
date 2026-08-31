@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-08-30. Verified against dabeone ingest `609cffdb84be218c` unless stated.
+**Status:** 2026-08-30 (later). Verified against dabeone ingest `609cffdb84be218c` unless stated.
 Every figure below carries the ingest it was measured on; a figure without one is not
 reproducible and should not be trusted.
 
@@ -119,7 +119,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 41 files.
+One package, `src/boids`, 42 files.
 
 **Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
 the single definition of what a boid perceives) · `Boids2DEngine` (one tick in index order,
@@ -140,7 +140,8 @@ stored by `CriticalEnvelopeStore` · `EdgeInfluence` (`steer`, the single-neighb
 
 **Exhaustive and sampled** — `TwoBoid` (all reachable two-boid arrangements) ·
 `ThreeBoidPhase` (three-boid arrangements sampled and mapped by phase difference, since three
-will not enumerate).
+will not enumerate) · `ThreeBoidSamples` (one replayed arrangement per hand-marked region of
+that map, drawn at envelope entry).
 
 **Solving** — `SolverFacts` (what a solver may know) · `SolverStore` (builds and stores it) ·
 `Solver` · `Clue` · `UnstableEdgeClue` · `SolverScore` (how an answer is graded).
@@ -188,7 +189,10 @@ ways → 6 edges.
 | `steeringHistory` | per tick, what *every* neighbour accounts for — finds multi-leader histories |
 | `renderTick` | one exit at whole-map scale, for structural rather than influence questions |
 
-`ThreeBoidPhase.run` is the other entry point and does not live in `SimTest`.
+`ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
+points and do not live in `SimTest`. `explain` is the per-region counterpart of
+`steeringHistory`: it prints one sampled exit tick by tick, marking which ticks actually **demand**
+a leader and which are free because coasting or the veto produced the move anyway.
 
 `SimTest.main` is a scratch dispatcher, not an interface. `PIPELINE.md` gives the real
 invocations in order with expected numbers.
@@ -218,6 +222,9 @@ a map that has since been edited.
 | `<ingest>/solver/facts.bin` | `SolverStore` | everything a solver may know. One per map version |
 | `render/phase<f>_<t>.png` | `ThreeBoidPhase` | the three-boid phase map, one panel per route pair |
 | `render/phase<f>_<t>-replays.tsv` | `ThreeBoidPhase` | every exit in it, with the three start states, so any cell can be flown again |
+| `analysis/3BoidAreasOfInterest.png` | hand | that map with regions of interest painted over it. **An input, and versioned for that reason** |
+| `render/phase<f>_<t>-samples.png` | `ThreeBoidSamples` | one replayed arrangement per painted region, at critical-envelope entry |
+| `render/phase<f>_<t>-<region>-approach.png` | `ThreeBoidSamples.explain` | one region's approach at the ticks that decide it |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,

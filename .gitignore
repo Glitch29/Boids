@@ -10,7 +10,12 @@ data/
 
 # Summary tables that were derived from data/. Their producer no longer exists, so these
 # are neither regenerable nor current; the directory is kept locally and not versioned.
-analysis/
+#
+# The exception is a region overlay: the phase map with regions of interest painted over it by
+# hand. That is an INPUT, not output — it is what ThreeBoidSamples reads and what a region
+# detector will be scored against — and it cannot be regenerated from anything.
+analysis/*
+!analysis/3BoidAreasOfInterest.png
 
 # Java
 *.class

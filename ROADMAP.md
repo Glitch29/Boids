@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-08-30. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-08-30 (later). `README.md` has the inventory; this file has the work in front of us
 and the specifications for it.
 
 ---
@@ -28,6 +28,86 @@ corpus, accounting for 551 of 553 exits with the residue characterised (§1, §2
 missing is a solver measurement worth believing: every grading figure predates the rebuild and
 has been discarded, and windows are meant to be derived from a corpus rather than hand-read.
 **Item 3 is what unblocks solver work.**
+
+## 0. In flight — naming the phase map's regions
+
+**Started 2026-08-30.** The goal for this era: turn the 21% of phase-map exits that no account
+covers into *named* classes — either understood, or grouped into a category we have decided not
+to understand further — and then identify and enumerate those regions programmatically, either
+statistically from simulation output or as a chain of computations from the map. The regions,
+not the percentage, are the workable unit: the white is not a haze, it is a handful of bands and
+blobs with hard edges.
+
+**Built: `ThreeBoidSamples`**, driven from `SimTest.main`, writing
+`render/phase40-samples.png`. It reads the hand-annotated overlay
+`analysis/3BoidAreasOfInterest.png` against the base `render/phase40.png`, recovers each painted
+region as a connected component, picks the cell nearest each region's centroid whose recorded
+account matches what the region is a region *of*, replays that arrangement out of
+`render/phase40-replays.tsv`, and draws it at critical-envelope entry with a 200-cell crop of the
+marked phase map inset in the corner. **20 regions, 21 tiles** — the one green region is sampled
+twice, split by whether the psyboid was actually under an override. Every replay reproduced the
+account recorded for its cell.
+
+**Hand-marking is scaffolding and is meant to be.** Finding these regions programmatically is the
+actual goal; marking them by eye is how we find out what a region *is* before writing a detector,
+and the same overlay is what a detector will be scored against.
+
+> ⚠ **The overlay is bound to one rendering of the phase map, and nothing enforces that.**
+> `analysis/3BoidAreasOfInterest.png` is painted over the exact pixels of a particular
+> `phase40.png`; a region is a set of cells in that picture. `ThreeBoidSamples` checks that the
+> overlay matches the layout's dimensions, which catches a changed resolution or route set, but
+> **it cannot detect a phase map whose sampling changed while its size did not**, and the marks
+> would then name different arrangements without complaining. The overlay is committed for that
+> reason; the phase map it was painted on is regenerable from seed 1 at resolution 0.5.
+
+**Open.** Whether two pairs of regions are one feature or two — `R01`/`R03` and `R04`/`R05` are
+13 and 4 cells apart, above the 6-cell join threshold but close enough to be one stroke. And
+`R05` (1 cell) and `R06` (4 cells) lie over **psyboid-led amber** rather than over white or cyan,
+which is exactly the five stray rose-over-amber pixels in the overlay; they are more likely
+overspill onto the band than deliberate marks.
+
+### `R20`, read all the way through — the residue, not a near miss
+
+Asked 2026-08-30: `R20` is two cells, which looks like a single-leader window missed by a
+whisker. It is not. `ThreeBoidSamples.explain` prints the whole approach; the finding is that the
+account is not narrowly missing, it is **split between two boids that never overlap.**
+
+The suspect is settled to tick 13, enters the envelope at tick 45 and crosses at 47, so
+admission has to cover ticks 13–45. Its entry state **is** in the tables, so the entry itself was
+recognised. The third boid is not a candidate for it — 213 px out against `rFlock` 150, asking
+`+0` where the entry turn is `+1` — so the only candidate is the psyboid, and admission rejected
+it.
+
+The flown history says why, once the free ticks are taken out:
+
+| ticks | what happens | who can explain it |
+| --- | --- | --- |
+| 0–12 | coasting on settled ground | free |
+| **13–17** | a `-1` off settled ground | **third boid only**, at 149 px against `rFlock` 150 |
+| 18–40 | the veto overrides every request | free — anybody, including a boid doing nothing |
+| **41–45** | the `+1` onto the envelope | **psyboid only**, closing 94 → 82 px |
+
+**Ten of the thirty-three ticks demand a leader, five each, and the intersection is empty.** So
+this is arc `4->0`'s multi-leader residue in its purest form: not a baton *pass* with an overlap
+to hand over in, but two accounts that abut. The handover rule proposed above cannot rescue it,
+because there is no tick at which both are true.
+
+> ⚠ **This casts doubt on a supporting figure above, not on the conclusion.** The coverage counts
+> quoted for the `2->1` and `4->0` residue ("20, 21 and 14 of 24") come from
+> `SimTest.replayHistory`, which counts a tick as accounted for whenever the neighbour's
+> single-neighbour steer reproduces the move — and on a vetoed or coasting tick that is true of
+> every neighbour on the map. Those counts are therefore inflated, and **"the two coverages
+> overlap for three ticks" needs rechecking on demanding ticks before the handover rule is built
+> on it.** The multi-leader conclusion itself is safe: free ticks only ever add coverage, so a
+> boid that fails to cover a window even with them counted in its favour has genuinely failed.
+> Not fixed here — reported, per the rule about not replacing an existing answer in the turn that
+> found it.
+
+Also visible, and not yet chased: the prune (`pruneOutOfRangeLeaders`) marks **CUT** on one of
+the two neighbours for almost the whole window, the two swapping at tick 32 as the psyboid comes
+inside `rFlock` and the third boid goes out. Whether admission would have found a history for the
+psyboid with the prune off is untested, and testing it needs the exact out-of-range collapse §1
+lists as unbuilt.
 
 ---
 

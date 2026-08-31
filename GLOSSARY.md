@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-08-30, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-08-30 (later), against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -269,9 +269,25 @@ exactly where a crowd suppresses them.
 
 **three-boid phase map** — a sampled map of what three boids do to each other, with both axes
 phase differences in ticks: the psyboid's tau minus the suspect's on one, the third boid's on
-the other, everything rebased onto the suspect's edge by the shortest route. `ThreeBoidPhase`.
+the other, **rebased along a route rather than by shortest path** — a boid's position is its tau
+plus the lengths of the route's edges before its own, so a sample lives in
+`(x, y, route, route)` and there is one panel per pair of simple loops. `ThreeBoidPhase`.
 One sample per cell, so a colour is one draw rather than a majority. Sampling rather than
 enumeration because three boids will not fit in `(x, y, d)` the way `TwoBoid` does.
+
+**region overlay** — the three-boid phase map with regions of interest painted over it by hand,
+one colour per kind of interest. `analysis/3BoidAreasOfInterest.png` is the dabeone `4->0` one:
+**rose `#FFAEC9`** for one distinct feature per region, **green `#22B14C`** for a region believed
+to hold more than one. It is an *input*, versioned for that reason, and it is bound to the exact
+pixels of the phase map it was painted on. Hand-marking is scaffolding: identifying these regions
+programmatically is the goal, and the overlay is what such a detector gets scored against.
+
+**region sample sheet** — one replayed arrangement per painted region of the overlay, drawn at
+critical-envelope entry, with a crop of the marked phase map inset so a tile can be matched to
+its region by eye. `ThreeBoidSamples`, written to `render/phase<f>_<t>-samples.png`. The
+representative is the cell nearest the region's centroid whose recorded account matches the class
+the region was painted over — nearest-the-middle because a region shades into its neighbours at
+the edge, and a sample taken there would be a picture of the boundary.
 
 **two-model boid** — the exiting boid in critical-envelope analysis picks the true constants or
 the diluted model **independently on every tick**, at the entry and throughout its history. A
@@ -350,6 +366,8 @@ anything not listed.
 | two-boid reachability | `TwoBoid` | `<ingest>/twoboid/` |
 | critical-envelope tables | `CriticalEnvelope`, stored by `CriticalEnvelopeStore` | `<ingest>/envelope/` |
 | three-boid phase map | `ThreeBoidPhase` | `render/phase<f>_<t>.png` |
+| region overlay | hand | `analysis/3BoidAreasOfInterest.png` |
+| region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |

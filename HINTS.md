@@ -6,7 +6,7 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-08-30. This file is also the *training-wheels* condition of the evaluation —
+**Status:** 2026-08-30 (later). This file is also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
 
@@ -606,6 +606,25 @@ separation-carried one on the same map.
 leader-follower pairs — a real leader present at the edge of perception, doing the leading, and
 refused because it is not individually sufficient. Since an unexplained turn reads as evidence
 *toward* the suspect, that is a wrong answer in a specific direction rather than noise.
+
+
+**A tick only needs a leader if coasting would not have produced the move**, and on this map most
+ticks of a history do not. Measured 2026-08-30 on one three-boid exit: of the 33 ticks between
+the suspect's last settled state and its entry onto the envelope, **10 demanded an influence and
+23 were free** — either nothing was steering, or the collision veto overrode the request and every
+turn collapsed to the same successor. On a free tick *every* neighbour "accounts" for the move,
+including one on the far side of the map contributing nothing.
+
+That matters twice over. It makes a raw coverage count — "boid 3 accounts for 20 of 24 ticks" —
+flatter every candidate equally, since the free ticks are free for all of them. And it makes a
+handover look easy: two coverages that overlap for twenty ticks may not overlap on a single tick
+that demanded anything. **Count only the demanding ticks.** Same exit, restated on them: the third
+boid explains 5 of 10 and the psyboid the other 5, with an empty intersection — the two accounts
+abut rather than overlap.
+
+Free ticks never break a negative result, because they only ever *add* coverage; a boid that
+fails to cover the window when free ticks are counted in its favour has certainly failed. They
+break positive ones, and the handover rule is a positive one.
 
 ## 11. Things that look like findings and are not
 
