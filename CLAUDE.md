@@ -99,10 +99,18 @@ So before ending, check each against what changed:
 | `PIPELINE.md` | any new step, or a step that has become unsound |
 | `HINTS.md` | findings about the *physics* that transfer beyond this codebase |
 | `SESSION-LOG.md` | append every session |
-| `PROMPTS.md` | **append the session's prompts verbatim.** Not required reading — it exists as the cheap way to search past prompts without opening 60 MB of transcript |
+| `PROMPTS.md` | **nothing — do not hand-edit it.** A `SessionStart` hook rebuilds it from the session logs. Not required reading; it exists as the cheap way to search past prompts without opening 60 MB of transcript |
 
 `BACKLOG.md` and `CONTRACTS.md` are largely historical. Read them for reasoning, not for state,
 and do not feel obliged to refresh them.
+
+`PROMPTS.md` maintains itself. A `SessionStart` hook in `.claude/settings.json` runs
+`tools/prompts.ps1`, which rebuilds the whole archive from the Claude Code logs. It is idempotent,
+needs no bookmark, and refuses to shrink the file. **Expect `PROMPTS.md` to already be modified in
+your working tree before you have done anything** — that is the hook, not a stray edit; commit it
+with whatever else you commit. A session's own last prompts land on the *next* run, because its
+log is still being written while it runs. This replaced an instruction to append prompts by hand,
+which depended on remembering and had silently lost about a quarter of them.
 
 **Every document carries a `**Status:**` line with a date.** Update it when you touch the file.
 A doc whose status is older than the last session is a doc to distrust.

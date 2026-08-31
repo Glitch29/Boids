@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR/tools/prompts.ps1\"",
+            "async": true,
+            "timeout": 120,
+            "suppressOutput": true,
+            "statusMessage": "Rebuilding PROMPTS.md from session logs"
+          }
+        ]
+      }
+    ]
+  }
+}

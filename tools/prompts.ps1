@@ -1,0 +1,155 @@
+# Rebuilds PROMPTS.md from the Claude Code session logs.
+#
+# WHY THIS IS A SCRIPT AND NOT AN INSTRUCTION
+# The archive used to be maintained by asking the assistant to write down each prompt as the
+# session went. That depends on remembering, costs tokens to restate what was already said, and
+# is permanently one session behind whenever it is skipped -- which is how the whole of session
+# 08 came to be missing. A script reads the logs directly, so nothing enters anyone's context and
+# nothing has to be remembered.
+#
+# IDEMPOTENT BY REBUILDING, NOT BY APPENDING
+# The whole file is regenerated from the logs every run. That needs no bookmark, no marker to
+# parse and no state that can drift: run it any number of times, in any order, and the result is
+# the same. The live session's own log is incomplete while the session is running, so its last
+# few prompts land on the next run -- which is exactly the "each session appends the previous
+# one" behaviour, arrived at without any bookkeeping.
+#
+# RESUMED SESSIONS REPLAY THEIR HISTORY, so the same prompt appears in several logs. Logs are
+# processed oldest first and each prompt is attributed to the log that introduced it.
+#
+# Safe by construction: writes to a temporary file, refuses to shrink the archive, and renames
+# into place only after both checks pass.
+
+param(
+    [string] $Repo = (Split-Path -Parent $PSScriptRoot),
+    [string] $Out
+)
+
+$ErrorActionPreference = 'Stop'
+if (-not $Out) { $Out = Join-Path $Repo 'PROMPTS.md' }
+
+# Claude Code names a project folder after its path, with ':' and '\' both becoming '-'.
+$slug = ($Repo -replace '[:\\/]', '-')
+$logs = Join-Path $env:USERPROFILE ".claude\projects\$slug"
+if (-not (Test-Path $logs)) { Write-Error "no session logs at $logs"; exit 1 }
+
+# A user record is a real prompt when it is not a subagent's, not a tool result, and not the
+# harness talking to itself through the user channel.
+function Get-PromptText($record) {
+    if ($record.type -ne 'user' -or $record.isSidechain) { return $null }
+    $content = $record.message.content
+    $text = $null
+    if ($content -is [string]) {
+        $text = $content
+    } else {
+        foreach ($block in $content) {
+            if ($block.type -eq 'tool_result') { return $null }   # a result, not a prompt
+            if ($block.type -eq 'text') { $text = if ($text) { "$text`n$($block.text)" } else { $block.text } }
+        }
+    }
+    if (-not $text) { return $null }
+
+    # System reminders are injected into the user turn and were never typed.
+    $text = [regex]::Replace($text, '(?s)<system-reminder>.*?</system-reminder>', '')
+    $text = $text.Trim()
+    if (-not $text) { return $null }
+
+    foreach ($tag in '<command-name', '<local-command-stdout', '<command-message', '<bash-input') {
+        if ($text.StartsWith($tag)) { return $null }
+    }
+    if ($text.StartsWith('[Request interrupted')) { return $null }
+    if ($text.StartsWith('Caveat: The messages below')) { return $null }
+    return $text
+}
+
+$sessions = @()
+foreach ($file in Get-ChildItem $logs -Filter *.jsonl) {
+    $first = $null
+    $prompts = New-Object System.Collections.ArrayList
+    foreach ($line in [System.IO.File]::ReadLines($file.FullName)) {
+        if (-not $line.Trim()) { continue }
+        try { $record = $line | ConvertFrom-Json } catch { continue }
+        if (-not $first -and $record.timestamp) { $first = $record.timestamp }
+        $text = Get-PromptText $record
+        if ($text) { [void]$prompts.Add($text) }
+    }
+    if ($prompts.Count -eq 0) { continue }
+    $sessions += [pscustomobject]@{
+        Id      = $file.BaseName
+        First   = if ($first) { [datetime]$first } else { $file.CreationTime }
+        Prompts = $prompts
+    }
+}
+$sessions = $sessions | Sort-Object First
+
+# One prompt belongs to the log that introduced it. Everything after that is replay.
+$seen = New-Object 'System.Collections.Generic.HashSet[string]'
+$body = New-Object System.Text.StringBuilder
+$total = 0
+$number = 0
+
+foreach ($session in $sessions) {
+    $fresh = @($session.Prompts | Where-Object { $seen.Add($_) })
+    if ($fresh.Count -eq 0) { continue }
+    $number++
+    $last = $session.Prompts[-1]
+    [void]$body.AppendLine()
+    [void]$body.AppendLine('---')
+    [void]$body.AppendLine()
+    [void]$body.AppendLine(("## Session {0:00} - {1:yyyy-MM-dd}" -f $number, $session.First.ToLocalTime()))
+    [void]$body.AppendLine()
+    [void]$body.AppendLine("*Log ``$($session.Id)``, $($fresh.Count) prompts.*")
+    $i = 0
+    foreach ($prompt in $fresh) {
+        $i++; $total++
+        [void]$body.AppendLine()
+        [void]$body.AppendLine("### $i")
+        [void]$body.AppendLine()
+        [void]$body.AppendLine($prompt)
+    }
+}
+
+$header = @"
+# Every prompt given about Boids
+
+Everything the human typed, in order, verbatim. Tool results, subagent turns, slash-command
+output and system reminders are dropped; nothing else is edited.
+
+**Generated by ``tools/prompts.ps1`` -- do not hand-edit.** It rebuilds this file from the Claude
+Code session logs, so it needs no upkeep and costs no context. A session's last prompts appear on
+the *next* run, because its own log is still being written while it is running.
+
+**Not required reading.** This exists so a later session can search what was already asked without
+opening tens of megabytes of transcript. Read ``README.md`` first; come here for exact wording.
+
+$total prompts across $number sessions.
+
+"@
+
+# UTF-8 with no BOM, and no trailing blank line games: Set-Content -Encoding utf8 writes a BOM on
+# Windows PowerShell 5.1, which lands immediately before the '#' of the title. The blank line at
+# the end of the header above matters too -- without it the count line sits directly on top of the
+# first '---' and markdown reads the pair as a setext heading.
+$temp = "$Out.partial"
+[System.IO.File]::WriteAllText($temp, ($header + $body.ToString()), (New-Object System.Text.UTF8Encoding $false))
+
+# An archive should never shrink. If it would, something is wrong with the parse and the file on
+# disk is worth more than this run's output. Read from the header's own count rather than by
+# counting '###' in the body: prompt text contains markdown headings of its own, so a body count
+# measures the prompts and their contents together.
+function Get-Count($path) {
+    $line = Select-String -Path $path -Pattern '^(\d+) prompts across' | Select-Object -First 1
+    if ($line) { return [int]$line.Matches[0].Groups[1].Value }
+    return 0
+}
+if (Test-Path $Out) {
+    $before = Get-Count $Out
+    $after = Get-Count $temp
+    if ($after -lt $before) {
+        Remove-Item $temp
+        Write-Error "refusing to shrink PROMPTS.md: $before prompts on disk, $after from the logs"
+        exit 1
+    }
+}
+Move-Item -Path $temp -Destination $Out -Force
+Write-Host "PROMPTS.md: $total prompts across $number sessions"

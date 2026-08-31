@@ -11,6 +11,48 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-30 (close, later) — PROMPTS.md maintains itself
+
+The entry below records that `PROMPTS.md` had lost a whole session's prompts, and fixed it by
+hand. That fix would have kept failing: the archive depended on the assistant remembering to
+append, mid-session, work that had already scrolled past.
+
+**Replaced the instruction with a mechanism.** `tools/prompts.ps1` rebuilds the whole file from
+the Claude Code logs at `~/.claude/projects/<slug>/*.jsonl` — filtering to `type == "user"`, not
+`isSidechain`, no `tool_result` block, then stripping `<system-reminder>` blocks and dropping
+`<command-name>` / `<local-command-stdout>` / `<bash-input>` wrappers and interrupt markers.
+Resumed sessions replay their history, so logs are read oldest-first and each prompt is
+attributed to the log that introduced it.
+
+Regenerating the whole file rather than appending is what makes it idempotent: no bookmark, no
+marker to parse, no state that can drift. Two consecutive runs produce an identical hash.
+
+- **Hand-maintained: 231 prompts, 230 KB. Generated: 290 prompts, 667 KB.** Hand-maintenance had
+  been losing roughly a quarter of everything ever typed, not just session 08.
+- Parsing all 8 logs (~74 MB) takes **2.3 s**.
+
+Wired as a `SessionStart` hook in `.claude/settings.json` (`async`, so it costs no startup
+latency and no context). It runs `powershell.exe -File tools/prompts.ps1` through bash — there is
+no `pwsh` on this machine, so the schema's `shell: "powershell"` would not have worked.
+
+**Two bugs found and fixed in the generator itself:**
+
+- The shrink guard counted `^### ` lines, but prompt text contains its own markdown headings, so
+  it was measuring prompts and their contents together. It now reads the header's own count.
+- The header ended flush against the first `---`, which markdown reads as a *setext heading* —
+  the count line was silently rendering as an `<h2>`. Also dropped the UTF-8 BOM that
+  `Set-Content -Encoding utf8` writes on Windows PowerShell 5.1, which landed just before the
+  `#` of the title.
+
+Safe by construction: writes to `.partial`, refuses to shrink the archive, renames only after
+both checks pass.
+
+**Open:** the hook has been written and validated but cannot be observed firing from inside the
+session that added it — `SessionStart` fires before the session exists. First real evidence is
+next session, where `PROMPTS.md` should already be dirty on arrival.
+
+---
+
 ## 2026-08-30 (close) — documentation audit
 
 **Audited the root docs against what this session actually built**, rather than assuming they
