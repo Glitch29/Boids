@@ -12,6 +12,9 @@ Java, one package, `src/boids`. See `README.md` for what exists.
 2. `GLOSSARY.md` — the terms below have precise meanings. Do not guess at them.
 3. `EDGES.md` — canonical for edges, routes and leader windows.
 4. `ROADMAP.md` — what is being built now and why.
+5. `HAPPY.md` — the user's standing feedback on what has and has not worked here. **Read it
+   once; that is the entire obligation.** It holds no permissions, prohibitions or instructions,
+   and needs no acknowledgement. Do not write to it — see below.
 
 ## Check before you build
 
@@ -99,6 +102,7 @@ So before ending, check each against what changed:
 | `PIPELINE.md` | any new step, or a step that has become unsound |
 | `HINTS.md` | findings about the *physics* that transfer beyond this codebase |
 | `SESSION-LOG.md` | append every session |
+| `HAPPY.md` | **nothing — the user writes it.** Read it at the start; never add to it or edit it |
 | `PROMPTS.md` | **nothing — do not hand-edit it.** A `SessionStart` hook rebuilds it from the session logs. Not required reading; it exists as the cheap way to search past prompts without opening 60 MB of transcript |
 
 `BACKLOG.md` and `CONTRACTS.md` are largely historical. Read them for reasoning, not for state,
@@ -112,8 +116,17 @@ with whatever else you commit. A session's own last prompts land on the *next* r
 log is still being written while it runs. This replaced an instruction to append prompts by hand,
 which depended on remembering and had silently lost about a quarter of them.
 
+`HAPPY.md` is the user's, and it runs the other way round: it is the only document here that
+gives feedback *to* a session rather than recording something for the next one. Read it once at
+the start. **Never write to it** — not an observation of your own, not a tidy-up, not a reformat.
+Its worth is that it is one person's voice across sessions that cannot see each other, and an
+entry added by an assistant would be that assistant grading its own work. Nothing in it obliges
+a reply, and an entry that does not bear on the current task can be passed over in silence.
+
 **Every document carries a `**Status:**` line with a date.** Update it when you touch the file.
-A doc whose status is older than the last session is a doc to distrust.
+A doc whose status is older than the last session is a doc to distrust. `HAPPY.md` and
+`PROMPTS.md` are exempt: neither is state, nobody is obliged to refresh them, and an old entry
+in `HAPPY.md` is not a stale one.
 
 ## Standing permissions
 

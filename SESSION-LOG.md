@@ -11,6 +11,36 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-08-30 (close, later still) — HAPPY.md
+
+Added `HAPPY.md`, a user-maintained file of standing feedback on what has and has not been worth
+doing here: feature invocations and decisions that regularly add or subtract value. Header
+written by this session, body left empty for the user.
+
+It inverts the direction of every other document in the repository. The rest record something
+for the next session; this one gives feedback *to* a session. That is why it carries no
+`**Status:**` obligation and why staleness is not a defect in it — an old entry is not a suspect
+entry, which is the opposite of the rule the other docs live under.
+
+Registered in the four places documents are catalogued here: `CLAUDE.md`'s read-order list (as
+item 5), `CLAUDE.md`'s keep-current table, a paragraph in `CLAUDE.md`'s bookkeeping section, and
+`README.md`'s document table. The status-line rule now names `HAPPY.md` and `PROMPTS.md` as its
+two exemptions.
+
+The header is written against three ways a file like this fails:
+
+- **Ignored.** Countered by placing it in the auto-loaded `CLAUDE.md` read-order, which is the
+  only list a session reliably sees before it starts proposing things.
+- **Over-obeyed.** An entry is stated to be a prior, not a rule — it should tip a judgement call
+  when nothing stronger pushes the other way, and `CLAUDE.md` wins any direct conflict.
+- **Written into by a session.** Explicitly forbidden in all three `CLAUDE.md` locations and in
+  the file's own header. An entry added by an assistant would be that assistant grading its own
+  work, which is the one perspective the file exists to check from outside.
+
+**Open:** nothing. The body is the user's to fill.
+
+---
+
 ## 2026-08-30 (close, later) — PROMPTS.md maintains itself
 
 The entry below records that `PROMPTS.md` had lost a whole session's prompts, and fixed it by
