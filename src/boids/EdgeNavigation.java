@@ -41,7 +41,7 @@ public final class EdgeNavigation {
     private EdgeNavigation() {}
 
     /** No amount of steering gets there. */
-    private static final int NEVER = Integer.MAX_VALUE;
+    public static final int NEVER = Integer.MAX_VALUE;
 
     /**
      * Where the inbound points of one edge end up while trying to hold one turn.
@@ -128,6 +128,32 @@ public final class EdgeNavigation {
             }
         }
         return new Properties(stable, scoring);
+    }
+
+    /**
+     * The cost to leave, per state, before it is reduced to a single {@link Exit}.
+     * <p>
+     * {@link #analyse} reduces this over an edge's <b>inbound</b> points, which is the right
+     * source set when the question is what a boid arriving on the edge faces. It is the wrong one
+     * when the question is what a boid <em>already on</em> the edge faces, having been left there
+     * by ordinary traffic rather than by a clean entry — which is what a stable+ set describes.
+     * Handing the array back lets a caller reduce it over whatever source set its question names,
+     * without a second implementation of the traversal drifting away from this one.
+     * <p>
+     * Entries are {@link #NEVER} for every state not on {@code from}, and for states of
+     * {@code from} that cannot reach {@code to} however they steer.
+     *
+     * @return one entry per state index: fewest ticks of non-straight steering to reach
+     *         {@code to}, the ticks needing neither to be consecutive nor to agree in direction
+     */
+    public static int[] steerCostTo(NavMap map, int[] live, int liveCount, int[] edge, int edges,
+                                    int from, int to) {
+        Reverse rev = reverse(map, live, liveCount, edge.length);
+        int[][] byEdge = byEdge(live, liveCount, edge, edges);
+        int[] cost = new int[edge.length];
+        java.util.Arrays.fill(cost, NEVER);
+        steerCost(map, rev, edge, byEdge[from], from, to, cost, new Frontier(), new Frontier());
+        return cost;
     }
 
     public static EdgeNav[] analyse(NavMap map, int[] live, int liveCount, int[] edge, int edges) {

@@ -3098,6 +3098,112 @@ picks, never in what is available to it.
      * wobble — and a route is precisely what the solver is supposed to find remarkable.
      */
     /**
+     * Stable+ over a range of agreement ratios: what it grows to, whether it ever reaches an
+     * exit, what it costs to leave from it, and a picture of each.
+     * <p>
+     * <b>The prediction under test.</b> With one quorum and every state closed under straight
+     * travel, an exit can only enter the set if an exit window sits on the stable loop with a
+     * quorum of influencers on it. On dabeone that is expected to need a quorum of 2 or fewer, so
+     * every ratio short of {@code |influencers| / 2} should stay on the stable edges.
+     *
+     * @param arcs pairs to report cost-to-leave for, as {@code {from, to}}
+     */
+    public static void stablePlusScan(PresetScenarioParameter preset, Labelling l, SolverFacts f,
+                                      Flocking flock, int[] ratios, int[][] arcs, int[] path,
+                                      Path out) throws IOException {
+        MapStates m = MapStates.of(l.map(), flock, l.live(), l.liveCount());
+        StateSet pure = m.pureStable(1);
+        StateSet stable = pure.partialTick(StateSet.Steering.STRAIGHT)
+                .closed(StateSet.Steering.STRAIGHT);
+        boolean[] stableEdge = new boolean[f.edges()];
+        for (int s : stable.toArray()) if (l.edge()[s] >= 0) stableEdge[l.edge()[s]] = true;
+
+        System.out.printf("%n=== %s @%s: stable+ under the single-quorum rule ===%n",
+                preset.name(), preset.ingest().hash());
+        System.out.printf("pureStable(1) %,d in %d loop(s); stable %,d on edges %s%n",
+                pure.size(), m.cycles(pure).size(), stable.size(),
+                MapStates.byEdge(stable, l.edge(), f.edges()));
+
+        // The existing cost-to-leave, reduced over each edge's inbound points, so the stable+
+        // figures below have the published number to sit against.
+        EdgeNavigation.EdgeNav[] nav = EdgeNavigation.analyse(l.map(), l.live(), l.liveCount(),
+                l.edge(), f.edges());
+        int[][] cost = new int[arcs.length][];
+        for (int a = 0; a < arcs.length; a++) {
+            cost[a] = EdgeNavigation.steerCostTo(l.map(), l.live(), l.liveCount(), l.edge(),
+                    f.edges(), arcs[a][0], arcs[a][1]);
+            for (EdgeNavigation.Exit e : nav[arcs[a][0]].exits()) {
+                if (e.to() != arcs[a][1]) continue;
+                System.out.printf("cost to leave %d->%d  from the %,d INBOUND points (what the "
+                                + "edge graph publishes): min %d, max %d, %d unreachable%n",
+                        arcs[a][0], arcs[a][1], nav[arcs[a][0]].inbound(), e.minTicks(),
+                        e.maxTicks(), e.unreachable());
+            }
+            System.out.printf("                      from pureStable(1): %s        from stable: "
+                            + "%s%n", reduce(pure, cost[a], l.edge(), arcs[a][0]),
+                    reduce(stable, cost[a], l.edge(), arcs[a][0]));
+        }
+
+        System.out.printf("%n%6s %7s %10s %9s %9s  %-24s", "ratio", "quorum", "states",
+                "vs stable", "path tick", "edges");
+        for (int[] arc : arcs) System.out.printf(" %14s", "cost " + arc[0] + "->" + arc[1]);
+        System.out.println("   exits?");
+
+        List<StateSetRender.Panel> panels = new ArrayList<>();
+        panels.add(new StateSetRender.Panel("pureStable(1)",
+                String.format("%,d states, %d loop(s)", pure.size(), m.cycles(pure).size()), pure));
+        panels.add(new StateSetRender.Panel("stable = .partialTick.closed",
+                String.format("%,d states", stable.size()), stable));
+
+        for (int r : ratios) {
+            StateSet plus = stable.expandByAgreement(pure, r);
+            int quorum = Math.max(1, pure.size() / r);
+            int last = -1;
+            for (int t = 0; t < path.length; t++) if (plus.contains(path[t])) last = t;
+            List<Integer> escaped = new ArrayList<>();
+            for (int s : plus.toArray()) {
+                int e = l.edge()[s];
+                if (e >= 0 && !stableEdge[e] && !escaped.contains(e)) escaped.add(e);
+            }
+            StringBuilder costs = new StringBuilder();
+            for (int a = 0; a < arcs.length; a++) {
+                costs.append(String.format(" %14s", reduce(plus, cost[a], l.edge(), arcs[a][0])));
+            }
+            System.out.printf("%6d %7d %,10d %8.1fx %9d  %-24s%s   %s%n", r, quorum, plus.size(),
+                    plus.size() / (double) stable.size(), last,
+                    MapStates.byEdge(plus, l.edge(), f.edges()), costs,
+                    escaped.isEmpty() ? "none" : "EXITS " + escaped);
+            panels.add(new StateSetRender.Panel(
+                    String.format("ratio %d — quorum %d", r, quorum),
+                    String.format("%,d states, %.1fx stable, exits: %s", plus.size(),
+                            plus.size() / (double) stable.size(),
+                            escaped.isEmpty() ? "none" : escaped.toString()), plus));
+        }
+        System.out.printf("%d turns hit the cap instead of ending%n", m.capped());
+
+        if (out != null) {
+            StateSetRender.write(preset.ingest().display(), out, panels, 4, 2,
+                    String.format("%s @%s — stable+ projected to (x,y), by agreement ratio",
+                            preset.name(), preset.ingest().hash()));
+        }
+    }
+
+    /** Cost to leave, reduced over the part of a state set that lies on one edge. */
+    private static String reduce(StateSet set, int[] cost, int[] edge, int from) {
+        int min = EdgeNavigation.NEVER, max = -1, unreachable = 0, n = 0;
+        for (int s : set.toArray()) {
+            if (edge[s] != from) continue;
+            n++;
+            if (cost[s] == EdgeNavigation.NEVER) { unreachable++; continue; }
+            min = Math.min(min, cost[s]);
+            max = Math.max(max, cost[s]);
+        }
+        if (n == 0) return "no states";
+        return String.format("%s-%d, %d unr",
+                min == EdgeNavigation.NEVER ? "-" : String.valueOf(min), max, unreachable);
+    }
+
+    /**
      * The same, over a range of agreement ratios, against one flown path.
      * <p>
      * The ratio is the only free parameter in stable+ and there is no principle fixing it, so the
@@ -3216,11 +3322,11 @@ picks, never in what is available to it.
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
         int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
                 Path.of("render", "phase40-replays.tsv"));
-        stablePlusSweep(p, lab, facts, f, new int[]{8, 12, 14, 16, 18, 20, 24, 28, 32}, path);
-        StateSet plus = stablePlus(p, lab, facts, f, 16);
-        ThreeBoidSamples.explain(p, lab, facts, tabs, 4, 0, /*route=*/2, /*otherRoute=*/1,
-                /*cell=*/158, 255, Path.of("render", "phase40-replays.tsv"), f, f.diluted(),
-                plus, null);
+        // Ratios chosen to walk the quorum down one step at a time: 278 influencers, so these
+        // give quorums 34, 17, 8, 6, 5, 4, 3, 2, 1.
+        stablePlusScan(p, lab, facts, f, new int[]{8, 16, 34, 46, 55, 69, 92, 139, 278},
+                new int[][]{{4, 0}, {2, 1}}, path,
+                Path.of("render", "stable-plus-by-ratio.png"));
         if (true) return;
     }
 

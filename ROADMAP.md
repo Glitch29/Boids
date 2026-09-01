@@ -178,6 +178,76 @@ witness exists.
   untested.
 - Nothing yet applies stable+ to the other nineteen regions, or to the corpus.
 
+### The single-quorum rewrite, and where exits appear
+
+Respecified by the user 2026-08-30, same day. The first version tied **three** numbers to the one
+ratio — the quorum to start a turn, the share that had to drop out before it could end, and the
+share that had to remain for it to continue — and split states into mid-turn, which were not
+closed under straight travel, and end-turn, which were. That left the result not closed, which is
+both harder to reason about and harder to predict.
+
+Now: **one quorum, `|influencers| / agreementRatio`, gating both starting and continuing; nothing
+gates ending, so the turn may stop at any tick and every state along it is added.** The set is
+closed under straight travel at all times, so adding is
+
+```java
+for (int s = state; s >= 0 && !out.get(s); s = straight[s]) out.set(s);
+```
+
+— add, and walk the straight successors until they meet ground already covered, which is sound
+precisely because anything already present brought its own straight future with it.
+
+**The prediction this buys, and it holds.** With one quorum and everything closed, an exit can
+only enter the set if an exit window sits on the stable loop with a quorum of influencers on it.
+Measured across the whole range:
+
+| ratio | quorum | states | ×stable | edges reached |
+| --- | --- | --- | --- | --- |
+| 8 | 34 | 6,300 | 3.9× | 2, 4, 7 |
+| 16 | 17 | 13,515 | 8.4× | 2, 4, 7 |
+| 34 | 8 | 14,966 | 9.3× | 2, 4, 7 |
+| 55 | 5 | 15,225 | 9.5× | 2, 4, 7 |
+| 92 | 3 | 15,347 | 9.5× | 2, 4, 7 |
+| 139 | **2** | 15,413 | 9.6× | 2, 4, 7 |
+| 278 | **1** | 18,358 | 11.4× | **+ 0, 1, 3, 5, 8** |
+
+**No exits at any quorum of 2 or more; exits onto five edges at quorum 1.** The user's expectation
+was that quorums above 2 would be safe; the boundary is one lower still. Note the set barely grows
+between quorum 5 and quorum 2 (15,225 → 15,413) and then jumps 3,000 at quorum 1, which is the
+same fact seen as size.
+
+Drawn by `StateSetRender` at `render/stable-plus-by-ratio.png` — one panel per ratio, projected to
+`(x, y)`, each pixel coloured by how many of its 64 headings are in the set.
+
+### Cost to leave, with stable+ substituted
+
+**Correction to a premise.** The cost-to-leave the edge graph publishes is reduced over each
+edge's **inbound points** — 618 on edge 4, 382 on edge 2 — not over `pureStable(1)`, which has 93
+and 96. They are not the same set, and they do not always agree:
+
+| source set | `4->0` min–max | `2->1` min–max |
+| --- | --- | --- |
+| inbound points — **what the edge graph publishes** | **8**–8 | **7**–8 |
+| `pureStable(1)` | 8–10 | 8–16 |
+| map-wide stable | 6–15 | 7–19 |
+| **stable+, quorum 17 down to 2** | **5**–15 | **6**–19 |
+
+The guess that the published figure matches `pureStable(1)` holds for `4->0` (both 8) and fails by
+one for `2->1` (7 against 8).
+
+> **Cost to leave `4->0` falls from 8 to 5, and `2->1` from 7 to 6**, once the source set is
+> stable+ rather than the inbound points. Three ticks and one tick of steering that a boid left
+> where ordinary traffic leaves it does not have to spend.
+
+**The minimum is flat across the whole safe range.** 5 and 6 for every quorum from 17 down to 2 —
+only quorum 34 is higher (6 and 7) and quorum 1 collapses to 0, since by then the set contains the
+exit edges themselves. A number that does not move over an order of magnitude of the free
+parameter is a property of the map rather than of the parameter.
+
+`EdgeNavigation.steerCostTo` hands the per-state cost array back unreduced so this uses the
+traversal `analyse` already runs rather than a second copy of it.
+
+
 ---
 
 ## 1. Critical-envelope analysis — redesign — **priority one**

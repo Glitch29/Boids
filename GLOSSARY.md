@@ -306,14 +306,25 @@ clock's 275.29 for the same loop, which nothing in either knows about the other.
 traffic**, visited without psyboid activity or abnormal circumstances. Wanted because *stable* is
 what a lone boid holds and no boid in a scene is alone — the flock knocks everyone slightly off it
 constantly — so a history that merely starts a little off stable should not thereby be
-unexplained. Built by `StateSet.expandByAgreement`. **Under construction; expect the definition to
+unexplained. Built by `StateSet.expandByAgreement`, and **closed under straight travel at every
+point**, which is what makes it predictable: an exit can only enter it if an exit window sits on
+the stable loop with a quorum of influencers on it. **Under construction; expect the definition to
 change.**
 
-**agreement ratio** — the one free parameter in stable+. A turn is admitted into the set when
-`|influencers| / ratio` of the influencer placements would induce it, so a turn only one contrived
-position produces is refused while one a broad swathe of ordinary traffic produces is not. **A
-larger ratio is a weaker requirement**, since it is a divisor. Chosen by the edges it reaches: on
-dabeone `4->0`, **16 is the largest ratio that adds no new edge**, and 18 leaks onto four.
+**agreement ratio** — the one free parameter in stable+, and **one** number: `|influencers| /
+ratio` placements must ask for a turn before it may start, the same count must keep asking for it
+to continue, and nothing at all is needed to end it, so a turn may stop at any tick. **A larger
+ratio is a weaker requirement**, since it is a divisor. On dabeone `4->0` the set reaches no edge
+beyond the stable ones at any **quorum of 2 or more**, and spills onto five at quorum 1.
+
+
+**cost to leave** — the fewest ticks of non-straight steering needed to get from an edge to a
+named other edge; the ticks need not be consecutive or agree in direction. `EdgeNavigation.Exit`,
+surfaced in the edge graph. **It is a reduction over a source set, and which set is the whole
+question**: the published figure reduces over the edge's *inbound* points, which is right for a
+boid arriving cleanly and wrong for one already on the edge because traffic left it there.
+`EdgeNavigation.steerCostTo` hands the per-state array back so any source set can be substituted.
+On dabeone, over stable+ instead: `4->0` falls from **8 to 5**, `2->1` from **7 to 6**.
 
 **influencers** — the set of places the other boid may be, when expanding by agreement. Must be
 closed under straight travel, because the coalition is carried forward by coasting.
@@ -398,7 +409,8 @@ anything not listed.
 | three-boid phase map | `ThreeBoidPhase` | `render/phase<f>_<t>.png` |
 | region overlay | hand | `analysis/3BoidAreasOfInterest.png` |
 | region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
-| map-wide stable, stable+ | `StateSet` + `MapStates`, driven by `SimTest.stablePlus` | — |
+| map-wide stable, stable+ | `StateSet` + `MapStates`, driven by `SimTest.stablePlusScan` | `render/stable-plus-by-ratio.png` |
+| cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |

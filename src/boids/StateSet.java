@@ -85,16 +85,20 @@ public interface StateSet {
      * one contrived position produces is not admitted while one that a broad swathe of the
      * ordinary traffic produces is.
      * <p>
-     * <b>The turn's duration is not known, so every plausible end is taken.</b> The coalition is
-     * carried forward alongside the boid — the influencers coast, the boid turns — and the boid's
-     * state is collected at every tick as a mid-turn state, and additionally as an end-turn state
-     * from the moment an {@code agreementRatio} share of the coalition has stopped asking for the
-     * turn. The turn stops when all but that share have.
+     * <b>One quorum, and the turn may stop at any tick.</b> The same
+     * {@code |influencers| / agreementRatio} gates starting the turn and continuing it, and
+     * nothing gates ending it — a boid is free to stop turning whenever, so every state along the
+     * turn is a state a boid can be left in and every one of them is added, together with
+     * everything downstream of it. The coalition is carried forward alongside the boid: the
+     * influencers coast, the boid turns, and the turn ends when the quorum stops asking for it.
      * <p>
-     * <b>End-turn states are closed under straight travel and mid-turn states are not.</b> A boid
-     * that has finished turning coasts onward and everything downstream of it is reached; a boid
-     * still mid-turn has not finished, and closing from there would credit it with a straight
-     * future it does not have.
+     * An earlier version tied three numbers to the one ratio — the quorum to start, the share
+     * that had to drop out before the turn could end, and the share that had to remain for it to
+     * continue — and separated mid-turn states, which were not closed, from end-turn states,
+     * which were. That left the result not closed under straight travel, which is both harder to
+     * reason about and harder to predict: with one quorum and every state closed, an exit can
+     * only enter the set if an exit window sits on the stable loop with a quorum of influencers
+     * on it.
      *
      * @param influencers where the other boid may be. Must be closed under straight travel, since
      *                    the coalition is advanced by coasting

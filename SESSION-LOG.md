@@ -146,6 +146,39 @@ Also settled a detail of the user's description: the two neighbours are on **edg
 that knocks the suspect off stable at tick 13) and **edge 2** (the leader, 41–45). Neither is on
 edge 3.
 
+**Then: stable+ respecified to a single quorum.** The user's own diagnosis — the ratio was
+controlling three numbers at once, and the result was left not closed under straight travel.
+Rewritten: one quorum `|influencers| / agreementRatio` gates starting *and* continuing a turn,
+nothing gates ending it, and every state along the turn is added together with its straight
+future. The set is closed at all times, so adding is a walk down straight successors that stops
+the moment it meets covered ground.
+
+**The prediction that buys, tested across the range: no exits at any quorum of 2 or more, exits
+onto edges 0, 1, 3, 5, 8 at quorum 1.** The user expected quorums above 2 to be safe; the boundary
+is one lower. Sizes: quorum 34 → 6,300; 17 → 13,515; 8 → 14,966; 5 → 15,225; 2 → 15,413; then a
+3,000-state jump to 18,358 at quorum 1. `render/stable-plus-by-ratio.png` draws each, projected to
+`(x, y)` and coloured by headings-per-pixel, via the new `StateSetRender`.
+
+**Cost to leave, with stable+ substituted — and a premise corrected.** The figure the edge graph
+publishes reduces over each edge's **inbound points** (618 on edge 4, 382 on edge 2), not over
+`pureStable(1)` (93 and 96). Not the same set, and they agree on `4->0` (both min 8) but not on
+`2->1` (7 against 8).
+
+| source set | `4->0` | `2->1` |
+| --- | --- | --- |
+| inbound points, published | 8–8 | 7–8 |
+| `pureStable(1)` | 8–10 | 8–16 |
+| map-wide stable | 6–15 | 7–19 |
+| **stable+, quorum 2..17** | **5**–15 | **6**–19 |
+
+**`4->0` falls from 8 to 5, `2->1` from 7 to 6**, and the minimum is flat across the whole safe
+quorum range — a number that does not move over an order of magnitude of the free parameter.
+`EdgeNavigation.steerCostTo` was added to hand the per-state cost array back unreduced, so this
+runs the traversal `analyse` already has rather than a second copy.
+
+Under the new rule `R20` still needs quorum 17 or lower to come back onto stable+ at tick 41;
+at quorum 34 it is still last on it at tick 13, as before.
+
 ---
 
 ## 2026-08-30 (close, later still) — HAPPY.md

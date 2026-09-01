@@ -255,8 +255,11 @@ public final class MapStates {
 
         public StateSet expandByAgreement(StateSet influencers, int agreementRatio) {
             int[] inf = influencers.toArray();
-            int quorum = inf.length / agreementRatio;
-            Bits mid = new Bits(cells), end = new Bits(cells);
+            // One number, not three. It gates starting a turn and continuing it, and nothing
+            // gates ending one, so a turn may stop at any tick and every state along it is a
+            // state a boid can be left in.
+            int quorum = Math.max(1, inf.length / agreementRatio);
+            Bits out = new Bits(bits);
             int[] coalition = new int[inf.length];
 
             for (int b : toArray()) {
@@ -264,7 +267,6 @@ public final class MapStates {
                     int n = agreeing(inf, inf.length, b, dir, coalition);
                     if (n < quorum) continue;
                     int[] posse = Arrays.copyOf(coalition, n);
-                    int leave = n / agreementRatio;
                     int at = b;
                     int step = 0;
                     for (; step < TURN_CAP; step++) {
@@ -274,16 +276,27 @@ public final class MapStates {
                         int next = map.successor(at, dir);
                         if (next < 0) break;
                         at = next;
-                        mid.set(at);
-                        int still = agreeing(posse, posse.length, at, dir, null);
-                        if (n - still >= leave) end.set(at);
-                        if (still <= leave) break;
+                        addClosed(out, at);
+                        if (agreeing(posse, posse.length, at, dir, null) < quorum) break;
                     }
                     if (step == TURN_CAP) capped++;
                 }
             }
-            StateSet withEnds = union(new Set(end)).closed(Steering.STRAIGHT);
-            return withEnds.union(new Set(mid));
+            return new Set(out);
+        }
+
+        /**
+         * Adds a state and everything downstream of it, stopping the moment it meets ground
+         * already covered.
+         * <p>
+         * The set is closed under straight travel before this runs and after it, which is what
+         * makes the early stop sound: a state already present brought its own straight future
+         * with it, so there is nothing beyond it left to add. That invariant is also why the
+         * turn no longer needs its states collected and closed in a second pass — the closure is
+         * never outstanding.
+         */
+        private void addClosed(Bits out, int state) {
+            for (int s = state; s >= 0 && !out.get(s); s = straight[s]) out.set(s);
         }
 
         /**

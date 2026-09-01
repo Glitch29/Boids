@@ -119,7 +119,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 46 files.
+One package, `src/boids`, 47 files.
 
 **Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
 the single definition of what a boid perceives) · `Boids2DEngine` (one tick in index order,
@@ -157,6 +157,7 @@ that map, drawn at envelope entry).
 `CriticalEnvelopeStore` · `ExitRender`.
 
 **Rendering** — `Boids2DRenderer` · `Renderer` · `NavMapRender` · `EdgeGraphRender` ·
+`StateSetRender` (state sets projected to `(x, y)`, several to a sheet) ·
 `SceneRender` · `TwoBoidRender` · `TwoBoidRouteSheet`.
 
 **Driver** — `SimTest`, 2,573 lines. Holds every entry point below *and* the whole
@@ -193,7 +194,7 @@ ways → 6 edges.
 | `steeringHistory` | per tick, what *every* neighbour accounts for — finds multi-leader histories |
 | `renderTick` | one exit at whole-map scale, for structural rather than influence questions |
 | `stablePlus` | the map-wide stable set and what agreement expands it to, per edge |
-| `stablePlusSweep` | the same over a range of agreement ratios, against one flown path |
+| `stablePlusScan` | the same over a range of agreement ratios, with cost-to-leave and a render |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` is the per-region counterpart of
@@ -231,6 +232,7 @@ a map that has since been edited.
 | `analysis/3BoidAreasOfInterest.png` | hand | that map with regions of interest painted over it. **An input, and versioned for that reason** |
 | `render/phase<f>_<t>-samples.png` | `ThreeBoidSamples` | one replayed arrangement per painted region, at critical-envelope entry |
 | `render/phase<f>_<t>-<region>-approach.png` | `ThreeBoidSamples.explain` | one region's approach at the ticks that decide it |
+| `render/stable-plus-by-ratio.png` | `SimTest.stablePlusScan` | stable+ projected to `(x, y)`, one panel per agreement ratio |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,
