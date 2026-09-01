@@ -107,6 +107,49 @@ public final class MapStates {
         return new Set(found);
     }
 
+    /**
+     * The definitive stable+ set: the ground a history has to reach to owe no explanation.
+     * <blockquote>
+     * {@code pureStable(1).partialTick.closed.expandByQuorum(pureStable(1), q).partialTick.closed}
+     * </blockquote>
+     * The trailing partial tick and closure are the same correction the leading pair make, applied
+     * again after the expansion for the same reason: an expansion ends on states of the step
+     * lattice it happened to land on, and a boid nudged between two of them is somewhere just as
+     * ordinary.
+     */
+    public StateSet stablePlus(int quorum) {
+        StateSet pure = pureStable(1);
+        return pure.partialTick(StateSet.Steering.STRAIGHT).closed(StateSet.Steering.STRAIGHT)
+                .expandByQuorum(pure, quorum)
+                .partialTick(StateSet.Steering.STRAIGHT).closed(StateSet.Steering.STRAIGHT);
+    }
+
+    /**
+     * The quorum the map's own shape asks for: four ticks of influencers, both ends included.
+     * <p>
+     * <b>The quorum is a number of ticks, and has to be converted into a number of states.</b> How
+     * many influencer states sit on one tick of the loop depends on how the straight-travel cycles
+     * came out — one loop closing in a single lap gives one state per tick, two loops or a
+     * two-lap closure give two, and all four phase offsets appearing in the pure set would give
+     * four. That is a fact about the map, not about flocking, so the quorum has to track it or the
+     * same requirement means different things on different maps.
+     * <p>
+     * The partial tick is what reveals it: it fills in exactly the phase offsets the pure set is
+     * missing, so {@code |pure.partialTick| / |pure|} is how many offsets were absent, and
+     * {@code 4 * round(speed)} divided by that is how many states four ticks covers. Rounding down
+     * to a power of two is there because the true ratio is a whole number of offsets measured
+     * through a set whose edges are ragged.
+     * <p>
+     * <b>Janky by the user's own description, and reported rather than trusted</b> — the caller
+     * should compare it against the quorum it means to use.
+     */
+    public int shapeQuorum() {
+        StateSet pure = pureStable(1);
+        int spread = pure.partialTick(StateSet.Steering.STRAIGHT).size() / pure.size();
+        int offsets = Integer.highestOneBit(Math.max(1, spread));
+        return 4 * (int) Math.round(Params.speed(map.radius())) / offsets + 1;
+    }
+
     /** A set of exactly these states. */
     public StateSet of(int... states) {
         Bits b = new Bits(cells);
@@ -254,11 +297,14 @@ public final class MapStates {
         }
 
         public StateSet expandByAgreement(StateSet influencers, int agreementRatio) {
+            return expandByQuorum(influencers, Math.max(1, influencers.size() / agreementRatio));
+        }
+
+        public StateSet expandByQuorum(StateSet influencers, int quorum) {
             int[] inf = influencers.toArray();
             // One number, not three. It gates starting a turn and continuing it, and nothing
             // gates ending one, so a turn may stop at any tick and every state along it is a
             // state a boid can be left in.
-            int quorum = Math.max(1, inf.length / agreementRatio);
             Bits out = new Bits(bits);
             int[] coalition = new int[inf.length];
 

@@ -3098,6 +3098,82 @@ picks, never in what is available to it.
      * wobble — and a route is precisely what the solver is supposed to find remarkable.
      */
     /**
+     * The three-boid phase map rebuilt on stable+ throughout.
+     * <p>
+     * Two things change together, and they have to: the suspect starts anywhere ordinary traffic
+     * could have left it on the edge rather than in a settled band across the middle, <b>and</b>
+     * the critical-envelope tables the map is coloured by terminate their histories on the same
+     * ground. Changing only the starts would draw a wider population against an account that
+     * still refuses everything off the narrow ground, which is a picture of the mismatch rather
+     * than of the flock.
+     * <p>
+     * <b>The ground is the union with settled, not a replacement.</b> A ground that failed to
+     * contain settled would refuse histories the old tables admit, and stable+ is meant to widen
+     * what counts as ordinary, never to narrow it. The overlap is reported because if stable+
+     * already contained settled the union is free, and if it did not that is worth knowing.
+     */
+    public static void phaseMapOnStablePlus(PresetScenarioParameter preset, Labelling l,
+                                            SolverFacts f, Flocking flock, int from, int keep,
+                                            int quorum, Path out) throws IOException {
+        MapStates m = MapStates.of(l.map(), flock, l.live(), l.liveCount());
+        System.out.printf("%n=== %s @%s: phase map on stable+, arc %d->%d ===%n", preset.name(),
+                preset.ingest().hash(), from, keep);
+
+        StateSet pureFor = m.pureStable(1);
+        int spread = pureFor.partialTick(StateSet.Steering.STRAIGHT).size();
+        int shape = m.shapeQuorum();
+        System.out.printf("pureStable(1) %,d, .partialTick %,d, spread %.2f -> %d offset(s); "
+                        + "4*round(speed) = %d%n", pureFor.size(), spread,
+                spread / (double) pureFor.size(),
+                Integer.highestOneBit(Math.max(1, spread / pureFor.size())),
+                4 * (int) Math.round(Params.speed(preset.turningRadius())));
+        System.out.printf("quorum %d in use; the map's shape asks for %d%s%n", quorum, shape,
+                shape == quorum ? "" : "  <-- THESE DISAGREE, using the one passed in");
+
+        StateSet plus = m.stablePlus(quorum);
+        System.out.printf("stable+ %,d states: %s%n", plus.size(),
+                MapStates.byEdge(plus, l.edge(), f.edges()));
+
+        boolean[] settled = CriticalEnvelope.settled(l.map(), l.edge(), l.live(), l.liveCount(),
+                from);
+        int settledOn = 0, alsoPlus = 0, plusOn = 0;
+        boolean[] ground = new boolean[l.edge().length];
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i];
+            if (settled[s]) { settledOn++; if (plus.contains(s)) alsoPlus++; }
+            if (l.edge()[s] == from && plus.contains(s)) plusOn++;
+            ground[s] = settled[s] || (l.edge()[s] == from && plus.contains(s));
+        }
+        int groundSize = 0;
+        for (boolean b : ground) if (b) groundSize++;
+        System.out.printf("edge %d: %,d settled, %,d in stable+, %,d settled states also in "
+                        + "stable+; ground is their union, %,d states%n", from, settledOn, plusOn,
+                alsoPlus, groundSize);
+
+        long t0 = System.nanoTime();
+        ExitAudit.Tables tabs = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+                l.map(), l.edge(), l.live(), l.liveCount(), new int[][]{{from, keep}}, flock,
+                flock.diluted(), ground);
+        System.out.printf("tables on the wider ground in %.0fs%n%s",
+                (System.nanoTime() - t0) / 1e9, tabs.summary());
+
+        ThreeBoidPhase.run(preset, l, f, tabs, from, keep, /*band=*/8, /*kBoid=*/8, /*kPsy=*/8,
+                /*resolution=*/0.5, /*targetFill=*/0.9995, /*seed=*/1, plus, out);
+
+        // The control. Two things changed at once — where the suspect starts and what the tables
+        // will terminate a history on — and a single number cannot be attributed to either
+        // without holding one of them still. This holds the ground at settled and keeps the
+        // wider starts, so the difference between the two runs is the ground alone.
+        System.out.printf("%n--- control: the same wider starts, tables still on settled ---%n");
+        ExitAudit.Tables narrow = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+                l.map(), l.edge(), l.live(), l.liveCount(), new int[][]{{from, keep}}, flock,
+                flock.diluted(), null);
+        ThreeBoidPhase.run(preset, l, f, narrow, from, keep, 8, 8, 8, 0.5, 0.9995, 1, plus,
+                out.resolveSibling(out.getFileName().toString()
+                        .replace(".png", "-control.png")));
+    }
+
+    /**
      * Stable+ over a range of agreement ratios: what it grows to, whether it ever reaches an
      * exit, what it costs to leave from it, and a picture of each.
      * <p>
@@ -3322,11 +3398,8 @@ picks, never in what is available to it.
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
         int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
                 Path.of("render", "phase40-replays.tsv"));
-        // Ratios chosen to walk the quorum down one step at a time: 278 influencers, so these
-        // give quorums 34, 17, 8, 6, 5, 4, 3, 2, 1.
-        stablePlusScan(p, lab, facts, f, new int[]{8, 16, 34, 46, 55, 69, 92, 139, 278},
-                new int[][]{{4, 0}, {2, 1}}, path,
-                Path.of("render", "stable-plus-by-ratio.png"));
+        phaseMapOnStablePlus(p, lab, facts, f, 4, 0, /*quorum=*/5,
+                Path.of("render", "phase40-stableplus.png"));
         if (true) return;
     }
 

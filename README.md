@@ -195,6 +195,7 @@ ways → 6 edges.
 | `renderTick` | one exit at whole-map scale, for structural rather than influence questions |
 | `stablePlus` | the map-wide stable set and what agreement expands it to, per edge |
 | `stablePlusScan` | the same over a range of agreement ratios, with cost-to-leave and a render |
+| `phaseMapOnStablePlus` | the three-boid phase map with stable+ as both the suspect population and admission's ground, plus a control |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` is the per-region counterpart of
@@ -221,7 +222,7 @@ a map that has since been edited.
 | `<ingest>/metric/metric-*.bin` | `EdgeMetricStore` | the clock, keyed on inputs *and* `FORMAT` |
 | `<ingest>/corpus/*.tsv` | `SimTest.corpus` | flown journeys vs clock estimates |
 | `<ingest>/windows/window_<f>_<t>.tsv` | `SimTest.windows` | critical-envelope bands, tau by tau |
-| `<ingest>/envelope/envelope-*.bin` | `CriticalEnvelopeStore` | the CEA pairing tables, keyed on inputs *and* `FORMAT`. Minutes to build, instant to load |
+| `<ingest>/envelope/envelope-*.bin` | `CriticalEnvelopeStore` | the CEA pairing tables, keyed on inputs, the admission ground, *and* `FORMAT` (now 2). Minutes to build, instant to load |
 | `<ingest>/envelope/arc_<f>_<t>.tsv` | `SimTest.envelope` | the same tables in readable form, for inspection only |
 | `<ingest>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
 | `<ingest>/audit/exits_*.tsv` | `ExitAudit` | every classified exit. **Currently unsound** |
@@ -233,6 +234,7 @@ a map that has since been edited.
 | `render/phase<f>_<t>-samples.png` | `ThreeBoidSamples` | one replayed arrangement per painted region, at critical-envelope entry |
 | `render/phase<f>_<t>-<region>-approach.png` | `ThreeBoidSamples.explain` | one region's approach at the ticks that decide it |
 | `render/stable-plus-by-ratio.png` | `SimTest.stablePlusScan` | stable+ projected to `(x, y)`, one panel per agreement ratio |
+| `render/phase40-stableplus.png` | `SimTest.phaseMapOnStablePlus` | the arc `4->0` phase map on stable+ throughout. **3.0% unexplained against the old 21.0%** |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,

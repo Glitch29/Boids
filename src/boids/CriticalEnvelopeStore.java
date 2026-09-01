@@ -43,13 +43,28 @@ public final class CriticalEnvelopeStore {
      * 1: first version — envelope from the unsteered-predecessor closure, downstream part over
      * every one-tick crossing, admission with the two-model boid.
      */
-    private static final int FORMAT = 1;
+    private static final int FORMAT = 2;
 
     /** The table for this arc, from store if it is there and computed and stored if it is not. */
     public static CriticalEnvelope.Table of(Path dir, NavMap map, int[] edge, int[] live,
                                             int liveCount, int from, int keep, Flocking f,
                                             Flocking alt) {
-        String key = key(map, edge, live, liveCount, from, keep, f, alt);
+        return of(dir, map, edge, live, liveCount, from, keep, f, alt, null);
+    }
+
+    /**
+     * The same, naming the ground a history has to reach.
+     * <p>
+     * The ground goes into the cache key, because a table built against a wider ground is a
+     * different table answering a different question, and two of them under one name is exactly
+     * the failure the FORMAT rule exists to prevent.
+     *
+     * @param ground states of {@code from} that terminate a history, or null for the settled set
+     */
+    public static CriticalEnvelope.Table of(Path dir, NavMap map, int[] edge, int[] live,
+                                            int liveCount, int from, int keep, Flocking f,
+                                            Flocking alt, boolean[] ground) {
+        String key = key(map, edge, live, liveCount, from, keep, f, alt, ground);
         Path file = dir.resolve("envelope-" + key + ".bin");
         if (Files.exists(file)) {
             try (DataInputStream in = new DataInputStream(
@@ -62,7 +77,7 @@ public final class CriticalEnvelopeStore {
             }
         }
         CriticalEnvelope.Table t = CriticalEnvelope.analyse(map, edge, live, liveCount, from,
-                keep, f, alt);
+                keep, f, alt, ground);
         if (t.budgetHit()) {
             // An incomplete table would be indistinguishable from a complete one once written,
             // and every later run would inherit the gap silently.
@@ -85,7 +100,7 @@ public final class CriticalEnvelopeStore {
      * the same graph whatever their images look like.
      */
     private static String key(NavMap map, int[] edge, int[] live, int liveCount, int from,
-                              int keep, Flocking f, Flocking alt) {
+                              int keep, Flocking f, Flocking alt, boolean[] ground) {
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -110,6 +125,9 @@ public final class CriticalEnvelopeStore {
         flocking(feed, f);
         flocking(feed, alt);
         for (int i = 0; i < liveCount; i++) { feed.accept(live[i]); feed.accept(edge[live[i]]); }
+        // The ground is part of what the table means, so it is part of its name.
+        if (ground == null) feed.accept(-1);
+        else for (int s = 0; s < ground.length; s++) if (ground[s]) feed.accept(s);
 
         byte[] sum = digest.digest();
         StringBuilder out = new StringBuilder(16);

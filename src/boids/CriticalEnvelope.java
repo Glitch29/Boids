@@ -314,8 +314,28 @@ public final class CriticalEnvelope {
      */
     public static Table analyse(NavMap map, int[] edge, int[] live, int liveCount,
                                 int from, int keep, Flocking f, Flocking alt) {
+        return analyse(map, edge, live, liveCount, from, keep, f, alt, null);
+    }
+
+    /**
+     * The same, naming the ground a history has to reach.
+     * <p>
+     * Admission walks a pair backwards until the exiting boid stands somewhere it could have been
+     * left without explanation, and {@link #settled} is the narrow answer to that: what a boid
+     * <b>alone</b> can hold on this edge. No boid in a scene is alone, and a history that merely
+     * begins a little off settled is refused for a reason that has nothing to do with the exit —
+     * which is the whole of the multi-leader residue on arc {@code 4->0}.
+     * <p>
+     * A wider ground is passed here instead. <b>It must contain {@link #settled}</b>; a ground
+     * that did not would refuse histories the narrow one admits, which is the opposite of the
+     * point. Callers that widen should union rather than replace.
+     *
+     * @param ground states of {@code from} that terminate a history, or null for {@link #settled}
+     */
+    public static Table analyse(NavMap map, int[] edge, int[] live, int liveCount,
+                                int from, int keep, Flocking f, Flocking alt, boolean[] ground) {
         Envelope env = envelope(map, edge, live, liveCount, from, keep);
-        boolean[] settled = settled(map, edge, live, liveCount, from);
+        boolean[] settled = ground != null ? ground : settled(map, edge, live, liveCount, from);
 
         boolean[] inEnv = new boolean[edge.length];
         for (int s : env.onFrom()) inEnv[s] = true;

@@ -138,12 +138,27 @@ public final class ExitAudit implements Boids2DEngine.Trace {
          */
         public static Tables of(Path dir, NavMap map, int[] edge, int[] live, int liveCount,
                                 int[][] arcSpecs, Flocking normal, Flocking alt) {
+            return of(dir, map, edge, live, liveCount, arcSpecs, normal, alt, null);
+        }
+
+        /**
+         * The same, naming the ground a history has to reach.
+         *
+         * @param ground states that terminate a history, or null for each arc's settled set.
+         *               Indexed by state over the whole map; only states of the arc's own edge
+         *               matter, and it must contain that edge's settled set — see
+         *               {@link CriticalEnvelope#analyse(NavMap, int[], int[], int, int, int,
+         *               Flocking, Flocking, boolean[])}
+         */
+        public static Tables of(Path dir, NavMap map, int[] edge, int[] live, int liveCount,
+                                int[][] arcSpecs, Flocking normal, Flocking alt,
+                                boolean[] ground) {
             List<Arc> arcs = new ArrayList<>();
             for (int[] spec : arcSpecs) {
                 // The same model twice makes the second choice a no-op, which is exactly what
                 // "no fallback" means and needs no separate code path.
                 CriticalEnvelope.Table t = CriticalEnvelopeStore.of(dir, map, edge, live,
-                        liveCount, spec[0], spec[1], normal, alt == null ? normal : alt);
+                        liveCount, spec[0], spec[1], normal, alt == null ? normal : alt, ground);
                 boolean[] in = new boolean[edge.length];
                 for (int s : t.envelope().onFrom()) in[s] = true;
                 for (int s : t.envelope().onKeep()) in[s] = true;

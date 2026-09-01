@@ -179,6 +179,45 @@ runs the traversal `analyse` already has rather than a second copy.
 Under the new rule `R20` still needs quorum 17 or lower to come back onto stable+ at tick 41;
 at quorum 34 it is still last on it at tick 13, as before.
 
+**Then: the definitive stable+, and the phase map rebuilt on it.** Quorum named outright rather
+than derived from a ratio, and the partial-tick correction applied again after the expansion:
+`pureStable(1).partialTick.closed.expandByQuorum(pure, 5).partialTick.closed`. **19,861 states**,
+edges 2:9,284 4:3,840 7:6,706 8:31.
+
+**The shape formula disagrees with the quorum it was meant to derive.** `|pure| = 278`,
+`|pure.partialTick| = 1,040`, spread **3.74** — which is the four offsets the intent expects, but
+rounding *down* to a power of two takes it to 2 and the formula returns **9**. Rounding to the
+*nearest* power of two gives 4 and hence 5. Used 5, since it was named explicitly; the driver
+prints both and flags the disagreement.
+
+**Stable+ does not contain settled.** Edge 4: 2,371 settled, 3,840 stable+, only **1,065 in
+both** — settled is seeded from the edge's entrances, which the straight-travel loop never
+touches. So admission's ground is their **union** (5,146 states); stable+ alone would have refused
+histories the old tables admit. `CriticalEnvelope.analyse` takes a ground set now,
+`CriticalEnvelopeStore.FORMAT` is **2**, and the ground is fed into the cache key.
+
+**The result, with the two changes separated.** Same seed, same 3,840 starts, same 491,449 exits
+over 7,080,249 cells in both runs, so the only difference is the ground:
+
+| run | starts | ground | unexplained |
+| --- | --- | --- | --- |
+| previous era | settled 8-tick band | settled | 108,350 / 516,139 — **21.0%** |
+| control | stable+ on edge 4 | settled | 164,523 / 491,449 — **33.5%** |
+| **on stable+ throughout** | stable+ on edge 4 | settled ∪ stable+ | **14,923 / 491,449 — 3.0%** |
+
+Widening the starts alone makes it **worse** — 21.0% to 33.5%, exactly the chaos the user
+predicted when asking for it. Widening the ground then takes 33.5% to **3.0%**, an eleven-fold
+cut. `render/phase40-stableplus.png`, `-control.png`, and a `-replays.tsv` beside each.
+
+**Also flagged, not chased:** the trailing partial tick puts 31 states on **edge 8**. The
+expansion alone stays on {2, 4, 7} at every quorum down to 2, which is how the parameter was
+picked, so the closing correction breaks that property. Probably an edge-labelling effect at a
+boundary — a partial tick lands mid-step and the intermediate pixel can carry another edge's
+label.
+
+**Open:** the 3.0% is uncharacterised, and the twenty hand-marked regions have not been re-read
+against the new map.
+
 ---
 
 ## 2026-08-30 (close, later still) — HAPPY.md

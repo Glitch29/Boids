@@ -119,6 +119,29 @@ public final class ThreeBoidPhase {
                            ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
                            int kPsy, double resolution, double targetFill, long seed, Path out)
             throws IOException {
+        run(preset, l, f, tables, from, keep, band, kBoid, kPsy, resolution, targetFill, seed,
+                null, out);
+    }
+
+    /**
+     * The same, naming where the suspect may start.
+     * <p>
+     * The default is one representative per phase in a narrow band across the middle of the edge,
+     * every one of them settled — a clean, uniform launch that isolates the phase difference from
+     * everything else. That is the right control and the wrong population: a suspect in a real
+     * scene is wherever ordinary traffic left it, which is a <b>stable+</b> state anywhere on the
+     * edge, not a settled one in the middle.
+     * <p>
+     * ⚠ <b>The wider population is noisier by construction.</b> A suspect started deep into the
+     * edge can already be past the point some windows act at, and can drift; the phase difference
+     * then no longer accounts for everything that varies between two cells. Known and accepted.
+     *
+     * @param suspectStarts states the suspect may begin on, or null for the settled band
+     */
+    public static void run(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
+                           ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
+                           int kPsy, double resolution, double targetFill, long seed,
+                           StateSet suspectStarts, Path out) throws IOException {
         NavMap map = l.map();
         int[] edge = l.edge(), live = l.live();
         int liveCount = l.liveCount();
@@ -126,7 +149,15 @@ public final class ThreeBoidPhase {
         List<Route> routes = loops(f, from);
         List<int[]>[] where = where(f, routes);
         boolean[] settled = CriticalEnvelope.settled(map, edge, live, liveCount, from);
-        int[] starts = starts(map, edge, f, settled, live, liveCount, from, band);
+        int[] starts;
+        if (suspectStarts == null) {
+            starts = starts(map, edge, f, settled, live, liveCount, from, band);
+        } else {
+            List<Integer> on = new ArrayList<>();
+            for (int s : suspectStarts.toArray()) if (edge[s] == from) on.add(s);
+            starts = new int[on.size()];
+            for (int i = 0; i < starts.length; i++) starts[i] = on.get(i);
+        }
 
         System.out.printf("%n=== %s @%s: three-boid phase map, arc %d->%d ===%n", preset.name(),
                 preset.ingest().hash(), from, keep);
@@ -138,9 +169,12 @@ public final class ThreeBoidPhase {
         for (int e = 0; e < f.edges(); e++) if (where[e].isEmpty()) orphan.add(e);
         System.out.printf("  edges on no loop, therefore never sampled: %s%n", orphan);
         long patience = (long) Math.ceil(1 / (1 - targetFill));
-        System.out.printf("%d suspect starts in a %.0f-tick band; kBoid=%d kPsyboid=%d, "
+        System.out.printf("%,d suspect starts %s; kBoid=%d kPsyboid=%d, "
                         + "resolution %.2f, target fill %.4f (%,d consecutive misses)%n",
-                starts.length, band, kBoid, kPsy, resolution, targetFill, patience);
+                starts.length, suspectStarts == null
+                        ? String.format("in a %.0f-tick band, all settled", band)
+                        : "from the supplied set, anywhere on the edge",
+                kBoid, kPsy, resolution, targetFill, patience);
 
         Boids2DEngine engine = new Boids2DEngine(preset);
         Random rng = new Random(seed);

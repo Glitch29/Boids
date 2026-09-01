@@ -248,6 +248,78 @@ parameter is a property of the map rather than of the parameter.
 traversal `analyse` already runs rather than a second copy of it.
 
 
+
+### The definitive stable+, and the phase map rebuilt on it
+
+Settled by the user 2026-08-30. The definition, with the partial-tick correction applied again
+after the expansion:
+
+```java
+pureStable(1).partialTick(STRAIGHT).closed(STRAIGHT)
+             .expandByQuorum(pureStable(1), 5)
+             .partialTick(STRAIGHT).closed(STRAIGHT)
+```
+
+**The quorum is named outright, not derived from a ratio.** What it means is *how many ticks of
+influencer positions must agree* — four ticks, both ends included, so five. A ratio made that
+depend on how densely the influencer set happens to sample its loop, which is a fact about how the
+straight-travel cycles came out on the map rather than about flocking.
+
+`MapStates.stablePlus(quorum)`. On dabeone at quorum 5: **19,861 states**, on edges
+2:9,284 4:3,840 7:6,706 **8:31**.
+
+> ⚠ **Two things to look at before this is called settled.**
+>
+> **The shape formula gives 9, not 5.** `16 / floorPow2(|pure.partialTick| / |pure|) + 1` was
+> offered as the derivation. Measured: `|pure| = 278`, `|pure.partialTick| = 1,040`, so the spread
+> is **3.74** — which is the four phase offsets the intent expects, but rounding *down* to a power
+> of two takes 3.74 to **2**, and the formula returns 9. **Rounding to the nearest power of two
+> gives 4 and hence 5.** The intent is confirmed by the measurement; the rounding direction is the
+> defect. Quorum 5 is used because it was named explicitly; `MapStates.shapeQuorum` computes the
+> formula and the driver prints both and says when they disagree.
+>
+> **The trailing partial tick reaches edge 8** — 31 states. The expansion alone stays on
+> {2, 4, 7} at every quorum down to 2, which is how the parameter was chosen; the closing
+> correction breaks that. Almost certainly a labelling effect at an edge boundary rather than a
+> route, since a partial tick lands mid-step and the intermediate pixel can carry another edge's
+> label. Not chased.
+
+### Stable+ does not contain settled, so the ground is their union
+
+Found while wiring this in, and it matters. On edge 4: **2,371 settled states, 3,840 stable+
+states, and only 1,065 in both.** `settled` is seeded from the edge's *entrances*, which cover
+arrival geometry the straight-travel loop never touches, so stable+ is not a superset of it.
+
+**Using stable+ alone as admission's ground would therefore refuse histories the old tables
+admit** — the opposite of the point. `CriticalEnvelope.analyse` now takes a ground set, and the
+driver passes `settled ∪ (stable+ ∩ edge)`: **5,146 states** against 2,371.
+
+`CriticalEnvelopeStore.FORMAT` is **2**, and the ground is fed into the cache key. A table built
+against a wider ground answers a different question, and two of them under one name is exactly the
+failure the FORMAT rule exists to prevent.
+
+### The result, with the two changes separated
+
+Both runs use the same seed, the same 3,840 starts and produce the same 491,449 exits over the
+same 7,080,249 cells, so the only difference is what the tables terminate a history on.
+
+| run | suspect starts | admission ground | unexplained |
+| --- | --- | --- | --- |
+| previous era | settled, 8-tick band | settled | 108,350 / 516,139 — **21.0%** |
+| control | **stable+ on edge 4** | settled | 164,523 / 491,449 — **33.5%** |
+| **on stable+ throughout** | **stable+ on edge 4** | **settled ∪ stable+** | **14,923 / 491,449 — 3.0%** |
+
+**Widening the starts alone makes it worse**, from 21.0% to 33.5% — which is what the user
+predicted when asking for it: a suspect started deep into the edge can already be past where some
+windows act. **Widening the ground then takes 33.5% to 3.0%**, an eleven-fold cut, and more than
+pays for the harder population.
+
+`render/phase40-stableplus.png` and `-control.png`, with `-replays.tsv` beside each.
+`SimTest.phaseMapOnStablePlus` runs both.
+
+**Open.** The 3.0% has not been characterised — nobody has looked at what the remaining 14,923
+are, and the twenty hand-marked regions have not been re-read against the new map.
+
 ---
 
 ## 1. Critical-envelope analysis — redesign — **priority one**

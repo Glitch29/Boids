@@ -302,20 +302,27 @@ are in play and **only `pureStable(1)` is defined**. On dabeone it is **one cycl
 96 on edge 2, 93 on edge 4, 89 on edge 7 — one lap of `2 → 7 → 4 → 2`, and 278 ticks against the
 clock's 275.29 for the same loop, which nothing in either knows about the other.
 
-**stable+** — a genre, not yet a definition: the states a boid reaches in **ordinary multi-boid
+**stable+** — the states a boid reaches in **ordinary multi-boid
 traffic**, visited without psyboid activity or abnormal circumstances. Wanted because *stable* is
 what a lone boid holds and no boid in a scene is alone — the flock knocks everyone slightly off it
 constantly — so a history that merely starts a little off stable should not thereby be
 unexplained. Built by `StateSet.expandByAgreement`, and **closed under straight travel at every
 point**, which is what makes it predictable: an exit can only enter it if an exit window sits on
-the stable loop with a quorum of influencers on it. **Under construction; expect the definition to
-change.**
+the stable loop with a quorum of influencers on it. Settled 2026-08-30 as
+`pureStable(1).partialTick.closed.expandByQuorum(pureStable(1), 5).partialTick.closed`,
+`MapStates.stablePlus`. **It does not contain the per-edge *settled* set** — settled is seeded from
+the edge's entrances, which the straight-travel loop never touches, and on dabeone edge 4 only
+1,065 of 2,371 settled states are in it. Anything using stable+ as ground must **union** with
+settled, never replace it.
 
-**agreement ratio** — the one free parameter in stable+, and **one** number: `|influencers| /
-ratio` placements must ask for a turn before it may start, the same count must keep asking for it
-to continue, and nothing at all is needed to end it, so a turn may stop at any tick. **A larger
-ratio is a weaker requirement**, since it is a divisor. On dabeone `4->0` the set reaches no edge
-beyond the stable ones at any **quorum of 2 or more**, and spills onto five at quorum 1.
+**quorum** — the one free parameter in stable+, and **one** number: that many influencer
+placements must ask for a turn before it may start, the same count must keep asking for it to
+continue, and nothing at all is needed to end it, so a turn may stop at any tick. **It is a count
+of ticks of influencer positions** — four ticks with both ends included, hence **5** on dabeone,
+where the pure loop carries one state per tick. Superseded `agreementRatio`, which made the same
+requirement mean different things depending on how densely the influencer set sampled its loop.
+On dabeone `4->0` the expansion reaches no edge beyond the stable ones at any quorum of 2 or more,
+and spills onto five at quorum 1.
 
 
 **cost to leave** — the fewest ticks of non-straight steering needed to get from an edge to a
@@ -409,7 +416,8 @@ anything not listed.
 | three-boid phase map | `ThreeBoidPhase` | `render/phase<f>_<t>.png` |
 | region overlay | hand | `analysis/3BoidAreasOfInterest.png` |
 | region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
-| map-wide stable, stable+ | `StateSet` + `MapStates`, driven by `SimTest.stablePlusScan` | `render/stable-plus-by-ratio.png` |
+| map-wide stable, stable+ | `StateSet` + `MapStates.stablePlus`, scanned by `SimTest.stablePlusScan` | `render/stable-plus-by-ratio.png` |
+| phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |

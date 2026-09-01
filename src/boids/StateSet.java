@@ -104,4 +104,14 @@ public interface StateSet {
      *                    the coalition is advanced by coasting
      */
     StateSet expandByAgreement(StateSet influencers, int agreementRatio);
+
+    /**
+     * The same, naming the quorum outright instead of deriving it from the influencer count.
+     * <p>
+     * The primary form. A ratio was the wrong handle: what the quorum means is <b>how many ticks
+     * of influencer positions have to agree</b>, and turning that into a divisor makes it depend
+     * on how densely the influencer set happens to sample its loop — which varies with how the
+     * straight-travel cycles came out on the map, not with anything about flocking.
+     */
+    StateSet expandByQuorum(StateSet influencers, int quorum);
 }
