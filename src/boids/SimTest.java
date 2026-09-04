@@ -3098,6 +3098,31 @@ picks, never in what is available to it.
      * wobble — and a route is precisely what the solver is supposed to find remarkable.
      */
     /**
+     * The critical-envelope tables for one arc, on the same ground {@link #phaseMapOnStablePlus}
+     * builds them on: settled unioned with stable+ restricted to the edge being left.
+     * <p>
+     * Split out because anything reading a phase map drawn on stable+ has to ask its questions
+     * against the tables that map was coloured by, and rebuilding that ground by hand at each
+     * call site is how two analyses end up quietly disagreeing about what an exit means.
+     */
+    public static ExitAudit.Tables tablesOnStablePlus(PresetScenarioParameter preset, Labelling l,
+                                                      SolverFacts f, Flocking flock, int from,
+                                                      int keep, int quorum) {
+        MapStates m = MapStates.of(l.map(), flock, l.live(), l.liveCount());
+        StateSet plus = m.stablePlus(quorum);
+        boolean[] settled = CriticalEnvelope.settled(l.map(), l.edge(), l.live(), l.liveCount(),
+                from);
+        boolean[] ground = new boolean[l.edge().length];
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i];
+            ground[s] = settled[s] || (l.edge()[s] == from && plus.contains(s));
+        }
+        return ExitAudit.Tables.of(preset.ingest().outputDir("envelope"), l.map(), l.edge(),
+                l.live(), l.liveCount(), new int[][]{{from, keep}}, flock, flock.diluted(),
+                ground);
+    }
+
+    /**
      * The three-boid phase map rebuilt on stable+ throughout.
      * <p>
      * Two things change together, and they have to: the suspect starts anywhere ordinary traffic
@@ -3398,8 +3423,35 @@ picks, never in what is available to it.
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
         int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
                 Path.of("render", "phase40-replays.tsv"));
-        phaseMapOnStablePlus(p, lab, facts, f, 4, 0, /*quorum=*/5,
-                Path.of("render", "phase40-stableplus.png"));
+        Path plus = Path.of("render", "phase40-stableplus.png");
+        for (int merge : new int[]{2, 4, 6}) {
+            List<ThreeBoidSamples.Feature> w = ThreeBoidSamples.features(plus, facts, 4, 0.5,
+                    /*route=*/1, /*otherRoute=*/1, ThreeBoidPhase.UNEXPLAINED, merge, 40);
+            System.out.printf("  merge %d: %d features%n", merge, w.size());
+            if (merge != 4) continue;
+            System.out.printf("%n%5s %10s %10s %8s %7s %6s%n", "id", "x range", "y range",
+                    "w x h", "cells", "fill");
+            for (ThreeBoidSamples.Feature v : w) {
+                System.out.printf("%5s %4d..%-5d %4d..%-5d %3d x %-4d %7d %5.0f%%%n", v.id(),
+                        v.x0(), v.x1(), v.y0(), v.y1(), v.width(), v.height(), v.cells(),
+                        100 * v.fill());
+            }
+            ThreeBoidSamples.bands(w, 4);
+            ThreeBoidSamples.windowFit(plus, facts, 4, 0.5, w, ThreeBoidPhase.UNEXPLAINED, 38, 12);
+            ThreeBoidSamples.atlas(plus, facts, 4, 0.5, w, /*cropW=*/150, /*cropH=*/100,
+                    /*scale=*/3, /*columns=*/4,
+                    "DABEONE @609cffdb84be218c — every unexplained clump in the centre panel "
+                            + "[4,2,1,5,8] x [4,2,1,5,8], arc 4->0 on stable+",
+                    Path.of("render", "phase40-stableplus-white-atlas.png"));
+            ExitAudit.Tables tabsPlus = tablesOnStablePlus(p, lab, facts, f, 4, 0, 5);
+            Path reps = Path.of("render", "phase40-stableplus-replays.tsv");
+            ThreeBoidSamples.sampleFeatures(p, facts, tabsPlus, 4, 0, 0.5, plus, reps, w, 4, 2,
+                    Path.of("render", "phase40-stableplus-white-samples.png"));
+            StateSet groundSet = MapStates.of(lab.map(), f, lab.live(), lab.liveCount())
+                    .stablePlus(5);
+            ThreeBoidSamples.classify(p, lab, facts, tabsPlus, 4, w, plus, reps, 0.5, f,
+                    f.diluted(), groundSet);
+        }
         if (true) return;
     }
 

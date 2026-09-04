@@ -320,6 +320,72 @@ pays for the harder population.
 **Open.** The 3.0% has not been characterised — nobody has looked at what the remaining 14,923
 are, and the twenty hand-marked regions have not been re-read against the new map.
 
+
+### The white census of the centre panel, found rather than painted
+
+Asked 2026-08-30. Confined to the centre panel `[4,2,1,5,8] x [4,2,1,5,8]`, which carries the
+cross of the centre route and most of the structure. **3,777 unexplained cells in 20 clumps of 40
+or more**, plus 102 smaller ones holding 385 cells between them. `ThreeBoidSamples.features`
+finds them, `bands` groups them, `windowFit` tests a claimed size, `atlas` crops each in place and
+`sampleFeatures` replays one arrangement per clump.
+
+**Three families, and the geometry predicts the mechanism.**
+
+**Slabs on the third-boid band** — horizontal, wider than tall, dense, lying on or against the
+cyan band. Best 38x12 window: **W12 52%, W06 50%, W13 42%, W11 33%, W08 29%, W09 29%.** This is
+the family the 38x12 estimate names, and 38x12 is a good description of it.
+
+**Columns on the psyboid band** — the same thing transposed: vertical, riding the edge of the
+amber band. Best 12x38 window: **W17 60%, W16 34%, W03 33%, W19 28%, W12 28%, W15 25%, W20 25%,
+W02 20%.**
+
+**Diffuse clouds** — no dense core in either orientation, sitting in open ground or in the corner
+where two bands meet: W01, W04, W05, W07, W10, W14. Fill 7–18% over the whole box.
+
+**They repeat on a lattice, which is the structure worth detecting.** Clumps sharing a range on
+one axis and scattered along the other:
+
+| axis | range | appears at |
+| --- | --- | --- |
+| psyboid phase | x 580..624 | y 151, 314, 377 — W06, W09, W12 |
+| third-boid phase | y 373..396 | x 99, 410, 582 — W13, W11, W12 |
+| third-boid phase | y 581..624 | x 72, 311, 369 — W18, W19, W17 |
+| psyboid phase | x 370..392 | y 434, 581 — W15, W17 |
+| psyboid phase | x 71..89 | y 96, 582 — W02, W18 |
+
+`W12` sits at the crossing of the first two and is the densest clump on the panel, which is what a
+lattice of two independent phase conditions should produce.
+
+### None of them is a near miss
+
+`ThreeBoidSamples.classify` replays one arrangement per clump and asks, over the window from the
+last tick on stable+ to the envelope entry, which ticks **demand** a leader at all and who
+accounts for them.
+
+| verdict | meaning | count |
+| --- | --- | --- |
+| single | one boid explains every demanding tick — a modified physics could catch it | **0** |
+| split | the two between them explain all of them, neither alone | **9** |
+| UNCOVERED | some demanding tick neither neighbour alone reproduces | **11** |
+
+**Not one of the twenty is a one-leader exit at any constants.** Nine need a leader handover,
+which is pairwise per tick but not per history; eleven need genuine superposition, which
+`HINTS.md` §10a says no pairwise table represents at any constants.
+
+**And the split falls along the families.** All six diffuse clouds are UNCOVERED. The structured
+slabs and columns are mostly split — 9 of 14 — with 5 uncovered. `W07`, the largest diffuse cloud,
+is the extreme case: of its 5 demanding ticks, **neither neighbour alone reproduces a single
+one.**
+
+> So the answer to whether these are extensions of existing features is **no**. A carefully chosen
+> modified physics would not catch them, because there is no single leader to widen a window
+> around. The nine splits are the case the leader-handover rule in §1 was proposed for; the eleven
+> uncovered ones need a genuinely multi-boid influence model.
+
+⚠ **One representative per clump.** These are samples, not censuses — a clump of 200 cells is
+being characterised by one of them. The verdicts are a strong hint about what each family is, not
+a measurement of every cell in it.
+
 ---
 
 ## 1. Critical-envelope analysis — redesign — **priority one**

@@ -218,6 +218,44 @@ label.
 **Open:** the 3.0% is uncharacterised, and the twenty hand-marked regions have not been re-read
 against the new map.
 
+**Then: the white census of the centre panel, found rather than painted.** `ThreeBoidSamples`
+gained `features` (clumps of one account, found in the picture), `bands` (which share a range on
+one axis), `windowFit` (densest window of a claimed size), `atlas` (each clump cropped in place),
+`sampleFeatures` (one replayed arrangement per clump) and `classify`.
+
+**3,777 unexplained cells in 20 clumps of 40+**, plus 102 smaller ones holding 385 cells. Three
+shapes:
+
+- **slabs** on the third-boid band — horizontal, dense. Best 38x12 window: W12 52%, W06 50%,
+  W13 42%, W11 33%, W08 29%, W09 29%. The 38x12 estimate describes this family well.
+- **columns** on the psyboid band — the same transposed. Best 12x38: W17 60%, W16 34%, W03 33%,
+  W19 28%, W15 25%, W20 25%, W02 20%.
+- **clouds** — no dense core either way: W01, W04, W05, W07, W10, W14.
+
+**They sit on a lattice.** x 580..624 at y 151/314/377 (W06, W09, W12); y 373..396 at x 99/410/582
+(W13, W11, W12); y 581..624 at x 72/311/369 (W18, W19, W17); plus two pairs. W12 is at the
+crossing of the first two and is the densest clump on the panel.
+
+**`classify` answers the question behind the request, and the answer is no.** Over the window from
+the last tick on stable+ to the envelope entry, counting only demanding ticks:
+
+| verdict | count |
+| --- | --- |
+| single — one boid explains all of them | **0** |
+| split — the two between them, neither alone | **9** |
+| UNCOVERED — a tick neither alone reproduces | **11** |
+
+**Not one of the twenty is a one-leader exit at any constants**, so a modified physics would not
+catch them. And the verdict tracks the shape: **all six clouds are UNCOVERED**, while slabs and
+columns are 9 split to 5 uncovered. W07 is the extreme — of its 5 demanding ticks neither
+neighbour alone reproduces a single one.
+
+One representative per clump, so these are samples rather than censuses.
+
+Fixed while writing it: the first version of `Approach.call` tested `psy + third >= demanding`,
+which double-counts ticks both cover and called several uncovered clumps `split`. It counts the
+union now.
+
 ---
 
 ## 2026-08-30 (close, later still) — HAPPY.md

@@ -196,6 +196,7 @@ ways → 6 edges.
 | `stablePlus` | the map-wide stable set and what agreement expands it to, per edge |
 | `stablePlusScan` | the same over a range of agreement ratios, with cost-to-leave and a render |
 | `phaseMapOnStablePlus` | the three-boid phase map with stable+ as both the suspect population and admission's ground, plus a control |
+| `tablesOnStablePlus` | the critical-envelope tables for one arc on that same ground |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` is the per-region counterpart of
@@ -235,6 +236,8 @@ a map that has since been edited.
 | `render/phase<f>_<t>-<region>-approach.png` | `ThreeBoidSamples.explain` | one region's approach at the ticks that decide it |
 | `render/stable-plus-by-ratio.png` | `SimTest.stablePlusScan` | stable+ projected to `(x, y)`, one panel per agreement ratio |
 | `render/phase40-stableplus.png` | `SimTest.phaseMapOnStablePlus` | the arc `4->0` phase map on stable+ throughout. **3.0% unexplained against the old 21.0%** |
+| `render/phase40-stableplus-white-atlas.png` | `ThreeBoidSamples.atlas` | every unexplained clump of the centre panel, cropped in place |
+| `render/phase40-stableplus-white-samples.png` | `ThreeBoidSamples.sampleFeatures` | one replayed arrangement per clump, at envelope entry |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,

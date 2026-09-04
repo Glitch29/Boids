@@ -91,7 +91,9 @@ public final class ThreeBoidSamples {
 
         public int size() { return cells.size(); }
 
-        public String paintName() { return paint == ROSE ? "rose" : "green"; }
+        public String paintName() {
+            return paint == ROSE ? "rose" : paint == GREEN ? "green" : "found";
+        }
     }
 
     /** One replay row, kept only for cells that are painted. */
@@ -206,7 +208,7 @@ public final class ThreeBoidSamples {
                             if (rgb == paint) all.add(x << 11 | y);
                         }
                     }
-                    for (Set<Integer> clump : clumps(all)) {
+                    for (Set<Integer> clump : clumps(all, MERGE)) {
                         found.add(describe(plain, lay, rp, rb, paint, clump));
                     }
                 }
@@ -227,32 +229,6 @@ public final class ThreeBoidSamples {
         return out;
     }
 
-    /** Flood fill over cells, joining anything within {@link #MERGE} in both axes. */
-    private static List<Set<Integer>> clumps(Set<Integer> cells) {
-        List<Set<Integer>> out = new ArrayList<>();
-        Set<Integer> seen = new HashSet<>();
-        for (int seed : cells) {
-            if (!seen.add(seed)) continue;
-            Set<Integer> clump = new HashSet<>();
-            Deque<Integer> queue = new ArrayDeque<>();
-            queue.push(seed);
-            while (!queue.isEmpty()) {
-                int at = queue.pop();
-                clump.add(at);
-                int x = at >>> 11, y = at & 0x7FF;
-                for (int dx = -MERGE; dx <= MERGE; dx++) {
-                    for (int dy = -MERGE; dy <= MERGE; dy++) {
-                        int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || ny < 0 || nx >= 2048 || ny >= 2048) continue;
-                        int k = nx << 11 | ny;
-                        if (cells.contains(k) && seen.add(k)) queue.push(k);
-                    }
-                }
-            }
-            out.add(clump);
-        }
-        return out;
-    }
 
     /** Bounds, centroid, and which account the paint was laid over. */
     private static Region describe(BufferedImage plain, ThreeBoidPhase.Layout lay, int rp, int rb,
@@ -401,6 +377,487 @@ public final class ThreeBoidSamples {
             }
         }
         return new Shot(r, suffix, where, pick, exit, px, py, ph, agreed);
+    }
+
+    // ---- finding the features nobody drew ------------------------------------
+
+    /**
+     * One clump of cells of a single account, found in the picture rather than painted on it.
+     *
+     * @param fill how much of the bounding box the clump actually covers, which separates a solid
+     *             block from a wisp that merely spans a wide box
+     */
+    public record Feature(String id, int route, int otherRoute, int x0, int x1, int y0, int y1,
+                          int cells, double fill) {
+
+        public int width() { return x1 - x0 + 1; }
+
+        public int height() { return y1 - y0 + 1; }
+    }
+
+    /**
+     * Every clump of one colour inside one panel, with the bands they line up into.
+     * <p>
+     * The hand-drawn overlay was how the first twenty regions were found; this is the same job
+     * done from the picture, which is what the era is actually for. It exists because the white
+     * left after stable+ is no longer a haze — it is a small number of blocks with hard edges,
+     * repeating at the same offsets — and repetition at a fixed offset is a claim a detector can
+     * be built on, where a percentage is not.
+     *
+     * @param colour   which account to hunt, from {@link ThreeBoidPhase}'s palette
+     * @param merge    how far apart two cells may be and still be one clump; the picture is
+     *                 dithered, so a solid feature arrives as a scatter
+     * @param smallest clumps below this many cells are counted and not listed
+     */
+    public static List<Feature> features(Path plain, SolverFacts f, int from, double resolution,
+                                         int route, int otherRoute, int colour, int merge,
+                                         int smallest) throws IOException {
+        BufferedImage img = javax.imageio.ImageIO.read(plain.toFile());
+        List<ThreeBoidPhase.Route> routes = ThreeBoidPhase.loops(f, from);
+        ThreeBoidPhase.Layout lay = ThreeBoidPhase.layout(routes, resolution);
+        if (img.getWidth() != lay.width() || img.getHeight() != lay.height()) {
+            throw new IOException("phase map does not match the layout at resolution " + resolution);
+        }
+
+        Set<Integer> cells = new HashSet<>();
+        for (int y = 0; y < lay.span(otherRoute); y++) {
+            for (int x = 0; x < lay.span(route); x++) {
+                if ((img.getRGB(lay.px(route, x), lay.py(otherRoute, y)) & 0xFFFFFF) == colour) {
+                    cells.add(x << 11 | y);
+                }
+            }
+        }
+
+        List<Feature> out = new ArrayList<>();
+        int tiny = 0, tinyCells = 0;
+        for (Set<Integer> clump : clumps(cells, merge)) {
+            if (clump.size() < smallest) { tiny++; tinyCells += clump.size(); continue; }
+            int x0 = Integer.MAX_VALUE, x1 = -1, y0 = Integer.MAX_VALUE, y1 = -1;
+            for (int c : clump) {
+                int x = c >>> 11, y = c & 0x7FF;
+                x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+                y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+            }
+            double area = (double) (x1 - x0 + 1) * (y1 - y0 + 1);
+            out.add(new Feature("", route, otherRoute, x0, x1, y0, y1, clump.size(),
+                    clump.size() / area));
+        }
+        out.sort(Comparator.<Feature>comparingInt(Feature::y0).thenComparingInt(Feature::x0));
+        List<Feature> named = new ArrayList<>();
+        for (int i = 0; i < out.size(); i++) {
+            Feature v = out.get(i);
+            named.add(new Feature(String.format("W%02d", i + 1), v.route(), v.otherRoute(),
+                    v.x0(), v.x1(), v.y0(), v.y1(), v.cells(), v.fill()));
+        }
+        System.out.printf("%n=== %s of panel %s x %s: %,d cells, %d clumps of %d+ "
+                        + "(%d smaller ones holding %,d cells)%n", name(colour),
+                routes.get(route).label(), routes.get(otherRoute).label(), cells.size(),
+                named.size(), smallest, tiny, tinyCells);
+        return named;
+    }
+
+    /**
+     * Which features line up with which, on each axis separately.
+     * <p>
+     * The structure worth naming is a set of clumps sharing a range on one axis and scattered
+     * along the other: the same psyboid phase producing the same thing at several unrelated
+     * third-boid phases is one mechanism appearing repeatedly, where two clumps that merely
+     * overlap somewhere are two mechanisms.
+     *
+     * @param slack how far two ranges may differ on the shared axis and still count as the same
+     */
+    public static void bands(List<Feature> features, int slack) {
+        for (boolean byX : new boolean[]{true, false}) {
+            List<List<Feature>> groups = new ArrayList<>();
+            for (Feature v : features) {
+                List<Feature> found = null;
+                for (List<Feature> g : groups) {
+                    Feature h = g.get(0);
+                    int a0 = byX ? v.x0() : v.y0(), a1 = byX ? v.x1() : v.y1();
+                    int b0 = byX ? h.x0() : h.y0(), b1 = byX ? h.x1() : h.y1();
+                    if (Math.abs(a0 - b0) <= slack && Math.abs(a1 - b1) <= slack) {
+                        found = g;
+                        break;
+                    }
+                }
+                if (found == null) groups.add(new ArrayList<>(List.of(v)));
+                else found.add(v);
+            }
+            groups.removeIf(g -> g.size() < 2);
+            groups.sort((a, b) -> Integer.compare(b.size(), a.size()));
+            System.out.printf("%n  features sharing a %s range (within %d), 2 or more:%n",
+                    byX ? "psyboid-phase (x)" : "third-boid-phase (y)", slack);
+            if (groups.isEmpty()) System.out.println("    none");
+            for (List<Feature> g : groups) {
+                Feature h = g.get(0);
+                StringBuilder at = new StringBuilder();
+                for (Feature v : g) {
+                    at.append(at.isEmpty() ? "" : ", ").append(v.id()).append('@')
+                            .append(byX ? v.y0() : v.x0());
+                }
+                System.out.printf("    %s [%d..%d]  x%d:  %s%n", byX ? "x" : "y",
+                        byX ? h.x0() : h.y0(), byX ? h.x1() : h.y1(), g.size(), at);
+            }
+        }
+    }
+
+    /**
+     * What the approach to one sampled exit looks like, reduced to the numbers that decide it.
+     *
+     * @param demanding ticks in the window on which coasting would not have produced the move, so
+     *                  a leader is genuinely required; the rest are free to every neighbour
+     * @param holds     per boid, how many of the demanding ticks its single-neighbour influence
+     *                  accounts for
+     */
+    public record Approach(String id, long entry, int windowLo, int windowTicks, int demanding,
+                           int[] holds, int covered, boolean everOnGround) {
+
+        /**
+         * Three outcomes, and they are three different problems.
+         * <p>
+         * <b>single</b> — one boid explains every demanding tick, so a pairwise table could hold
+         * this history and only the constants or the ground are too tight. A modified physics
+         * could catch it.
+         * <p>
+         * <b>split</b> — the two boids between them explain every demanding tick but neither
+         * explains all of them. Each tick is still pairwise; what a pairwise table cannot express
+         * is the <em>handover</em>, since it holds one leader for a whole history.
+         * <p>
+         * <b>uncovered</b> — some demanding tick that neither neighbour alone reproduces. That is
+         * genuine superposition, and no setting of any two-boid constants reaches it.
+         */
+        public String call() {
+            if (!everOnGround) return "no ground";
+            if (demanding == 0) return "nothing demanded";
+            if (holds[PSYBOID] == demanding) return "single: psyboid";
+            if (holds[OTHER] == demanding) return "single: third";
+            if (covered == demanding) return "split";
+            return "UNCOVERED";
+        }
+    }
+
+    /**
+     * One line per feature saying whether a pairwise account was close or is out of reach.
+     * <p>
+     * This is the question a white clump actually poses. A clump whose exits each have one boid
+     * explaining the whole run is a <b>near miss</b> — the mechanism is pairwise and something
+     * about the constants or the ground is too tight, and a modified physics could catch it. A
+     * clump whose exits split their explanation between two boids is not a near miss at any
+     * constants, because a pairwise table holds one leader for a whole history.
+     */
+    public static List<Approach> classify(PresetScenarioParameter preset, SimTest.Labelling l,
+                                          SolverFacts f, ExitAudit.Tables tables, int from,
+                                          List<Feature> features, Path plain, Path replays,
+                                          double resolution, Flocking normal, Flocking alt,
+                                          StateSet ground) throws IOException {
+        BufferedImage img = javax.imageio.ImageIO.read(plain.toFile());
+        ThreeBoidPhase.Layout lay = ThreeBoidPhase.layout(ThreeBoidPhase.loops(f, from),
+                resolution);
+        NavMap map = tables.map();
+        boolean[] settled = CriticalEnvelope.settled(map, l.edge(), l.live(), l.liveCount(), from);
+        Boids2DEngine engine = new Boids2DEngine(preset);
+
+        List<Approach> out = new ArrayList<>();
+        for (Feature v : features) {
+            Set<Integer> cells = new HashSet<>();
+            long sx = 0, sy = 0;
+            for (int y = v.y0(); y <= v.y1(); y++) {
+                for (int x = v.x0(); x <= v.x1(); x++) {
+                    if ((img.getRGB(lay.px(v.route(), x), lay.py(v.otherRoute(), y)) & 0xFFFFFF)
+                            != ThreeBoidPhase.UNEXPLAINED) {
+                        continue;
+                    }
+                    cells.add(x << 11 | y);
+                    sx += x;
+                    sy += y;
+                }
+            }
+            if (cells.isEmpty()) continue;
+            Region r = new Region(v.id(), v.route(), v.otherRoute(), ThreeBoidPhase.UNEXPLAINED,
+                    ThreeBoidPhase.UNEXPLAINED, cells, v.x0(), v.x1(), v.y0(), v.y1(),
+                    (int) (sx / cells.size()), (int) (sy / cells.size()));
+            Set<Integer> keys = new HashSet<>();
+            for (int c : cells) keys.add(panelKey(r.route(), r.otherRoute(), c));
+            Map<Integer, Row> rows = rows(replays, keys);
+            Shot s = shoot(engine, f, tables, from, r, rows, null, "", "");
+            if (s == null) continue;
+            out.add(approach(engine, f, map, l, settled, ground, from, s, normal, alt));
+        }
+
+        System.out.printf("%n%5s %9s %8s %10s %8s %8s %8s   %s%n", "id", "entry", "window",
+                "demanding", "psyboid", "third", "either", "verdict");
+        Map<String, Integer> tally = new TreeMap<>();
+        for (Approach a : out) {
+            System.out.printf("%5s %9d %8d %10d %8d %8d %8d   %s%n", a.id(), a.entry(),
+                    a.windowTicks(), a.demanding(), a.holds()[PSYBOID], a.holds()[OTHER],
+                    a.covered(), a.call());
+            tally.merge(a.call(), 1, Integer::sum);
+        }
+        System.out.printf("  %s%n", tally);
+        return out;
+    }
+
+    /** The per-tick accounting for one shot, without printing it. Shared with {@link #explain}. */
+    private static Approach approach(Boids2DEngine engine, SolverFacts f, NavMap map,
+                                     SimTest.Labelling l, boolean[] settled, StateSet ground,
+                                     int from, Shot s, Flocking normal, Flocking alt) {
+        Row row = s.row();
+        PsyboidOverride[] overrides = row.overridden()
+                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                : new PsyboidOverride[0];
+        int[] xs = {x(map, row.psy()), x(map, row.other()), x(map, row.suspect())};
+        int[] ys = {y(map, row.psy()), y(map, row.other()), y(map, row.suspect())};
+        int[] hs = {h(row.psy()), h(row.other()), h(row.suspect())};
+
+        long entry = s.exit().entryTick();
+        boolean[][] holds = new boolean[3][(int) entry + 1];
+        boolean[] demands = new boolean[(int) entry + 1];
+        long[] lastGround = {-1};
+        Boids2DEngine.Trace recorder = (tick, i, boids, want) -> {
+            if (i != SUSPECT || tick > entry) return;
+            int bx = boids.x()[i], by = boids.y()[i], bd = boids.h()[i];
+            int state = map.index(bx, by, bd);
+            int went = map.successor(state, want);
+            demands[(int) tick] = map.successor(state, 0) != went;
+            boolean on = settled[state] || (ground != null && ground.contains(state));
+            if (on) lastGround[0] = tick;
+            for (int j = 0; j < 3; j++) {
+                if (j == SUSPECT) continue;
+                int dx = boids.x()[j] - bx, dy = boids.y()[j] - by;
+                int p1 = EdgeInfluence.steer(bd, dx, dy, boids.h()[j], normal);
+                int p2 = EdgeInfluence.steer(bd, dx, dy, boids.h()[j], alt);
+                holds[j][(int) tick] = map.successor(state, p1) == went
+                        || map.successor(state, p2) == went;
+            }
+        };
+        engine.trace(recorder);
+        Sim.State st = new Sim.State(3, xs, ys, hs, 0, 0, new long[3], "classify", overrides);
+        try {
+            for (int t = 0; t < PATIENCE; t++) {
+                st = engine.tick(st);
+                if (f.edgeAt(st.x[SUSPECT], st.y[SUSPECT], st.h[SUSPECT]) != from) break;
+            }
+        } catch (RuntimeException e) {
+            // Fall through; whatever was recorded before it left is still the approach.
+        } finally {
+            engine.trace(null);
+        }
+
+        int lo = (int) lastGround[0];
+        int demanding = 0, covered = 0;
+        int[] held = new int[3];
+        if (lo >= 0) {
+            for (int t = lo; t <= entry; t++) {
+                if (!demands[t]) continue;
+                demanding++;
+                boolean any = false;
+                for (int j = 0; j < 3; j++) {
+                    if (j == SUSPECT || !holds[j][t]) continue;
+                    held[j]++;
+                    any = true;
+                }
+                if (any) covered++;
+            }
+        }
+        return new Approach(s.region().id(), entry, lo, lo < 0 ? 0 : (int) entry - lo + 1,
+                demanding, held, covered, lo >= 0);
+    }
+
+    /**
+     * One replayed arrangement per found feature, on one sheet.
+     * <p>
+     * The same machinery as {@link #run}, fed from features found in the picture rather than from
+     * paint. That is the point of finding them programmatically: once a clump is a
+     * {@link Feature}, everything downstream — pick the cell nearest the middle, replay it, draw
+     * it at envelope entry with a crop of its own neighbourhood — is already built.
+     */
+    public static void sampleFeatures(PresetScenarioParameter preset, SolverFacts f,
+                                      ExitAudit.Tables tables, int from, int keep,
+                                      double resolution, Path plain, Path replays,
+                                      List<Feature> features, int columns, int scale, Path out)
+            throws IOException {
+        BufferedImage img = javax.imageio.ImageIO.read(plain.toFile());
+        List<ThreeBoidPhase.Route> routes = ThreeBoidPhase.loops(f, from);
+        ThreeBoidPhase.Layout lay = ThreeBoidPhase.layout(routes, resolution);
+
+        List<Region> regions = new ArrayList<>();
+        for (Feature v : features) {
+            Set<Integer> cells = new HashSet<>();
+            long sx = 0, sy = 0;
+            for (int y = v.y0(); y <= v.y1(); y++) {
+                for (int x = v.x0(); x <= v.x1(); x++) {
+                    int rgb = img.getRGB(lay.px(v.route(), x), lay.py(v.otherRoute(), y));
+                    if ((rgb & 0xFFFFFF) != ThreeBoidPhase.UNEXPLAINED) continue;
+                    cells.add(x << 11 | y);
+                    sx += x;
+                    sy += y;
+                }
+            }
+            if (cells.isEmpty()) continue;
+            regions.add(new Region(v.id(), v.route(), v.otherRoute(),
+                    ThreeBoidPhase.UNEXPLAINED, ThreeBoidPhase.UNEXPLAINED, cells, v.x0(),
+                    v.x1(), v.y0(), v.y1(), (int) (sx / cells.size()),
+                    (int) (sy / cells.size())));
+        }
+
+        Set<Integer> found = new HashSet<>();
+        for (Region r : regions) {
+            for (int c : r.cells()) found.add(panelKey(r.route(), r.otherRoute(), c));
+        }
+        Map<Integer, Row> rows = rows(replays, found);
+        System.out.printf("%n%,d unexplained cells in %d features; %,d have a replay row%n",
+                found.size(), regions.size(), rows.size());
+
+        List<Shot> shots = new ArrayList<>();
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        for (Region r : regions) shots.add(shoot(engine, f, tables, from, r, rows, null, "", ""));
+        shots.removeIf(java.util.Objects::isNull);
+        sheet(preset, f, img, lay, routes, shots, from, keep, columns, scale, out);
+    }
+
+    /**
+     * The densest {@code w x h} window inside each feature, as a fraction of the window.
+     * <p>
+     * A bounding box is a weak description of a dithered clump: a wisp and a solid block spanning
+     * the same corners look identical by it. Sliding a window of the size actually claimed says
+     * whether the claim holds — a block reported as 38x12 should have a 38x12 window somewhere in
+     * it that is largely full, and a wisp will not.
+     */
+    public static void windowFit(Path plain, SolverFacts f, int from, double resolution,
+                                 List<Feature> features, int colour, int w, int h)
+            throws IOException {
+        BufferedImage img = javax.imageio.ImageIO.read(plain.toFile());
+        ThreeBoidPhase.Layout lay = ThreeBoidPhase.layout(ThreeBoidPhase.loops(f, from),
+                resolution);
+        System.out.printf("%n  densest %dx%d window in each feature (and %dx%d):%n", w, h, h, w);
+        for (Feature v : features) {
+            System.out.printf("    %s  %3d x %-3d  %dx%d %3.0f%% at (%d,%d)   %dx%d %3.0f%%%n",
+                    v.id(), v.width(), v.height(), w, h, 100 * best(img, lay, v, colour, w, h)[0],
+                    (int) best(img, lay, v, colour, w, h)[1],
+                    (int) best(img, lay, v, colour, w, h)[2], h, w,
+                    100 * best(img, lay, v, colour, h, w)[0]);
+        }
+    }
+
+    /** {@code {fill, x, y}} of the densest window of that size covering the feature's box. */
+    private static double[] best(BufferedImage img, ThreeBoidPhase.Layout lay, Feature v,
+                                 int colour, int w, int h) {
+        int lo = Math.max(0, v.x0() - w), hi = v.x1();
+        int up = Math.max(0, v.y0() - h), dn = v.y1();
+        double bestFill = 0;
+        int bx = v.x0(), by = v.y0();
+        for (int y = up; y <= dn; y++) {
+            for (int x = lo; x <= hi; x++) {
+                if (x + w > lay.span(v.route()) || y + h > lay.span(v.otherRoute())) continue;
+                int n = 0;
+                for (int j = 0; j < h; j++) {
+                    for (int i = 0; i < w; i++) {
+                        if ((img.getRGB(lay.px(v.route(), x + i), lay.py(v.otherRoute(), y + j))
+                                & 0xFFFFFF) == colour) {
+                            n++;
+                        }
+                    }
+                }
+                double fill = n / (double) (w * h);
+                if (fill > bestFill) { bestFill = fill; bx = x; by = y; }
+            }
+        }
+        return new double[]{bestFill, bx, by};
+    }
+
+    /**
+     * A crop of the phase map around each feature, several to a sheet.
+     * <p>
+     * The point is what a feature is <em>attached to</em>. A white clump on its own says only that
+     * something is unaccounted for; a white clump hanging off the end of an amber band is a
+     * different claim from one floating in open ground, and only the neighbourhood distinguishes
+     * them.
+     */
+    public static void atlas(Path plain, SolverFacts f, int from, double resolution,
+                             List<Feature> features, int cropW, int cropH, int scale, int columns,
+                             String heading, Path out) throws IOException {
+        BufferedImage img = javax.imageio.ImageIO.read(plain.toFile());
+        ThreeBoidPhase.Layout lay = ThreeBoidPhase.layout(ThreeBoidPhase.loops(f, from),
+                resolution);
+        int cap = 34, gap = 8, head = 48;
+        int tw = cropW * scale, th = cropH * scale + cap;
+        int rows = (features.size() + columns - 1) / columns;
+
+        BufferedImage sheet = new BufferedImage(gap + columns * (tw + gap),
+                head + gap + rows * (th + gap), BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = sheet.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setColor(new Color(GROUND));
+        g.fillRect(0, 0, sheet.getWidth(), sheet.getHeight());
+        g.setColor(new Color(TEXT));
+        g.setFont(new Font("SansSerif", Font.BOLD, 17));
+        g.drawString(heading, gap + 4, 24);
+        g.setColor(new Color(FAINT));
+        g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        g.drawString(String.format("%d x %d cells each, drawn at %dx. yellow box is the clump; "
+                + "x is psyboid phase, y is third-boid phase, half a tick per cell", cropW,
+                cropH, scale), gap + 4, 41);
+
+        for (int i = 0; i < features.size(); i++) {
+            Feature v = features.get(i);
+            int left = (v.x0() + v.x1()) / 2 - cropW / 2, top = (v.y0() + v.y1()) / 2 - cropH / 2;
+            int ox = gap + (i % columns) * (tw + gap), oy = head + gap + (i / columns) * (th + gap);
+            g.setColor(new Color(CARD));
+            g.fillRect(ox, oy, tw, th);
+            for (int y = 0; y < cropH; y++) {
+                for (int x = 0; x < cropW; x++) {
+                    int sx = left + x, sy = top + y;
+                    int rgb = sx < 0 || sy < 0 || sx >= lay.span(v.route())
+                            || sy >= lay.span(v.otherRoute()) ? GROUND
+                            : img.getRGB(lay.px(v.route(), sx), lay.py(v.otherRoute(), sy));
+                    g.setColor(new Color(rgb & 0xFFFFFF));
+                    g.fillRect(ox + x * scale, oy + cap + y * scale, scale, scale);
+                }
+            }
+            g.setColor(new Color(MARK));
+            g.drawRect(ox + (v.x0() - left) * scale, oy + cap + (v.y0() - top) * scale,
+                    v.width() * scale, v.height() * scale);
+            g.setColor(new Color(TEXT));
+            g.setFont(new Font("SansSerif", Font.BOLD, 13));
+            g.drawString(String.format("%s  %d x %d", v.id(), v.width(), v.height()), 6 + ox,
+                    oy + 16);
+            g.setColor(new Color(FAINT));
+            g.setFont(new Font("SansSerif", Font.PLAIN, 10));
+            g.drawString(String.format("x %d..%d  y %d..%d  %,d cells  %.0f%% of box", v.x0(),
+                    v.x1(), v.y0(), v.y1(), v.cells(), 100 * v.fill()), 6 + ox, oy + 29);
+        }
+        g.dispose();
+        if (out.getParent() != null) Files.createDirectories(out.getParent());
+        javax.imageio.ImageIO.write(sheet, "png", out.toFile());
+        System.out.printf("wrote %s (%dx%d)%n", out, sheet.getWidth(), sheet.getHeight());
+    }
+
+    /** Flood fill with an explicit gap tolerance. */
+    private static List<Set<Integer>> clumps(Set<Integer> cells, int merge) {
+        List<Set<Integer>> out = new ArrayList<>();
+        Set<Integer> seen = new HashSet<>();
+        for (int seed : cells) {
+            if (!seen.add(seed)) continue;
+            Set<Integer> clump = new HashSet<>();
+            Deque<Integer> queue = new ArrayDeque<>();
+            queue.push(seed);
+            while (!queue.isEmpty()) {
+                int at = queue.pop();
+                clump.add(at);
+                int x = at >>> 11, y = at & 0x7FF;
+                for (int dx = -merge; dx <= merge; dx++) {
+                    for (int dy = -merge; dy <= merge; dy++) {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= 2048 || ny >= 2048) continue;
+                        int k = nx << 11 | ny;
+                        if (cells.contains(k) && seen.add(k)) queue.push(k);
+                    }
+                }
+            }
+            out.add(clump);
+        }
+        return out;
     }
 
     // ---- why one region's exit has no account ---------------------------------

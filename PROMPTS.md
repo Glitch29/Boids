@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-295 prompts across 9 sessions.
+301 prompts across 9 sessions.
 
 ---
 
@@ -9666,7 +9666,7 @@ A couple examples that I'll probably write after the file is set up are "When tr
 
 ## Session 09 - 2026-08-30
 
-*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 4 prompts.*
+*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 10 prompts.*
 
 ### 1
 
@@ -9705,3 +9705,109 @@ Visually inspecting all of these will give me a good intuitive sense of what sor
 ### 4
 
 [Image: original 2842x5198, displayed at 1093x2000. Multiply coordinates by 2.60 to map to original image.]
+
+### 5
+
+Rose20 is interesting. It looks like an extremely narrow potential single-leader window. I'm guessing we were just pixels away from catching it. Could you take a look at the approach to that exit and see why it wasn't caught in by any of our one-leader analysis? I'm guessing that the suspect boid just barely didn't make it back to a stable state.
+
+### 6
+
+[Image: original 2842x860, displayed at 2000x605. Multiply coordinates by 1.42 to map to original image.]
+
+### 7
+
+So what I'm seeing in this a narrow 1-boid window that requires just a slightly off-stable starting position for the suspect boid in edge 4. If they are riding the lower wall (which just requires 1-2 ticks of left steering to get to, depending on how early in the straight corridor it occurs) rather than the upper wall, a single boid can direct them to edge 0. So these two pixels are actually part of the long wispy band that we're seeing. The band itself occurs in the somewhat precise timing when one boid is on edge 2. The other boid just needs to be anywhere that just slightly jostles the suspect's path on edge 4, which seems to happen about 30% of the time.
+
+The way I'd feel comfortable describing this sort of exit is as a single boid exit based on the leader at edge 3 based on what I'd describe as "stable+" locations.
+
+Stable+ is a genre of states, meant to describe locations that are visited in multi-boid simulations without requiring psyboid activity or particularly abnormal circumstances.
+
+Precisely defining what should go in a stable+ set is difficult. But we do have some tools and some landmarks. Defining it by simulation is an option, but I want to first try defining it by map analysis.
+
+We're definitely going to go through some iterations here, so I'd like to have these sit behind an interface rather than rewriting the same file.
+
+I think I've defined stable states edgewise before, as closure under straight forward steering starting from any entrance, with a single partial tick advance, then closed under straight forward steering. I haven't defined the map-wide version of this before, but I will now. Stable states of a map are:
+
+* States capable of straight forward steering to themselves
+* All their partial-tick straight steered successors
+* Closed under straight forward steering
+
+
+This represents all the states a boid could end up in on a map by itself, with a minor adjustment for offset lock.
+
+I'm going to represent this as Set<State> stable = pureStable(1).partialTick(STRAIGHT).closed(STRAIGHT);
+
+pureStable(1) itself has the nice property of decomposing into some small number of loops via the straight successor operation. Almost certainly some number between 1 and 4 (integer rounded SPEED). It's going to be useful to enumerate the loop(s) and enumerate the states belonging to them in order, to allow modified bitshift operations to cycle them around.
+
+===
+
+Set<State> expandByAgreement(Set<State> states, Set<states> influencers, int agreementRatio)
+
+Note: This will take in stable as states, and pureStable(1) as influencers. I think agreementRatio = 8 is a reasonable first guess.
+
+Note: It's going to be useful to precompute which states each influencer causes to turn left or right in a 2-boid environment. I think this is fast enough to be run each thread, but it could be cached if I'm wrong.
+
+results starts as a copy of states.
+The function goes through each boid in states. For each:
+Potentially allow a steering action of some duration. In order for a steering action to begin, at least influencers.size()/agreementRatio influencers must cause the boid to turn in the given direction. The type of turn is noted. The subset of influencers and its size N are noted.
+do {
+The noted set of influencers advances to their straight successors (modified bitshift)
+The boid advances to its successor according to the steering direction.
+The boid state is collected as a mid-turn state
+if (at least N/agreementRatio of the N influencer subset no longer cause the same turn) {
+  the boid is collected as an end-turn state.
+}
+} while (more than N/agreementRatio of the N influencer subset continue to cause the same)
+Once this is complete, end-turn states are added to the results. Everything is closed under straight-forward navigation. Then mid-turn states are added to the results. Results are returned.
+
+===
+
+I'd like to find out some stats about pureStable(1).partialTick(STRAIGHT).closed(STRAIGHT).expandByAgreement(pureStable(1), 8)
+
+Which edges it touches, and how many states on each. My hope is that an agreementRatio of 8 makes for a larger set of states than stable, but doesn't reach any new edges.
+
+If this works out well, I hope it will validate that Rose20 is effectively a 1-leader exit once the more realistic set of stable states is adopted.
+
+### 8
+
+Awesome.
+
+I've realized that agreementRatio is effectively controlling three different numbers at the same time. The way I chose to link those three numbers together doesn't make the most sense. I've also left the states in an awkward position where they aren't closed under straight navigation. Based on that, I'd like to make some changes.
+
+The distinction between mid-turn and end-turn goes away. The turn can end at any state. And the number of influencers needed to start a turn and the number needed to maintain it are the same. So the quorum amount is constant at influencers/agreementRatio. No quorum is needed to end a turn.
+
+This also can simplify the method a bit. Since results is closed under straight forward steering at all times, there's no need to collect states before adding them to results. Adding a new state is as simple as:
+
+* Add the state
+* If the add was successful, add recurse on its straight successor.
+
+
+This new method makes it much easier to predict whether any exit states will be included. The only way is if there's an exit window on the stable loop with at least quorum influencers on it. I'd like you to run this new method with a range of different agreementRatios to test this.
+
+The expectation for this particular map is that quorum sizes bigger than 2 won't cause exits.
+
+In addition to the metrics from the past run, I'd like to get some visualizations of the output. A simple projection to (x,y)-space is fine, as I think d ranges will be inferable. I'd also like to get the cost-to-leave stats for 4->0 and 2->1. Cost-to-leave is a measurement surfaced in the edge graph, measuring the minimum non-straight steering ticks required to exit an edge from a stable state. I think the stable states in the existing measurement are either pureStable(1) or something that works out to be functionally equivalent for dabeone. So this would be the cost-to-leave with the new stable states subbed in.
+
+### 9
+
+[Image: original 3082x2654, displayed at 2000x1722. Multiply coordinates by 1.54 to map to original image.]
+
+### 10
+
+Fantastic results. I was a little bit worried about having to define an arbitrary threshold, but as you noted there seems to be a pretty large stable range, making the exact decision less important.
+
+I think I have all I need to wrap up this little tangent.
+
+I'd like to have a partial-tick plus straight forward closure combo applied to what I'm fairly happy calling the definitive stable+ set.
+
+Rather than a ratio, I'm going to go directly with a quorum size of 5.
+
+One small asterisk on the quorum size. There were other possibilities for how the pure set could have turned out. If it took 2 laps to repeat exactly, or if there were 2 independent loops, the quorum size would want to be 9. If somehow all 4 phase offsets existed in pure, the quorum size would be 17. What I'm going for is basically the double-inclusive interval of 4 ticks worth of influencers.
+
+This is a janky way to calculate it, but I think that 16/((pure.partialTick.size()/pure.size()) rounded down to the nearest power of 2)+1 will give the correct result. The 16 in that expression originates from 4*Math.round(SPEED).
+
+With this, I'd like to rerun the 3-boid phase map for edge 4->0, replacing the suspect's starting location with "any stable+ state on edge 4".
+
+Note: I do realize that this will add a bit of chaos to the results, since the suspect can appear deep into the envelope after some windows have already acted. It can also be subject to a bit of drift. For the moment, I'm not worrying about this.
+
+Note: I need to leave for dinner, so I don't have time to try to recall the exact details. But there may be some analysis feeding into the 3-boid phase map that needs to be refreshed with the new notion of stable states. I think that the critical-envelope analysis does depend on a concept of stable states, and that the 3-boid phase map uses an artifact it creates.

@@ -325,6 +325,32 @@ On dabeone `4->0` the expansion reaches no edge beyond the stable ones at any qu
 and spills onto five at quorum 1.
 
 
+
+**feature** — a clump of cells of one account in one panel of the phase map, found in the picture
+rather than painted on it. `ThreeBoidSamples.Feature`, with `features` to find them, `bands` to
+group ones sharing a range on one axis, `windowFit` to test a claimed size against the densest
+window of it, and `atlas` to crop each in place. The successor to the hand-drawn *region overlay*,
+and the thing a detector will eventually be scored on.
+
+**slab / column / cloud** — the three shapes the unexplained clumps come in on dabeone's centre
+panel. A **slab** is horizontal and dense, lying on the third-boid-led band; a **column** is the
+same transposed onto the psyboid-led band; a **cloud** has no dense core in either orientation.
+Not cosmetic: all six clouds need genuine superposition, while the slabs and columns mostly need
+only a leader handover.
+
+**demanding tick** — a tick of a history on which coasting would not have produced the move, so a
+leader is genuinely required. The rest are **free**: nothing was steering, or the veto overrode
+the request and every turn collapsed to the same successor, and then *every* neighbour on the map
+accounts for the move. **Coverage counted over all ticks flatters every candidate equally**; count
+demanding ticks only. `ThreeBoidSamples.Approach`.
+
+**single / split / uncovered** — what an unexplained exit turns out to need, from
+`ThreeBoidSamples.classify`. **single**: one boid accounts for every demanding tick, so a pairwise
+table could hold the history and only the constants or the ground are too tight. **split**: two
+boids between them account for all of them and neither alone does — pairwise per tick, not per
+history, so it needs a leader handover. **uncovered**: a demanding tick neither neighbour alone
+reproduces, which is superposition and out of reach of any two-boid constants.
+
 **cost to leave** — the fewest ticks of non-straight steering needed to get from an edge to a
 named other edge; the ticks need not be consecutive or agree in direction. `EdgeNavigation.Exit`,
 surfaced in the edge graph. **It is a reduction over a source set, and which set is the whole
@@ -418,6 +444,7 @@ anything not listed.
 | region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
 | map-wide stable, stable+ | `StateSet` + `MapStates.stablePlus`, scanned by `SimTest.stablePlusScan` | `render/stable-plus-by-ratio.png` |
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
+| white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
