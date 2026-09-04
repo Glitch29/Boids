@@ -388,6 +388,163 @@ a measurement of every cell in it.
 
 ---
 
+
+## 0a. Survey — how the neighbour signals are aggregated, and what else is sensible
+
+Asked 2026-08-30. A survey, not an optimisation: `Aggregation` holds seven ways of condensing
+several neighbours into one desired direction, `AggregationSurvey` scores them all on the same
+sampled arrangements, and `ThreeBoidPhase.compare` cross-tabulates the phase maps they fly.
+**Nothing here has been adopted; `MovementLogic`'s default path is untouched and
+`Aggregation.CURRENT` is checked against it on every run** — 0 turn disagreements over 20,000
+arrangements, worst vector gap `7.1e-14`.
+
+### What the simulation does, stated exactly
+
+Per rule: sum the neighbour contributions, then `w * v / |v|`. Three details are worth having
+written down because none is obvious from the formula:
+
+- **Cohesion sums raw offsets, not unit vectors.** Before normalisation a neighbour 140 px away
+  counts fourteen times one at 10 px; after it, only the direction survives, which is the
+  direction of the centroid.
+- **Separation's distance falloff is erased whenever exactly one neighbour is close**, because
+  normalising a single vector discards its length. **The falloff only ever shapes a direction,
+  never a magnitude.**
+- **There is no magnitude bound anywhere downstream**, and no inertia term. The renormalised
+  direction goes straight into the turn choice.
+
+### The defect, measured on real map geometry
+
+The length of a rule's sum is exactly the measure of how much the neighbours agree, and
+normalising throws it away. Over 399,321 arrangements sampled from live navmap states:
+
+- **alignment cancellation** (sum of lengths / length of sum) — median **1.41x**, p90 **10.2x**,
+  and **10.0% of arrangements above 10x**. In a tenth of cases the surviving direction is a
+  residue under a tenth of the length that went in, restored to the full `W_ALI` of 70.
+- the **pseudo-triangle rule** holds for the current scheme in only **64.5%** of two-neighbour
+  arrangements at `k = 1` and **66.7%** at `k = 0.5`.
+- **amplification** `|signal(A,B)| / max(|signal(A)|, |signal(B)|)` reaches **4.14 at p99**: the
+  pair asks for something four times more decisive than either neighbour asked for alone.
+
+### The seven variants
+
+| variant | tri k=1 | tri k=.5 | amp p99 | jolt p99 | 1px flip | match 2 | match 3 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `CURRENT` | 64.5% | 66.7% | 4.14 | 3.85 | 0.78% | — | — |
+| `RULE_MEAN` | 93.6% | 64.7% | 1.51 | 2.32 | 0.56% | 70.2% | 64.9% |
+| `RULE_SUM_CLAMP` | 78.3% | 69.8% | 2.00 | 2.46 | 0.56% | 79.9% | 84.9% |
+| **`RULE_CLAMP_STEP`** | 75.8% | 71.3% | 2.31 | 3.30 | 0.80% | **86.4%** | **92.7%** |
+| **`VOTE_MEAN`** | **100.0%** | 65.2% | **0.99** | **1.61** | **0.54%** | 72.1% | 63.9% |
+| `VOTE_CLAMP` | 50.7% | **93.9%** | 1.97 | 2.94 | 0.69% | 74.7% | 74.1% |
+| `VOTE_NORM` | 74.6% | 66.4% | 2.49 | **4.40** | 0.70% | 70.6% | 70.2% |
+
+*jolt* is how far the signal moves for a one-pixel nudge of one neighbour, in units of the
+straight bias — the only scale on which a signal change means anything, since that is what a turn
+has to beat. *match* is agreement with today's turn on two- and three-neighbour arrangements.
+
+**`VOTE_MEAN` satisfies the pseudo-triangle rule exactly, and provably.** Averaging bounded
+per-neighbour votes is a convex combination and the across-heading component is a linear
+functional, so the result cannot leave the interval. It is also the calmest by a factor of 2.4
+against today, and **strictly cheaper** — it does no square roots at all where the current scheme
+does three per decision.
+
+**`VOTE_NORM` is the control and it settles the ordering question.** Summing the votes and
+normalising the total is *worse* than today (jolt 4.40 against 3.85). **Moving the normalisation
+does not help; normalising at all is the defect.** Reordering operations is not the lever.
+
+**`VOTE_CLAMP` fails on its own terms.** It sums rather than averages, so it is *more* decisive
+than today, and it is the only variant that makes things worse everywhere it is measured.
+
+**Why `RULE_MEAN` is not also exact.** Each rule averages over its own contributors — separation
+over the close ones, cohesion and alignment over all — so the total is a weighted sum of three
+convex combinations with different denominators, which is not itself a convex combination of the
+single-neighbour results. Averaging inside the rules is not the same as averaging across the
+neighbours, and only the second gives the guarantee.
+
+### Complexity: same or lower, in every case
+
+Every variant is one pass over the neighbours, O(n), no extra state, no second pass. The `VOTE_*`
+family removes the three per-rule square roots and `RULE_MEAN` removes them too. Nothing here adds
+a layer.
+
+### What other implementations do
+
+Neither of the two most-copied references normalises each rule's sum to a fixed magnitude with
+nothing downstream to bound it.
+
+- **Conrad Parker's pseudocode** — cohesion is the *mean* neighbour position, alignment the *mean*
+  neighbour velocity, separation a raw sum; no per-rule normalisation, and a single optional
+  velocity clamp applied once after all three are combined.
+- **The Nature of Code** — sum, then `div(count)`, then `setMag(maxspeed)`, then
+  `steer = desired - velocity`, then **`limit(maxforce)`**.
+
+Both average by neighbour count, and both bound magnitude **once, at the end, on the total**. The
+Nature of Code's `steer = desired - velocity` followed by a force limit is a low-pass filter: the
+boid's existing velocity dominates and the amplified part is clamped away. **This project has no
+analogue of either.** Its discrete-turn formulation has no velocity to subtract, and the straight
+bias is hysteresis rather than a magnitude bound, so an amplified direction passes through
+undamped. That, rather than the three rules, is what makes this simulation unusual.
+
+### What it does to the phase map
+
+Arc `4->0` on stable+, same seed and starts, tables shared — **three of the variants agree with
+today exactly for a single neighbour**, so `EdgeInfluence.steer`, the critical envelope, the
+windows and the tables are all unchanged and only the trajectories move.
+
+| variant | unexplained rate | white to accounted | white to no exit | account moved | centre-panel clumps |
+| --- | --- | --- | --- | --- | --- |
+| `CURRENT` | 3.04% of 491,449 | — | — | — | 20 (3,777 cells) |
+| `RULE_CLAMP_STEP` | **2.15%** of 481,358 | 2.2% | 33.5% | 0.09% | 17 (2,712) |
+| `VOTE_MEAN` | **1.37%** of 459,198 | 2.1% | 57.6% | 0.12% | **9 (1,780)** |
+| `VOTE_CLAMP` | 3.06% of 535,899 | 3.3% | 36.3% | 0.32% | 25 (4,585) |
+
+> **The white does not become explained. It stops being an exit.** Only 2 to 3% of unaccounted
+> cells acquire an account under any variant; a third to a half stop producing an exit at all.
+> That is consistent with those exits having been artefacts of the amplification — take the
+> amplification away and the boid does not turn — but it is a different claim from "the account
+> got better", and the two must not be reported as one number.
+
+**Leader attribution is stable to about a tenth of a percent.** Amber essentially never becomes
+cyan: 216 of 476,520 accounted cells change which boid led under `RULE_CLAMP_STEP`, 387 under
+`VOTE_MEAN`. What moves is whether an exit happens, not who caused it — so the criterion of
+keeping the accounted regions in place is met by all of them, and `render/agg-centre-panels.png`
+shows it.
+
+### The initial hypothesis, tested and confirmed
+
+Do the unaccounted exits involve abnormally high normalisation? Taking the arrangement at envelope
+entry for 8,324 unaccounted and 1,977 accounted exits from the same run:
+
+| class | alignment cancel p50 | p90 | above 4x | cohesion p50 | invention factor |
+| --- | --- | --- | --- | --- | --- |
+| unaccounted | **1.49** | **5.13** | **16.6%** | 1.38 | **1.88** |
+| accounted | 1.11 | 2.12 | 3.6% | 1.16 | 1.21 |
+
+*Invention factor* is the length of today's desired direction over the length of the average of
+what the neighbours individually asked for. **At the median an unaccounted exit's signal is 1.88x
+longer than anything its neighbours asked for; an accounted one is 1.21x.** Heavy cancellation is
+**4.6x** enriched among the unaccounted. The hypothesis holds.
+
+### What adopting one would cost
+
+A change here is a change to `Params.PHYSICS`, not a `Flocking` argument: it changes what the
+boids do. Every ingest, the psyboid corpus, every plan label and every stored table taken under
+physics 2 would stop meaning what it means. That is the reason to survey before choosing, and the
+reason nothing has been chosen.
+
+**If the criterion is least disturbance for a real improvement, `RULE_CLAMP_STEP` is the
+candidate** — identical for one neighbour, identical whenever the neighbours agree, 92.7%
+agreement on three-boid turns, and a 29% cut in the unaccounted rate. **If the criterion is the
+pseudo-triangle rule itself, only `VOTE_MEAN` satisfies it**, and it is cheaper and calmer, at the
+cost of agreeing with today on 64% of three-boid turns.
+
+### Not surveyed
+
+Only arc `4->0` on dabeone, and only the aggregation. The straight bias is the other half of the
+decision and is untouched here — under a bounded aggregation the signal is smaller, so the bias is
+effectively stronger, and the two would want tuning together rather than one at a time.
+
+---
+
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
 Specified 2026-08-28, **built 2026-08-29** as `CriticalEnvelope`, driven by `SimTest.envelope`,

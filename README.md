@@ -119,10 +119,12 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 47 files.
+One package, `src/boids`, 49 files.
 
 **Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
-the single definition of what a boid perceives) · `Boids2DEngine` (one tick in index order,
+the single definition of what a boid perceives) · `Aggregation` (candidate ways of condensing
+several neighbours into one direction; `CURRENT` is what the simulation does and is the default
+everywhere) · `Boids2DEngine` (one tick in index order,
 with the `Trace` tap) · `MovementControl`, `BoidArray`, `Engine` (the decision interface) ·
 `PsyboidOverride` · `Sim` (the state container) · `ScenarioParameter`,
 `PresetScenarioParameter` (registered maps).
@@ -141,6 +143,9 @@ stored by `CriticalEnvelopeStore` · `EdgeInfluence` (`steer`, the single-neighb
 **State sets** — `StateSet` (the algebra: `partialTick`, `closed`, `expandByAgreement`) ·
 `MapStates` (that algebra bound to one map, plus `pureStable` and the straight-travel cycles).
 Behind an interface because stable+ is not yet defined and is expected to change.
+
+**Surveys** — `AggregationSurvey` (candidate aggregations scored against the simulation on
+sampled arrangements, with a fidelity check that the baseline *is* the simulation).
 
 **Exhaustive and sampled** — `TwoBoid` (all reachable two-boid arrangements) ·
 `ThreeBoidPhase` (three-boid arrangements sampled and mapped by phase difference, since three
@@ -195,6 +200,7 @@ ways → 6 edges.
 | `renderTick` | one exit at whole-map scale, for structural rather than influence questions |
 | `stablePlus` | the map-wide stable set and what agreement expands it to, per edge |
 | `stablePlusScan` | the same over a range of agreement ratios, with cost-to-leave and a render |
+| `aggregationPhaseMaps` | the phase map flown under each candidate aggregation, cross-tabbed against the baseline |
 | `phaseMapOnStablePlus` | the three-boid phase map with stable+ as both the suspect population and admission's ground, plus a control |
 | `tablesOnStablePlus` | the critical-envelope tables for one arc on that same ground |
 
@@ -238,6 +244,7 @@ a map that has since been edited.
 | `render/phase40-stableplus.png` | `SimTest.phaseMapOnStablePlus` | the arc `4->0` phase map on stable+ throughout. **3.0% unexplained against the old 21.0%** |
 | `render/phase40-stableplus-white-atlas.png` | `ThreeBoidSamples.atlas` | every unexplained clump of the centre panel, cropped in place |
 | `render/phase40-stableplus-white-samples.png` | `ThreeBoidSamples.sampleFeatures` | one replayed arrangement per clump, at envelope entry |
+| `render/agg-*.png` | `SimTest.aggregationPhaseMaps` | the phase map under each candidate aggregation, plus a centre-panel comparison |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,

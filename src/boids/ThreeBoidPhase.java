@@ -142,6 +142,24 @@ public final class ThreeBoidPhase {
                            ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
                            int kPsy, double resolution, double targetFill, long seed,
                            StateSet suspectStarts, Path out) throws IOException {
+        run(preset, l, f, tables, from, keep, band, kBoid, kPsy, resolution, targetFill, seed,
+                suspectStarts, null, out);
+    }
+
+    /**
+     * The same, flying the flock under a different {@link Aggregation}.
+     * <p>
+     * The tables the map is coloured by are built from the <b>single-neighbour</b> closed form,
+     * so a variant that leaves one neighbour's influence alone leaves every pairwise artefact in
+     * the project valid — the same tables, the same windows, the same envelope. Only the
+     * trajectories move. That is what makes this an honest comparison rather than two pictures of
+     * two different projects.
+     */
+    public static void run(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
+                           ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
+                           int kPsy, double resolution, double targetFill, long seed,
+                           StateSet suspectStarts, Aggregation aggregation, Path out)
+            throws IOException {
         NavMap map = l.map();
         int[] edge = l.edge(), live = l.live();
         int liveCount = l.liveCount();
@@ -177,6 +195,11 @@ public final class ThreeBoidPhase {
                 kBoid, kPsy, resolution, targetFill, patience);
 
         Boids2DEngine engine = new Boids2DEngine(preset);
+        engine.aggregation(aggregation);
+        if (aggregation != null) {
+            System.out.printf("  flying under aggregation %s: %s%n", aggregation.id(),
+                    aggregation.describes());
+        }
         Random rng = new Random(seed);
         Map<Long, Cell> cells = new HashMap<>();
         long began = System.nanoTime();
@@ -510,6 +533,144 @@ public final class ThreeBoidPhase {
                         100.0 * have[rp][rb] / total);
             }
         }
+    }
+
+    /**
+     * Cell by cell, what one phase map says against what another says.
+     * <p>
+     * The comparison the aggregation survey turns on: a variant is only interesting if it leaves
+     * the <b>accounted</b> regions where they were — a picture whose amber and cyan have moved is
+     * a different flock, not a better-explained one — while turning unaccounted cells into
+     * accounted ones. A single "percent changed" hides exactly that distinction, so this is a
+     * cross-tabulation and not a number.
+     */
+    public static void compare(Path before, Path after, SolverFacts f, int from,
+                               double resolution) throws IOException {
+        BufferedImage a = javax.imageio.ImageIO.read(before.toFile());
+        BufferedImage b = javax.imageio.ImageIO.read(after.toFile());
+        Layout lay = layout(loops(f, from), resolution);
+        if (a.getWidth() != b.getWidth() || a.getHeight() != b.getHeight()) {
+            throw new IOException("phase maps are different sizes");
+        }
+        int[] palette = {UNEXPLAINED, PSYBOID_LED, THIRD_LED, DILUTED, CONTINUED, PANEL};
+        String[] name = {"unexplained", "psyboid-led", "third-led", "diluted", "continued",
+                "unsampled"};
+        long[][] cross = new long[palette.length][palette.length];
+        int n = loops(f, from).size();
+        for (int rp = 0; rp < n; rp++) {
+            for (int rb = 0; rb < n; rb++) {
+                for (int y = 0; y < lay.span(rb); y++) {
+                    for (int x = 0; x < lay.span(rp); x++) {
+                        int px = lay.px(rp, x), py = lay.py(rb, y);
+                        cross[index(palette, a.getRGB(px, py))]
+                                [index(palette, b.getRGB(px, py))]++;
+                    }
+                }
+            }
+        }
+        System.out.printf("%n=== %s -> %s, cell by cell ===%n", before.getFileName(),
+                after.getFileName());
+        System.out.printf("%-12s %12s %12s %12s %12s%n", "was \\ became", "unexplained",
+                "psyboid-led", "third-led", "other");
+        for (int i = 0; i < 3; i++) {
+            long other = 0;
+            for (int j = 3; j < palette.length; j++) other += cross[i][j];
+            System.out.printf("%-12s %12d %12d %12d %12d%n", name[i], cross[i][0], cross[i][1],
+                    cross[i][2], other);
+        }
+        // Two very different things happen to a white cell and they must not be added together:
+        // it can acquire an account, or the arrangement can simply stop producing an exit. Only
+        // the first is an explanation; the second is a different flock.
+        long wasWhite = 0;
+        for (int j = 0; j < palette.length; j++) wasWhite += cross[0][j];
+        long explained = cross[0][1] + cross[0][2] + cross[0][3];
+        long vanished = cross[0][4] + cross[0][5];
+        long wasLed = 0, stillSame = 0, ledVanished = 0, ledWhite = 0;
+        for (int i = 1; i <= 2; i++) {
+            for (int j = 0; j < palette.length; j++) wasLed += cross[i][j];
+            stillSame += cross[i][i];
+            ledVanished += cross[i][4] + cross[i][5];
+            ledWhite += cross[i][0];
+        }
+        System.out.printf("  was unexplained: %,d -> %,d still unexplained, %,d now accounted "
+                        + "(%.1f%%), %,d no longer exit at all (%.1f%%)%n", wasWhite, cross[0][0],
+                explained, 100.0 * explained / Math.max(1, wasWhite), vanished,
+                100.0 * vanished / Math.max(1, wasWhite));
+        System.out.printf("  was accounted:   %,d -> %,d same account (%.2f%% moved), %,d became "
+                        + "unexplained, %,d no longer exit%n", wasLed, stillSame,
+                100.0 * (wasLed - stillSame) / Math.max(1, wasLed), ledWhite, ledVanished);
+
+        long exitsBefore = 0, exitsAfter = 0, whiteAfter = 0;
+        for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < palette.length; j++) exitsBefore += cross[i][j];
+        }
+        for (int j = 0; j < 4; j++) {
+            for (int i = 0; i < palette.length; i++) exitsAfter += cross[i][j];
+        }
+        for (int i = 0; i < palette.length; i++) whiteAfter += cross[i][0];
+        System.out.printf("  unexplained RATE: %.2f%% of %,d exits -> %.2f%% of %,d exits%n",
+                100.0 * wasWhite / Math.max(1, exitsBefore), exitsBefore,
+                100.0 * whiteAfter / Math.max(1, exitsAfter), exitsAfter);
+    }
+
+    /** One panel of several phase maps, side by side, for looking at rather than counting. */
+    public static void panelSheet(List<Path> maps, List<String> titles, SolverFacts f, int from,
+                                  double resolution, int route, int otherRoute, int scale,
+                                  String heading, Path out) throws IOException {
+        Layout lay = layout(loops(f, from), resolution);
+        int w = lay.span(route) / scale, h = lay.span(otherRoute) / scale;
+        int cap = 30, gap = 8, head = 46;
+        BufferedImage sheet = new BufferedImage(gap + maps.size() * (w + gap),
+                head + h + cap + gap, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = sheet.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
+                RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        g.setColor(new Color(GROUND));
+        g.fillRect(0, 0, sheet.getWidth(), sheet.getHeight());
+        g.setColor(new Color(TEXT));
+        g.setFont(new Font("SansSerif", Font.BOLD, 16));
+        g.drawString(heading, gap + 4, 24);
+        g.setColor(new Color(FAINT));
+        g.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        g.drawString("white = nothing accounts for it, amber = led by the psyboid, cyan = led by "
+                + "the third boid. Downsampled " + scale + "x, so a lone white cell shows only "
+                + "where several sit together", gap + 4, 40);
+
+        for (int i = 0; i < maps.size(); i++) {
+            BufferedImage src = javax.imageio.ImageIO.read(maps.get(i).toFile());
+            int ox = gap + i * (w + gap);
+            g.setColor(new Color(PANEL));
+            g.fillRect(ox, head, w, h + cap);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    // Keep the rarest thing in the block rather than the commonest, because the
+                    // question is where the unaccounted cells are and a mean would erase them.
+                    int best = CONTINUED;
+                    for (int dy = 0; dy < scale; dy++) {
+                        for (int dx = 0; dx < scale; dx++) {
+                            int c = src.getRGB(lay.px(route, x * scale + dx),
+                                    lay.py(otherRoute, y * scale + dy)) & 0xFFFFFF;
+                            if (c == UNEXPLAINED) best = c;
+                            else if (best != UNEXPLAINED && c != CONTINUED && c != PANEL) best = c;
+                        }
+                    }
+                    sheet.setRGB(ox + x, head + cap + y, best);
+                }
+            }
+            g.setColor(new Color(TEXT));
+            g.setFont(new Font("SansSerif", Font.BOLD, 13));
+            g.drawString(titles.get(i), ox + 4, head + 20);
+        }
+        g.dispose();
+        if (out.getParent() != null) Files.createDirectories(out.getParent());
+        javax.imageio.ImageIO.write(sheet, "png", out.toFile());
+        System.out.printf("wrote %s (%dx%d)%n", out, sheet.getWidth(), sheet.getHeight());
+    }
+
+    private static int index(int[] palette, int rgb) {
+        int c = rgb & 0xFFFFFF;
+        for (int i = 0; i < palette.length; i++) if (palette[i] == c) return i;
+        return palette.length - 1;
     }
 
     /**

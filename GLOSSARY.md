@@ -59,6 +59,34 @@ answering a different question. `Boids2DEngine.Trace` fires mid-tick for this re
 is the same constants as an argument, so an analysis can ask its question at widened values
 without moving anything the simulation reads.
 
+
+**aggregation** — how several neighbours are condensed into one desired direction, as opposed to
+what each rule wants from one neighbour. `Aggregation`, with `CURRENT` the simulation's own and
+six alternatives surveyed beside it. **The rules are not where implementations differ; the
+aggregation is.**
+
+**cancellation ratio** — for one rule, `sum of the contributions' lengths / length of their sum`.
+One is unanimity; ten means the neighbours nearly cancelled and only a short residue survived.
+**A property of the arrangement, not of the aggregation**, which is what makes it usable as
+evidence about which exits the normalisation is inventing. `AggregationSurvey.cancellation`.
+
+**amplification** — `|signal(A,B)| / max(|signal(A)|, |signal(B)|)`, where *signal* is the
+across-heading component of the desired direction. Above one means the pair asked for something
+more decisive than either neighbour asked for alone, which no bounded aggregation can produce.
+
+**pseudo-triangle rule** — `min(signal(A), signal(B)) <= k * signal(A and B) <= max(...)` for a
+fixed `k`. The property a well-behaved aggregation has and the current one does not: it holds in
+64.5% of sampled two-neighbour arrangements today, and exactly always for a mean of per-neighbour
+votes, because a mean is a convex combination and the across-component is linear.
+
+**invention factor** — the length of the desired direction under the current aggregation over its
+length under a mean of per-neighbour votes. How much longer the signal is than anything the
+neighbours actually asked for. Median **1.88** at unaccounted exits against **1.21** at accounted
+ones.
+
+**jolt** — how far the signal moves when one neighbour moves one pixel, measured in straight
+biases, since that is the only scale on which a signal change can change a turn.
+
 **straight bias** — hysteresis on holding the current heading, `(wSep + wCoh + wAli) / TURNS`.
 The knob of choice for widening a window: it scales how decisive an influence must be without
 altering what any influence is.
@@ -445,6 +473,7 @@ anything not listed.
 | map-wide stable, stable+ | `StateSet` + `MapStates.stablePlus`, scanned by `SimTest.stablePlusScan` | `render/stable-plus-by-ratio.png` |
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
+| aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |

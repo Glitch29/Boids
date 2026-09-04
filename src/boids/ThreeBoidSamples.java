@@ -863,6 +863,48 @@ public final class ThreeBoidSamples {
     // ---- why one region's exit has no account ---------------------------------
 
     /**
+     * All three boids' states at the tick the suspect was steered onto the envelope.
+     * <p>
+     * The arrangement the leader question is asked at, handed back so anything wanting to measure
+     * a property of it — how much the three rules are cancelling, say — can do so without
+     * rebuilding the replay.
+     *
+     * @return {@code {psyboid, third, suspect}} states, or null if it never entered
+     */
+    public static int[] entryArrangement(Boids2DEngine engine, SolverFacts f,
+                                         ExitAudit.Tables tables, int from, int psyStart,
+                                         int otherStart, int suspectStart, boolean overridden) {
+        NavMap map = tables.map();
+        PsyboidOverride[] overrides = overridden
+                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                : new PsyboidOverride[0];
+        int[] xs = {x(map, psyStart), x(map, otherStart), x(map, suspectStart)};
+        int[] ys = {y(map, psyStart), y(map, otherStart), y(map, suspectStart)};
+        int[] hs = {h(psyStart), h(otherStart), h(suspectStart)};
+        Sim.State s = new Sim.State(3, xs, ys, hs, 0, 0, new long[3], "entry", overrides);
+
+        ExitAudit audit = new ExitAudit(tables, overrides);
+        audit.reset(3, overrides);
+        engine.trace(audit);
+        try {
+            for (int t = 0; t < PATIENCE; t++) {
+                s = engine.tick(s);
+                if (f.edgeAt(s.x[SUSPECT], s.y[SUSPECT], s.h[SUSPECT]) != from) break;
+            }
+        } catch (RuntimeException e) {
+            return null;
+        } finally {
+            engine.trace(null);
+        }
+        for (ExitAudit.Exit e : audit.exits()) {
+            if (e.suspect() == SUSPECT && e.fromEdge() == from && e.entryStates().length == 3) {
+                return e.entryStates().clone();
+            }
+        }
+        return null;
+    }
+
+    /**
      * The suspect's state at every tick from the start of a sampled trial to its envelope entry.
      * <p>
      * Separate from {@link #explain} because the interesting question about a definition of

@@ -12,7 +12,11 @@ public class Boids2DEngine implements Engine {
     private final double turningRadius;
     private final double speed;
     private final int defaultFlockSize;
-    private final MovementControl flocking;
+    /**
+     * Not final, and only for the aggregation survey: { #aggregation} swaps it. Every other
+     * caller gets the one the constructor built, which is the simulation.
+     */
+    private MovementControl flocking;
     private final MovementControl collision;
     private Trace trace;
 
@@ -32,6 +36,17 @@ public class Boids2DEngine implements Engine {
      */
     public interface Trace {
         void decided(long tick, int i, BoidArray boids, int want);
+    }
+
+    /**
+     * Flies the flock under a different way of condensing neighbours into a direction.
+     * <p>
+     * Survey use only. Null restores the simulation. Nothing about perception, the turn
+     * candidates or the veto changes — see {@link Aggregation}.
+     */
+    public void aggregation(Aggregation a) {
+        flocking = a == null ? new MovementLogic(turningRadius)
+                : new MovementLogic(turningRadius, a);
     }
 
     /** Installs a decision tap, or clears it with null. Off costs one null check a boid. */

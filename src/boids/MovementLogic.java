@@ -17,13 +17,34 @@ public final class MovementLogic implements MovementControl{
     private final double rFlock;
 
     /**
+     * A different way of condensing several neighbours into one direction, or null for the
+     * simulation's own.
+     * <p>
+     * <b>Null is the default everywhere and the code path below is untouched by this field
+     * being present.</b> A survey of alternatives has to be able to fly one, and the only
+     * honest way to compare is to leave the thing being compared against exactly as it was —
+     * so the alternative is a branch taken only when one is asked for, not a refactor of the
+     * original into a special case of something more general.
+     */
+    private final Aggregation aggregation;
+
+    private final Flocking flock;
+
+    /**
      * Perception radii scale with the turning radius, so this is per-scenario rather
      * than a shared singleton. A boid must begin reacting to a neighbour far enough
      * out that it can actually turn away in time.
      */
     public MovementLogic(double turningRadius) {
+        this(turningRadius, null);
+    }
+
+    /** The same, deciding with a different aggregation. See {@link Aggregation}. */
+    public MovementLogic(double turningRadius, Aggregation aggregation) {
         this.rSep = Params.separation(turningRadius);
         this.rFlock = Params.flock(turningRadius);
+        this.aggregation = aggregation;
+        this.flock = Flocking.of(turningRadius);
     }
 
     private static double len(double a, double b) {
@@ -134,6 +155,7 @@ public final class MovementLogic implements MovementControl{
      * so there is one implementation of the rules rather than a diagnostic copy that can drift.
      */
     public Influence decompose(BoidArray s, int i) {
+        if (aggregation != null) return variant(s, i);
         final double hx = Params.COS[s.h()[i]];
         final double hy = Params.SIN[s.h()[i]];
         final double xi = s.x()[i];
@@ -179,6 +201,50 @@ public final class MovementLogic implements MovementControl{
             if (score > bestScore) { bestScore = score; best = delta; }
         }
         return new Influence(wSepX, wSepY, wCohX, wCohY, wAliX, wAliY, seen, close, best, true);
+    }
+
+    /**
+     * The same decision under an alternative {@link Aggregation}.
+     * <p>
+     * The perception test, the turn candidates and the straight bias are the originals; only the
+     * step between "these are the neighbours" and "this is the desired direction" differs. That
+     * is the whole point — a variant that also changed what a boid can see would not be a
+     * comparison of aggregations.
+     */
+    private Influence variant(BoidArray s, int i) {
+        double hx = Params.COS[s.h()[i]], hy = Params.SIN[s.h()[i]];
+        Aggregation.Neighbours nb = Aggregation.Neighbours.of(s.n());
+        int n = 0, close = 0;
+        for (int j = 0; j < s.n(); j++) {
+            if (j == i) continue;
+            double d = perceived(s, i, j, hx, hy);
+            if (d < 0) continue;
+            double dx = s.x()[j] - s.x()[i], dy = s.y()[j] - s.y()[i];
+            nb.ux()[n] = dx / d;
+            nb.uy()[n] = dy / d;
+            nb.d()[n] = d;
+            nb.ax()[n] = Params.COS[s.h()[j]];
+            nb.ay()[n] = Params.SIN[s.h()[j]];
+            n++;
+            if (d < rSep) close++;
+        }
+        if (n == 0) return new Influence(0, 0, 0, 0, 0, 0, 0, 0, 0, false);
+
+        double[] out = new double[6];
+        aggregation.combine(nb.count(n), flock, out);
+        double dirX = out[0] + out[2] + out[4], dirY = out[1] + out[3] + out[5];
+        if (dirX == 0.0 && dirY == 0.0) {
+            return new Influence(0, 0, 0, 0, 0, 0, n, close, 0, false);
+        }
+        int best = 0;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (int delta : CANDIDATES) {
+            int a = Math.floorMod(s.h()[i] + delta, Params.TURNS);
+            double score = Params.COS[a] * dirX + Params.SIN[a] * dirY
+                    + (delta == 0 ? Params.STRAIGHT_BIAS : 0.0);
+            if (score > bestScore) { bestScore = score; best = delta; }
+        }
+        return new Influence(out[0], out[1], out[2], out[3], out[4], out[5], n, close, best, true);
     }
 
     @Override

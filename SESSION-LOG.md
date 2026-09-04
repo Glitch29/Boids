@@ -252,6 +252,63 @@ neighbour alone reproduces a single one.
 
 One representative per clump, so these are samples rather than censuses.
 
+**Then, overnight: a survey of how the neighbour signals are aggregated.** `Aggregation` holds
+seven ways of condensing several neighbours into one desired direction, `AggregationSurvey` scores
+them on the same sampled arrangements, `MovementLogic` gained a branch that flies one, and
+`ThreeBoidPhase.compare` cross-tabulates the phase maps. **Nothing adopted; the default path is
+untouched**, and `Aggregation.CURRENT` is checked against `MovementLogic` every run — 0 turn
+disagreements over 20,000 arrangements, worst gap 7.1e-14. Full write-up in `ROADMAP.md` §0a,
+transferable part in `HINTS.md` §10c.
+
+**Three things about the current scheme that were not written down anywhere.** Cohesion sums raw
+offsets rather than unit vectors. Separation's distance falloff is **inert whenever one neighbour
+is close**, because normalising a single vector discards its length — it only ever shapes a
+direction. And there is no magnitude bound and no inertia term downstream, so an amplified
+direction goes straight into the turn choice.
+
+**The defect, on 399,321 sampled arrangements.** Alignment cancellation median 1.41x, **p90
+10.2x**, 10% above 10x. The pseudo-triangle rule holds for the current scheme in **64.5%** of
+two-neighbour arrangements at k=1. Amplification p99 **4.14**.
+
+**Results.** `VOTE_MEAN` (mean of per-neighbour votes) satisfies the triangle rule **100%** — and
+provably, being a convex combination under a linear functional — with the lowest amplification
+(p99 0.99) and jolt (1.61 against 3.85), and it is *cheaper*, doing no square roots against three.
+`RULE_CLAMP_STEP` is the conservative option: identical for one neighbour, identical when
+neighbours agree, **92.7%** agreement on three-boid turns. `VOTE_NORM` is the control and settles
+the ordering question — summing votes and normalising the *total* is **worse** than today, so
+moving the normalisation does not help and normalising at all is the defect. `VOTE_CLAMP` sums
+rather than averages, is more decisive than today, and loses on every measure.
+
+**On the phase map** (arc 4->0, same seed and starts, tables shared since three variants agree
+exactly at one neighbour): unexplained rate 3.04% -> **2.15%** under `RULE_CLAMP_STEP` and
+**1.37%** under `VOTE_MEAN`; centre-panel clumps 20 -> 17 -> 9. `VOTE_CLAMP` makes it worse
+(3.06%, 25 clumps).
+
+> ⚠ **Corrected while writing it up: the white does not become explained, it stops being an
+> exit.** Only 2–3% of unaccounted cells acquire an account; a third to a half stop producing an
+> exit at all. My first `compare` summed the two into one "resolved" figure, which was wrong and
+> flattering. Leader *attribution* meanwhile is stable to ~0.1% — amber essentially never becomes
+> cyan, so the accounted regions do stay put.
+
+**The user's hypothesis is confirmed.** At envelope entry, unaccounted exits have alignment
+cancellation above 4x **4.6x more often** than accounted ones (16.6% against 3.6%), and their
+desired direction is at the median **1.88x** longer than the average of what their neighbours
+individually asked for, against 1.21x. The residue is substantially a measurement of the
+aggregation rather than of flocking.
+
+**Checked against the field.** Conrad Parker's pseudocode and the Nature of Code both average by
+neighbour count and bound magnitude once, on the total; the Nature of Code's
+`steer = desired - velocity` under `limit(maxforce)` is a low-pass filter that a discrete-turn
+formulation has no analogue of. **Per-rule normalisation with no downstream clamp and no velocity
+state is the unusual part of this simulation**, not the three rules.
+
+**Cost of adopting any of it:** a `Params.PHYSICS` bump, so every ingest, plan label and stored
+table taken under physics 2 stops meaning what it means. Hence a survey first.
+
+**Not surveyed:** only arc 4->0 on dabeone, and only the aggregation. Under a bounded aggregation
+the signal is smaller, so the straight bias is effectively stronger — the two want tuning
+together.
+
 Fixed while writing it: the first version of `Approach.call` tested `psy + third >= demanding`,
 which double-counts ticks both cover and called several uncovered clumps `split`. It counts the
 union now.

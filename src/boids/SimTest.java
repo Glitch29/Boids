@@ -3098,6 +3098,40 @@ picks, never in what is available to it.
      * wobble — and a route is precisely what the solver is supposed to find remarkable.
      */
     /**
+     * The same phase map flown under each candidate aggregation, cross-tabulated against the
+     * baseline.
+     * <p>
+     * The baseline is regenerated here rather than reused from disk, so that the two pictures
+     * being compared came out of the same build — a comparison against a file written by earlier
+     * code would silently fold in every unrelated change since.
+     * <p>
+     * <b>The tables are built once and shared across all of them.</b> Every variant passed here
+     * agrees with the simulation on a single neighbour, so the pairwise closed form and therefore
+     * the envelope is identical under each; rebuilding them per variant would produce the same
+     * bytes and invite the suspicion that it had not.
+     */
+    public static void aggregationPhaseMaps(PresetScenarioParameter preset, Labelling l,
+                                            SolverFacts f, Flocking flock, int from, int keep,
+                                            int quorum, Aggregation[] variants)
+            throws IOException {
+        MapStates m = MapStates.of(l.map(), flock, l.live(), l.liveCount());
+        StateSet plus = m.stablePlus(quorum);
+        ExitAudit.Tables tabs = tablesOnStablePlus(preset, l, f, flock, from, keep, quorum);
+
+        Path base = Path.of("render", "agg-baseline.png");
+        System.out.printf("%n=== phase maps under each aggregation, arc %d->%d ===%n", from, keep);
+        ThreeBoidPhase.run(preset, l, f, tabs, from, keep, 8, 8, 8, 0.5, 0.9995, 1, plus, null,
+                base);
+        for (Aggregation a : variants) {
+            Path out = Path.of("render", "agg-" + a.id().toLowerCase(java.util.Locale.ROOT)
+                    + ".png");
+            ThreeBoidPhase.run(preset, l, f, tabs, from, keep, 8, 8, 8, 0.5, 0.9995, 1, plus, a,
+                    out);
+            ThreeBoidPhase.compare(base, out, f, from, 0.5);
+        }
+    }
+
+    /**
      * The critical-envelope tables for one arc, on the same ground {@link #phaseMapOnStablePlus}
      * builds them on: settled unioned with stable+ restricted to the edge being left.
      * <p>
@@ -3423,6 +3457,27 @@ picks, never in what is available to it.
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
         int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
                 Path.of("render", "phase40-replays.tsv"));
+        Path agBase = Path.of("render", "agg-baseline.png");
+        for (Aggregation a : new Aggregation[]{Aggregation.RULE_SUM_CLAMP_STEP,
+                Aggregation.VOTE_MEAN, Aggregation.VOTE_SUM_CLAMP}) {
+            Path v = Path.of("render", "agg-" + a.id().toLowerCase(java.util.Locale.ROOT) + ".png");
+            ThreeBoidPhase.compare(agBase, v, facts, 4, 0.5);
+            List<ThreeBoidSamples.Feature> w = ThreeBoidSamples.features(v, facts, 4, 0.5, 1, 1,
+                    ThreeBoidPhase.UNEXPLAINED, 4, 40);
+            System.out.printf("  centre panel now: %d clumps of 40+%n", w.size());
+        }
+        ThreeBoidPhase.panelSheet(
+                List.of(agBase, Path.of("render", "agg-rule_clamp_step.png"),
+                        Path.of("render", "agg-vote_mean.png"),
+                        Path.of("render", "agg-vote_clamp.png")),
+                List.of("CURRENT — 20 clumps, 3,777 cells",
+                        "RULE_CLAMP_STEP — 17 clumps, 2,712",
+                        "VOTE_MEAN — 9 clumps, 1,780",
+                        "VOTE_CLAMP — 25 clumps, 4,585"),
+                facts, 4, 0.5, 1, 1, 2,
+                "DABEONE @609cffdb84be218c — centre panel of the 4->0 phase map under each "
+                        + "aggregation", Path.of("render", "agg-centre-panels.png"));
+        if (true) return;
         Path plus = Path.of("render", "phase40-stableplus.png");
         for (int merge : new int[]{2, 4, 6}) {
             List<ThreeBoidSamples.Feature> w = ThreeBoidSamples.features(plus, facts, 4, 0.5,

@@ -10,13 +10,13 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-301 prompts across 9 sessions.
+302 prompts across 8 sessions.
 
 ---
 
-## Session 01 - 2026-08-02
+## Session 01 - 2026-08-03
 
-*Log `f41ef425-19be-4f69-bdaf-bf20bcd0516c`, 17 prompts.*
+*Log `c057a298-593d-4951-81f0-07a8e285bbb6`, 38 prompts.*
 
 ### 1
 
@@ -208,50 +208,6 @@ LMK any thoughts and I'll give you instructions on the next pass.
 
 First of all, let's get rid of all the counters. We don't need them and they clearly distracting.
 
-Side note: I'm not worried about immutability not being strictly enforced.
-
-Let's do the refactor. Sim owns navigation. Sim also owns step. State owns n, x, y, h, tick, override.
-
-Create a functionless interface for override with no implementations.
-
-State should have a constructor that sets every variable explicitly and is called by Sim. It should also have a method withOverride(override) that calls the constructor and creates a copy of itself with an override. It should have a method withBoids(n, x, y, h) that creates a copy of itself with a new set of boids.
-
-If you haven't already done it, there should be a class devoted to running specific 1-off requests. That code should call Sim, but shouldn't live there.
-
-I'm going to start writing my requests roughly as I'd type them up within the SimTest class. Some of these will imply new methods that are hopefully self-explanatory. But ask questions if they aren't.
-
-void testAdvanceSplitAdvance() {
-int branch_count = 4;
-Sim sim = new Sim(PEANUT, 40.0);
-State main = Sim.init(60);
-main = sim.stepTo(main, 500);
-List<State> branches = new ArrayList<>();
-for (int i = 0; i < branch_count; i++) {
-  [[[x, y, h, are copies of the first 40 boids, as well as boid 40+i, for 41 boids total]]]
-  branches.add(main.withBoids(41,x,y,h));
-}
-for (State branch : branches) {
-   for(tick = 500; tick <= 1000; tick += 250) {
-    branch = sim.stepTo(branch, tick);
-    [[[Screenshot branch]]]
-  }
-}
-}
-
-This is mostly a test to make sure that splitting timelines with different boids work. But it will be the first test of what a psyboid is potentially capable of. With 40 fixed boids, plus one other arbitrarily chosen boid, we can see how much leverage 1 boid can have over the flock in 500 ticks.
-
-Reminder: Don't distract yourself by looking at the output. That's my job. I would be pleasantly surprised if we see significant divergence between branches, but I don't expect it with these numbers. Forcing that behavior to emerge is not the point of this round.
-
----
-
-## Session 02 - 2026-08-03
-
-*Log `c057a298-593d-4951-81f0-07a8e285bbb6`, 22 prompts.*
-
-### 1
-
-First of all, let's get rid of all the counters. We don't need them and they clearly distracting.
-
 Side note: I'm not worried about immutability being actually enforced by the compiler.
 
 Let's do the refactor. Sim owns navigation. Sim also owns step. State owns n, x, y, h, tick, override.
@@ -286,7 +242,7 @@ This is mostly a test to make sure that splitting timelines with different boids
 
 Reminder: Don't distract yourself by looking at the output. That's my job. I would be pleasantly surprised if we see significant divergence between branches, but I don't expect it with these numbers. Forcing that behavior to emerge is not the point of this round.
 
-### 2
+### 18
 
 I've gone in and made quite a few changes to codebase. A lot dealing with naming, ownership, and control flow. And some tools to make modeling branching simulations easier. The Sim class's main responsibility now is to be a schmancy collection of states that can be manipulated in parallel.
 
@@ -308,7 +264,7 @@ Note: The r=2 check only needs to be done on pixels that are on the OOB side of 
 
 There's a third bug that I'm a bit clueless on. The code that changes the in bounds and OOB color when printing State only works for PEANUT. For all other maps, it draws black over everything. It might be a file format issue, as that's the only map that I didn't make in MSPaint. I've temporarily commented that code out, and as a result the background in these screenshots is the original png that the map is generated from. That's a pretty good fallback, but the bug is eventually going to have to be figured out.
 
-### 3
+### 19
 
 You're right that I didn't consider that. I was only considering exterior loops where that would never be a problem. The good news is that boids can't escape by clipping slightly into an interior object.
 
@@ -342,11 +298,11 @@ That said, if I had to pick a most robust way to combine ranges, I'd say this:
 * If ranges don't have 360 degree coverage, use normal modular range addition
 * If ranges do have 360 degree coverage, consider only the contributing ranges that exclude 180 degrees or more. Convert the endpoints into cartesian coordinates. Take the negative of their average. Convert that back into an angle and set it as the midpoint with radius 180 degrees.
 
-### 4
+### 20
 
 Give me the whole list of ranges for one of the grey points in the upper cusp of plinko.
 
-### 5
+### 21
 
 I'd rather that narrow-length ranges for the r=1 pass remain in tact. I'm also under the (strong, but not absolutely certain) belief that ALL ranges <180 degrees from the r=2 pass are either artifacts from pixelization or near-360 degree ranges that overflowed into tiny ranges. In theory they should not exist at all.
 
@@ -366,7 +322,7 @@ If the need for an alternate method was tripped, instead use the method I descri
 
 I've got high hopes that this combination of these changes will get us to an artifact-free Plinko.
 
-### 6
+### 22
 
 Fantastic. That's a beautiful-looking Navmap. I can't see a single issue.
 
@@ -374,7 +330,7 @@ The only thing I'll mention is that in retrospect double was not the right data 
 
 It's fine leaving this as is, but if we ever revisit this code it should really be done using integers. Make a somewhat emphatic note of this in an appropriate place. If we ever need to fix any more breaking behavior regarding range calculations, go ahead and remind me that we should be refactoring into integer arithmetic first. I'm already representing them that way in my head, so I might forget that the code is in a different state.
 
-### 7
+### 23
 
 Let's change over to scoring now. Plinko and hamburger both have scoring ranges, that I think are functional although I've never checked.
 
@@ -392,7 +348,7 @@ Cleanest way to do this involves a new Sim method that resets scores, as well as
 
 Err on undersampling rather than going wild for precision. At this point I'm mostly trying to make sure that things work. For hamburger, run 10 sims in parallel at each of 5, 10, 15, 20 boids and recording scores for 5 500-tick intervals for each. For Plinko, we're just trying to check that its average scoring rate is in the .4-.5 range.
 
-### 8
+### 24
 
 Awesome. Next is to look at multiple sims that are split based on psyboid overrides rather than different starting seeds.
 
@@ -406,7 +362,7 @@ For the moment, the psyboid is always boid 0.
 
 I'm aware that there are some systematic issues with the way this data is being collected. But this is mainly a test of functionality. The metric I'm looking for is maximum points minus mean points for each set of variations.
 
-### 9
+### 25
 
 I'd like to run some testing over my dinner break. Ideally unattended by either of us. Could you set up some tests that just log a lot of data that we can comb through later? Basically I want to take a lot of 10-boid scenarios, and for each of them get a fairly comprehensive look at how the space of potential overrides maps to future score at various forward-looking intervals. Rather than doing a lot of random overrides, this would be a deterministic suite of overrides designed to really see what's possible. Each state will need a string  that will carry forward during tick advance and can be appended to, so we can track which scenario scores are coming from rather than just having an anonymous list. For each of these batches, we'll want to set all the overrides, giving them a 10s interval in which to start, biased toward starting early so that the square root of the delay is a uniform distribution. Then we'll tick advance, recording the score every 32 ticks for 640 ticks. This will include some ticks prior to when an override takes place for some variations.
 
@@ -416,7 +372,7 @@ All of this data should be saved to a file.
 
 This turn just do this for one seed. As long as it works, I'll launch it for many seeds afterward.
 
-### 10
+### 26
 
 Alright. We've got data for 500 runs, seed 0 - 500. But each has 10 candidate psyboids, so effectively 5000 different tests.
 
@@ -441,11 +397,11 @@ In addition to doing this analysis myself, I'll ask you to take a crack at it as
 
 There's no need to do data extraction for all potential insights this round though. Just ones to answer those two questions, because they're the most important for normalizing everything for the rest of the analysis going forward.
 
-### 11
+### 27
 
 Before I forget, could you fix the .gitignore so none of this data or analysis gets committed?
 
-### 12
+### 28
 
 A new method of generating overrides meant for maximum control. Takes three parameters: Max delay, duration, [segments = 1]. (segments is an optional parameter with a default value)
 
@@ -480,7 +436,7 @@ After verifying that the setup works, run some different experiments with with t
 
 Alpha should have a local optimum. Lookahead would have a local optimum if alpha is too high, but might not if alpha is properly tuned. So I think it should just be a fixed value. 80 ticks seems good.
 
-### 13
+### 29
 
 Now that I've thought about it more, I've realized that the optimal pattern given my budget formula is always going to be Nx1x1x1... I think the only reason that 128x2x1 beat 256x1 is that the factor of 2 artificially allowed it to inflate the lookahead window using patterned (albeit random) movement. 256x1x1 would certainly perform better if it were able to treat the first x1 as a normal branch rather than a lookahead.
 
@@ -492,7 +448,7 @@ Your way of combing through the search space was good before. The new budget doe
 
 I suspect that the optimum will still be reasonably front-heavy. But not quite so much as before. Remember that there's now no limit to the number of x1, other than the fact that they do eat into the budget.
 
-### 14
+### 30
 
 Awesome. Time for me to play detective. I'd like to get a sense of how difficult it is to find the psyboid with these settings just through visual inspection.
 
@@ -500,11 +456,11 @@ Run a single sim with 1 psyboid chosen at random, and give me a 4x5 grid of snap
 
 Don't tell me any implementation details about exactly how you selected the snapshots. The AI being tested won't know them either.
 
-### 15
+### 31
 
 [Image: original 3312x3105, displayed at 2000x1875. Multiply coordinates by 1.66 to map to original image.]
 
-### 16
+### 32
 
 Alright. It's 100% periwinkle. The most noticeable thing is that periwinkle itself was nearly always in the scoring box. Not too surprising of a result. But I do want to get better eyes on the effect.
 
@@ -512,13 +468,13 @@ Let's start tracking score on a per-boid basis, in addition to the total.
 
 This sort of solution will be fine for some scenarios, but I'd like others to require more sophisticated methods of deduction. Being able to create those will require tuning maps and parameters to increase the fraction of excess score coming from non-psyboids. First step is better vision.
 
-### 17
+### 33
 
 Let's bring Plinko into the fold. I designed that map specifically to erase exact positioning as an easy tell, as it only cares about whether the flock drifts out of an entire quadrant. Although it marks the point where I'm no longer sure in advance what strategies are going to rise up instead. Obviously the goal is to keep the flock's center of mass from drifting, but I don't know the exact way that's going to happen.
 
 Before we jump into the Psyboid simulation, we should redo the prior step. Turning radius is different on Plinko, which might mean the tick/second ratio is different to. If so, the idea of a second as an 1/8 turn needs to be established in the code as it's just too useful for me to think in those terms.
 
-### 18
+### 34
 
 35x4x2 sounds good. Let's fix that and try diluting the psyboid's control. Right now it has 4s of controlled movement for every 1s of uncontrolled movement. Let's compare that with doubling the uncontrolled portion of that movement several times, up until it has 8 parts uncontrolled to 1 part controlled. The two headlines are still the same. Flock % in the score zone and Psyboid % in the score zone.
 
@@ -526,7 +482,7 @@ I'd also like to test the impact of budget at different levels. Run each of thes
 
 As another bit of useful info, I think that the State's label contains all the information necessary to reconstruct the movement of the canonical line within a given simulation. Initial position comes from seed which is in the string, and the only other randomness is the overrides, which are explicitly recorded in the string. I'm going to move confirming this to the front of the queue. If that's the case, when we do the other tests, we can save the canonical scenarios to probe them for psyboid movement without needing to redo the entire simulation. Assuming that checks out, save the strings from the canonical lines at the end of the grid of configurations described above.
 
-### 19
+### 35
 
 Time for a brand new visualization for use in replays.
 
@@ -548,7 +504,7 @@ Whatever method you use, the bulk of the Sim-side code should be in a helper cla
 
 It's not necessary that all fields or hooks I've described be available right away. Only do what's required as it's required. The upside to doing this purely through reflection is that adding more available fields can be as easy as an annotation and possibly an enum entry. But even then, only annotate the fields that are currently required.
 
-### 20
+### 36
 
 Good points on the complications of Reflection here. It's working now, so we can leave it be. But I should remind myself that it's not the answer to all of life's problems.
 
@@ -562,11 +518,11 @@ Before I try again myself, I'm going to leave this fully open to you to take a s
 
 I'm almost certainly too obsessed with time-efficient calculations for something that only needs to be calculated once. I do have an idea that I think will be less optimized but more foolproof than what's been done so far. But I'm worried you might be overly deferent, so I'm not even going to voice it until you give it a go first.
 
-### 21
+### 37
 
 Don't sweat it bro. It's a tough problem, and not the kind of thing LLMs are great at. I'll solve it in the morning.
 
-### 22
+### 38
 
 So I skimmed through your thinking yesterday, and stopped you because some of the analysis toward the end took a turn in the wrong direction. But I think your idea was fine before you started worrying about something that doesn't need to be worried about.
 
@@ -574,7 +530,7 @@ The floor/ceiling rounding CAN be asymmetric but it isn't asymmetric here. And i
 
 ---
 
-## Session 03 - 2026-08-09
+## Session 02 - 2026-08-09
 
 *Log `f6f99044-4945-48f0-99a4-fcd7fbfc029a`, 112 prompts.*
 
@@ -1976,7 +1932,7 @@ Either way, it would be nice to have a pixelwise representation of the regions. 
 
 ---
 
-## Session 04 - 2026-08-15
+## Session 03 - 2026-08-15
 
 *Log `1aab4aa8-379e-47cd-a450-2fa79342bda0`, 38 prompts.*
 
@@ -2552,7 +2508,7 @@ Tell me about how context limits work. I only see one number, and it says contex
 
 ---
 
-## Session 05 - 2026-08-19
+## Session 04 - 2026-08-19
 
 *Log `46d6dddf-a979-4390-b9cc-bf8ec4f7de85`, 8 prompts.*
 
@@ -2676,7 +2632,7 @@ Physical layout
 
 ---
 
-## Session 06 - 2026-08-20
+## Session 05 - 2026-08-20
 
 *Log `4de45da1-2bb5-42e4-8c20-1790a5bc66b1`, 61 prompts.*
 
@@ -3867,7 +3823,7 @@ And if not, what logic other than the bands is being used within the classifier 
 
 ---
 
-## Session 07 - 2026-08-23
+## Session 06 - 2026-08-23
 
 *Log `5eac999b-765f-422a-89cf-23dcbe543c62`, 3 prompts.*
 
@@ -3956,7 +3912,7 @@ I don't expect you to have an estimate of the number of hours spent with my empl
 
 ---
 
-## Session 08 - 2026-08-27
+## Session 07 - 2026-08-27
 
 *Log `9da96f2f-3630-4c9a-ba35-d095409110d7`, 30 prompts.*
 
@@ -9664,9 +9620,9 @@ A couple examples that I'll probably write after the file is set up are "When tr
 
 ---
 
-## Session 09 - 2026-08-30
+## Session 08 - 2026-08-30
 
-*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 10 prompts.*
+*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 12 prompts.*
 
 ### 1
 
@@ -9811,3 +9767,20 @@ With this, I'd like to rerun the 3-boid phase map for edge 4->0, replacing the s
 Note: I do realize that this will add a bit of chaos to the results, since the suspect can appear deep into the envelope after some windows have already acted. It can also be subject to a bit of drift. For the moment, I'm not worrying about this.
 
 Note: I need to leave for dinner, so I don't have time to try to recall the exact details. But there may be some analysis feeding into the 3-boid phase map that needs to be refreshed with the new notion of stable states. I think that the critical-envelope analysis does depend on a concept of stable states, and that the 3-boid phase map uses an artifact it creates.
+
+### 11
+
+So I'm looking at a lot of white bands that have clearly defined ranges for one of the two boids, that are shared across multiple bands, and appear only intermittently according to much narrower ranges for the other boid.
+
+These tend to be roughly 38x12 rectangles with a lot of white. Most of them are attached to another feature, so it's not clear if they're an extension of existing features (implying that could be caught with a carefully selected modified physics), or if they're something else that's better explained using 3 boids. Could you do your best to:
+
+* Locate the various 38x12 features, including ones that seem to use the same banding structure, even if they aren't the exact size
+* Locate other unique white features
+* Prepare some illustrative examples
+
+
+For this, let's stay confined to the center box for the moment. It seems like the cross of the center route contains most/all of the interesting features. We can look at white in other regions after we've expanded our classification model and seen what still escapes it.
+
+### 12
+
+[Image: original 2842x4344, displayed at 1308x2000. Multiply coordinates by 2.17 to map to original image.]

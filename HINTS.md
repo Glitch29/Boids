@@ -653,6 +653,52 @@ The set only becomes usable after **one partial tick** — turn as the rules say
 land on the samples the collision test walks — which takes it from 278 to 1,610. Without that it
 is a measure-zero curve that no boid knocked sideways by a pixel is ever on again.
 
+
+## 10c. Normalising a sum throws away the one thing that measured agreement
+
+Measured 2026-08-30 across 399,321 arrangements sampled from live states, and it generalises to
+any flocking model that normalises per rule.
+
+Each rule sums its neighbours' contributions and then rescales the sum to a fixed weight. **The
+length of that sum is the consensus measurement** — full length is unanimity, near zero is
+neighbours pulling apart — and rescaling replaces it with a constant. What survives is the
+*direction* of a residue, at a magnitude that says nothing about how much of it was left.
+
+**The failure mode is not subtle and not rare.** Signals of `X` and `-X + eY` combine into a
+full-strength signal along `Y`: a direction neither neighbour asked for, at a magnitude neither
+could have produced. Measured on this map, alignment's cancellation ratio (sum of lengths over
+length of sum) has a **median of 1.41 but a p90 of 10.2**, and a tenth of arrangements are above
+10x. At p99 a pair asks for something **4.1x** more decisive than either neighbour alone.
+
+**Three consequences worth carrying to any similar model:**
+
+- **A distance falloff inside a normalised rule is inert whenever one neighbour contributes.**
+  Normalising a single vector discards its length, so separation's `(rSep - d) / rSep` never sets
+  a magnitude; it only ever shapes a direction, and only when two or more neighbours are close.
+  A reader of the formula would not guess that.
+- **Averaging is the fix and reordering is not.** Summing the per-neighbour votes and normalising
+  the *total* — moving the normalisation from the rules to the end — measures **worse** than
+  leaving it where it is. Normalising at all is the defect.
+- **Averaging bounded per-neighbour votes gives an exact guarantee.** A mean is a convex
+  combination and the across-heading component is a linear functional, so the combined signal
+  provably lies between the two single-neighbour signals. It also costs less: no square roots at
+  all against three per decision.
+
+**Mainstream implementations do not do this.** Conrad Parker's pseudocode takes the mean neighbour
+position and the mean neighbour velocity with no per-rule normalisation; the Nature of Code
+averages, then rescales, but the steering force is `desired - velocity` under a `limit(maxforce)`
+clamp, so the boid's inertia dominates and the amplified part is bounded away. Both bound magnitude
+**once, on the total**. A model with per-rule normalisation, no downstream clamp and no velocity
+state — as here, where a discrete turn is chosen straight off the desired direction — has removed
+every damping term the usual formulation relies on.
+
+**And the residue tracks it.** Exits that no pairwise account covers are, at envelope entry,
+**4.6x** more likely to have heavy alignment cancellation than accounted ones, and their desired
+direction is at the median **1.88x** longer than the average of what their neighbours individually
+asked for, against **1.21x** for accounted exits. The unexplained residue is substantially a
+measurement of the aggregation rather than of flocking.
+
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.
