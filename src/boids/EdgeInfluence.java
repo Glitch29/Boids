@@ -585,8 +585,14 @@ public final class EdgeInfluence {
 
         double dirX = 0, dirY = 0;
         if (dist < f.rSep()) {                                    // separation, already unit
-            dirX -= f.wSep() * dx / dist;
-            dirY -= f.wSep() * dy / dist;
+            // The falloff survives here only if the aggregation lets it. Under physics 2 the
+            // separation sum is renormalised, which erases the length of a single vector, so the
+            // falloff cancels exactly and a neighbour a pixel inside rSep pushes as hard as one
+            // on top of the boid. Under a clamped aggregation a short sum stays short and the
+            // falloff is real. See Flocking.sepFalloff.
+            double w = f.sepFalloff() ? f.wSep() * (f.rSep() - dist) / f.rSep() : f.wSep();
+            dirX -= w * dx / dist;
+            dirY -= w * dy / dist;
         }
         dirX += f.wCoh() * dx / dist;                             // cohesion, already unit
         dirY += f.wCoh() * dy / dist;

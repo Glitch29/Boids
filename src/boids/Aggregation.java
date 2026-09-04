@@ -56,6 +56,17 @@ public interface Aggregation {
     String describes();
 
     /**
+     * Whether a single close neighbour's separation term keeps its distance falloff.
+     * <p>
+     * The one thing the single-neighbour closed form in {@link EdgeInfluence#steer} needs to know
+     * about an aggregation, because that form <em>is</em> this aggregation restricted to one
+     * neighbour — everything else about the {@code n = 1} case is the same under all of these.
+     * Copy it into {@link Flocking#sepFalloff(boolean)} rather than setting that flag by hand;
+     * {@code AggregationSurvey.checkClosedForm} asserts the two agree.
+     */
+    default boolean separationFalloffAtOne() { return false; }
+
+    /**
      * The three weighted rule vectors, in the order
      * {@code sepX, sepY, cohX, cohY, aliX, aliY}. Their sum is the desired direction.
      */
@@ -132,6 +143,8 @@ public interface Aggregation {
 
         public String describes() { return "per-rule mean over that rule's contributors"; }
 
+        public boolean separationFalloffAtOne() { return true; }
+
         public void combine(Neighbours nb, Flocking f, double[] out) {
             double sx = 0, sy = 0, cx = 0, cy = 0, ax = 0, ay = 0;
             int close = 0;
@@ -165,6 +178,8 @@ public interface Aggregation {
         public String id() { return "RULE_SUM_CLAMP"; }
 
         public String describes() { return "per-rule sum of unit terms, magnitude capped at 1"; }
+
+        public boolean separationFalloffAtOne() { return true; }
 
         public void combine(Neighbours nb, Flocking f, double[] out) {
             double sx = 0, sy = 0, cx = 0, cy = 0, ax = 0, ay = 0;

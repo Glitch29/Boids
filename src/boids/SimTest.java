@@ -3098,6 +3098,82 @@ picks, never in what is available to it.
      * wobble — and a route is precisely what the solver is supposed to find remarkable.
      */
     /**
+     * The whole pipeline rerun under a proposed aggregation, end to end.
+     * <p>
+     * Unlike {@link #aggregationPhaseMaps}, this is <b>not</b> a variant that agrees with the
+     * simulation on a single neighbour, so nothing downstream can be reused. The single-neighbour
+     * closed form changes, therefore stable+ changes, therefore the critical-envelope tables
+     * change, therefore the colouring of the phase map changes as well as the trajectories. Each
+     * of those is rebuilt here and reported, so that "end to end it looks similar" is a claim
+     * about every stage rather than about the last picture.
+     * <p>
+     * What does <b>not</b> change, and is worth knowing before reading the numbers: the navmap,
+     * the edge decomposition, the clock, {@code pureStable}, map-wide stable, the envelope itself
+     * and cost-to-leave. None of them consults the flocking constants — they are properties of
+     * the map and of straight travel alone.
+     */
+    public static void proposedPhysics(PresetScenarioParameter preset, Labelling l, SolverFacts f,
+                                       Flocking base, int from, int keep, int quorum,
+                                       Aggregation proposal, Path out) throws IOException {
+        Flocking was = base.sepFalloff(Aggregation.CURRENT.separationFalloffAtOne());
+        Flocking now = base.sepFalloff(proposal.separationFalloffAtOne());
+        System.out.printf("%n=== %s @%s: the pipeline under %s, arc %d->%d ===%n", preset.name(),
+                preset.ingest().hash(), proposal.id(), from, keep);
+        System.out.printf("%s; separation falloff at one neighbour: %s -> %s%n",
+                proposal.describes(), was.sepFalloff(), now.sepFalloff());
+
+        // Only the proposal has to have a closed form. Some variants deliberately do not — see
+        // AggregationSurvey.checkClosedForm — and one of them failing says nothing about this one.
+        if (!AggregationSurvey.checkClosedForm(l.map(), l.live(), l.liveCount(), base, 11, 4000,
+                Aggregation.CURRENT, proposal)) {
+            throw new IllegalStateException("closed form disagrees with " + proposal.id()
+                    + "; every table built from here would be wrong");
+        }
+
+        MapStates old = MapStates.of(l.map(), was, l.live(), l.liveCount());
+        MapStates fresh = MapStates.of(l.map(), now, l.live(), l.liveCount());
+        StateSet pure = old.pureStable(1);
+        StateSet stable = pure.partialTick(StateSet.Steering.STRAIGHT)
+                .closed(StateSet.Steering.STRAIGHT);
+        StateSet plusWas = old.stablePlus(quorum), plusNow = fresh.stablePlus(quorum);
+        System.out.printf("%npureStable(1) %,d and map-wide stable %,d — unchanged, neither reads "
+                + "the flocking constants%n", pure.size(), stable.size());
+        System.out.printf("stable+ q%d: %,d -> %,d states%n  was %s%n  now %s%n", quorum,
+                plusWas.size(), plusNow.size(), MapStates.byEdge(plusWas, l.edge(), f.edges()),
+                MapStates.byEdge(plusNow, l.edge(), f.edges()));
+
+        Path base1 = Path.of("render", "prop-baseline.png");
+        runPipeline(preset, l, f, was, from, keep, plusWas, null, base1);
+        runPipeline(preset, l, f, now, from, keep, plusNow, proposal, out);
+        ThreeBoidPhase.compare(base1, out, f, from, 0.5);
+        ThreeBoidPhase.panelSheet(List.of(base1, out),
+                List.of("CURRENT (physics 2)", proposal.id() + " (proposed)"), f, from, 0.5, 1, 1,
+                2, String.format("%s @%s — centre panel of the %d->%d phase map, current against "
+                        + "proposed", preset.name(), preset.ingest().hash(), from, keep),
+                out.resolveSibling("prop-centre-panels.png"));
+    }
+
+    /** Tables on the given constants and ground, then the phase map they colour. */
+    private static void runPipeline(PresetScenarioParameter preset, Labelling l, SolverFacts f,
+                                    Flocking flock, int from, int keep, StateSet plus,
+                                    Aggregation agg, Path out) throws IOException {
+        boolean[] settled = CriticalEnvelope.settled(l.map(), l.edge(), l.live(), l.liveCount(),
+                from);
+        boolean[] ground = new boolean[l.edge().length];
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i];
+            ground[s] = settled[s] || (l.edge()[s] == from && plus.contains(s));
+        }
+        long t0 = System.nanoTime();
+        ExitAudit.Tables tabs = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+                l.map(), l.edge(), l.live(), l.liveCount(), new int[][]{{from, keep}}, flock,
+                flock.diluted(), ground);
+        System.out.printf("%ntables in %.0fs%n%s", (System.nanoTime() - t0) / 1e9, tabs.summary());
+        ThreeBoidPhase.run(preset, l, f, tabs, from, keep, 8, 8, 8, 0.5, 0.9995, 1, plus, agg,
+                out);
+    }
+
+    /**
      * The same phase map flown under each candidate aggregation, cross-tabulated against the
      * baseline.
      * <p>
@@ -3457,26 +3533,18 @@ picks, never in what is available to it.
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
         int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
                 Path.of("render", "phase40-replays.tsv"));
-        Path agBase = Path.of("render", "agg-baseline.png");
-        for (Aggregation a : new Aggregation[]{Aggregation.RULE_SUM_CLAMP_STEP,
-                Aggregation.VOTE_MEAN, Aggregation.VOTE_SUM_CLAMP}) {
-            Path v = Path.of("render", "agg-" + a.id().toLowerCase(java.util.Locale.ROOT) + ".png");
-            ThreeBoidPhase.compare(agBase, v, facts, 4, 0.5);
+        Path proposed = Path.of("render", "prop-rule_sum_clamp.png");
+        Path propBase = Path.of("render", "prop-baseline.png");
+        ThreeBoidPhase.compare(propBase, proposed, facts, 4, 0.5);
+        for (int block : new int[]{4, 8, 16}) {
+            ThreeBoidPhase.compareBlocks(propBase, proposed, facts, 4, 0.5, block);
+        }
+        for (Path v : new Path[]{propBase, proposed}) {
             List<ThreeBoidSamples.Feature> w = ThreeBoidSamples.features(v, facts, 4, 0.5, 1, 1,
                     ThreeBoidPhase.UNEXPLAINED, 4, 40);
-            System.out.printf("  centre panel now: %d clumps of 40+%n", w.size());
+            System.out.printf("  %s: %d clumps of 40+ in the centre panel%n", v.getFileName(),
+                    w.size());
         }
-        ThreeBoidPhase.panelSheet(
-                List.of(agBase, Path.of("render", "agg-rule_clamp_step.png"),
-                        Path.of("render", "agg-vote_mean.png"),
-                        Path.of("render", "agg-vote_clamp.png")),
-                List.of("CURRENT — 20 clumps, 3,777 cells",
-                        "RULE_CLAMP_STEP — 17 clumps, 2,712",
-                        "VOTE_MEAN — 9 clumps, 1,780",
-                        "VOTE_CLAMP — 25 clumps, 4,585"),
-                facts, 4, 0.5, 1, 1, 2,
-                "DABEONE @609cffdb84be218c — centre panel of the 4->0 phase map under each "
-                        + "aggregation", Path.of("render", "agg-centre-panels.png"));
         if (true) return;
         Path plus = Path.of("render", "phase40-stableplus.png");
         for (int merge : new int[]{2, 4, 6}) {

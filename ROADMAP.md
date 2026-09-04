@@ -545,6 +545,106 @@ effectively stronger, and the two would want tuning together rather than one at 
 
 ---
 
+
+## 0b. Proposed physics 3 — `RULE_SUM_CLAMP`, run end to end
+
+Chosen by the user 2026-08-30 from the survey above: **unit cohesion, falloff separation, and each
+rule's sum capped at magnitude 1 rather than rescaled to it.** Two close neighbours at 1/3 and 2/3
+falloff pulling the same way sum to exactly 1 and max out separation, which is the behaviour
+asked for. `Aggregation.RULE_SUM_CLAMP`, driven end to end by `SimTest.proposedPhysics`.
+
+**Not adopted. `Params.PHYSICS` is still 2 and `Flocking.of` still returns `sepFalloff = false`.**
+This section is the evidence for the decision, not the decision.
+
+### Why the falloff is worth restoring, beyond taste
+
+Under physics 2 a lone neighbour's influence is `(W_COH - [d < rSep] W_SEP) u + W_ALI a`, and the
+`u` coefficient **jumps from -90 to +30 as the neighbour crosses `rSep`** — a discontinuity of 120
+at a radius nothing else marks. The falloff exists in `MovementLogic` to smooth exactly that, and
+the normalisation cancels it: normalising a single vector discards its length, so the falloff has
+never once set a magnitude.
+
+Restore it and the handover is continuous. Separation ramps from `W_SEP` at `d = 0` to zero at
+`d = rSep`, so the `u` coefficient runs smoothly from -90 up through zero at
+`d = 0.75 rSep` to +30, and nothing happens at the radius itself. **The proposal removes a
+discontinuity rather than adding a parameter**, which is also why it is closer to what other
+implementations do.
+
+The cost is that the response to a lone neighbour in the outer separation annulus **reverses
+sign**: at `d = 49` against `rSep = 50` a boid used to flee at -90 and now approaches at +27.6.
+That is a real behavioural change and it is where most of what follows comes from.
+
+### What does not change, checked rather than assumed
+
+The navmap, the edge decomposition, the clock, `pureStable(1)` (278), map-wide stable (1,610), the
+critical envelope itself (84 states) and cost-to-leave. **None of them consults the flocking
+constants** — they are properties of the map and of straight travel alone.
+
+### What does change
+
+`EdgeInfluence.steer` is the aggregation restricted to one neighbour, so it has to move with it.
+The coupling runs through `Flocking.sepFalloff`, set from `Aggregation.separationFalloffAtOne()`
+and never by hand, and **`AggregationSurvey.checkClosedForm` asserts the two agree** — 0
+disagreements over 4,000 arrangements each for `CURRENT` and `RULE_SUM_CLAMP`, and the pipeline
+refuses to build a table if they ever differ. The separation profile is fed into
+`CriticalEnvelopeStore`'s cache key for the same reason.
+
+> `VOTE_NORM` **fails that check by construction** — it renormalises the total, so its
+> one-neighbour behaviour is not `EdgeInfluence.steer` at any setting. That disqualifies it from
+> adoption without rewriting the whole critical-envelope analysis, and is worth knowing about any
+> future candidate.
+
+| stage | physics 2 | proposed |
+| --- | --- | --- |
+| stable+ q5 | 19,861 states, edges 2/4/7/8 | **20,008**, **the same edges** |
+| envelope | 84 states | 84 states |
+| pairings | 598,253 | 612,776 |
+| exits on the phase map | 491,449 | 518,535 (+5.5%) |
+| unexplained | 14,923 — **3.04%** | 9,840 — **1.90%** |
+| centre-panel clumps | 20 (3,777 cells) | **16 (2,694 cells)** |
+| diluted model needed | 6 | **479** |
+
+### Is it "similar end to end"? Yes structurally, no cell by cell
+
+Cell by cell the churn looks alarming — **38.8% of accounted cells move**, almost all of it
+accounted becoming *no longer an exit* while a comparable number of new exits appear. Leader
+identity is much steadier: only about 1.1% of accounted cells swap psyboid-led for third-led.
+
+But **a cell is a single draw and never a majority**, so a dithered band whose density moves from
+70% to 75% looks identical and churns a third of its cells. Asked of neighbourhoods instead:
+
+| block | same dominant class | drift in exit rate | drift in white |
+| --- | --- | --- | --- |
+| 4x4 | 94.77% | 2.49 pp | 0.15 pp |
+| 8x8 | 94.66% | 1.73 pp | 0.12 pp |
+| 16x16 | 94.72% | 1.30 pp | 0.10 pp |
+
+**Stable at 94.7% across every scale tested**, so it is not an artefact of the window size. The
+bands are where they were, at the widths they were; `render/prop-centre-panels.png` shows it.
+
+**And 15.3% of the previously unaccounted cells are now accounted**, against 2–3% for the
+single-neighbour-identical variants surveyed earlier — because this time the tables moved too, so
+the analysis can see influences it previously could not.
+
+### Reading the 38.8% correctly
+
+The survey measured **84.9% agreement on individual three-boid turns**. A trajectory is dozens of
+decisions, so 85% per tick compounds to roughly 61% agreement on whether an exit happens at all.
+Per-tick agreement is not trajectory agreement and should not be quoted as if it were.
+
+### Before pulling the trigger
+
+- **`Params.PHYSICS` -> 3**, which re-hashes every ingest. Every stored table, the psyboid corpus
+  and every plan label taken under physics 2 stops meaning what it means and has to be rebuilt.
+- **The 80x jump in the diluted model** (6 -> 479) is unexplained and worth a look first.
+  `Flocking.diluted` doubles `wSep` and now carries the falloff too, so the fallback has changed
+  shape as well as the base model.
+- Only arc `4->0` on dabeone has been run. `2->1` and `5->6` have not.
+- The straight bias is untouched, and under a clamped aggregation the signal is smaller, so the
+  bias is effectively stronger. The two want tuning together.
+
+---
+
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
 Specified 2026-08-28, **built 2026-08-29** as `CriticalEnvelope`, driven by `SimTest.envelope`,

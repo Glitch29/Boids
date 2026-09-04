@@ -59,6 +59,13 @@ answering a different question. `Boids2DEngine.Trace` fires mid-tick for this re
 is the same constants as an argument, so an analysis can ask its question at widened values
 without moving anything the simulation reads.
 
+**`sepFalloff`** — whether a *lone* close neighbour's separation term keeps its distance falloff.
+False under physics 2, and by accident rather than decision: `MovementLogic` computes the falloff
+and then normalises the separation sum, which erases the length of a single vector. So the `u`
+coefficient **jumps from -90 to +30 as a neighbour crosses `rSep`**, a step of 120 at a radius
+nothing else marks. On `Flocking`, set from `Aggregation.separationFalloffAtOne()` and never by
+hand, since `EdgeInfluence.steer` *is* the aggregation at one neighbour and the two must not drift.
+
 
 **aggregation** — how several neighbours are condensed into one desired direction, as opposed to
 what each rule wants from one neighbour. `Aggregation`, with `CURRENT` the simulation's own and
@@ -474,6 +481,7 @@ anything not listed.
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
+| proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |

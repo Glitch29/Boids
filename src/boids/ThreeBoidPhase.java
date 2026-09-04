@@ -667,6 +667,70 @@ public final class ThreeBoidPhase {
         System.out.printf("wrote %s (%dx%d)%n", out, sheet.getWidth(), sheet.getHeight());
     }
 
+    /**
+     * The same comparison at block scale, which is the one that answers "does it look the same".
+     * <p>
+     * <b>A cell is a single draw, never a majority</b> — that is deliberate, and it means
+     * cell-by-cell agreement badly understates structural agreement. A dithered band whose
+     * density moves from 70% to 75% looks identical and churns a third of its individual cells.
+     * So the question "did the picture change" has to be asked of neighbourhoods, and the
+     * question "did this arrangement change" of cells; they are different questions and the
+     * first is the one a reader of the map is actually asking.
+     */
+    public static void compareBlocks(Path before, Path after, SolverFacts f, int from,
+                                     double resolution, int block) throws IOException {
+        BufferedImage a = javax.imageio.ImageIO.read(before.toFile());
+        BufferedImage b = javax.imageio.ImageIO.read(after.toFile());
+        Layout lay = layout(loops(f, from), resolution);
+        int n = loops(f, from).size();
+        long blocks = 0, sameDominant = 0, bothEmpty = 0;
+        double whiteDrift = 0, exitDrift = 0, ledDrift = 0;
+
+        for (int rp = 0; rp < n; rp++) {
+            for (int rb = 0; rb < n; rb++) {
+                for (int y0 = 0; y0 + block <= lay.span(rb); y0 += block) {
+                    for (int x0 = 0; x0 + block <= lay.span(rp); x0 += block) {
+                        int[] ca = new int[3], cb = new int[3];
+                        for (int y = 0; y < block; y++) {
+                            for (int x = 0; x < block; x++) {
+                                tally(ca, a.getRGB(lay.px(rp, x0 + x), lay.py(rb, y0 + y)));
+                                tally(cb, b.getRGB(lay.px(rp, x0 + x), lay.py(rb, y0 + y)));
+                            }
+                        }
+                        blocks++;
+                        int ea = ca[0] + ca[1] + ca[2], eb = cb[0] + cb[1] + cb[2];
+                        if (ea == 0 && eb == 0) { bothEmpty++; sameDominant++; continue; }
+                        double area = (double) block * block;
+                        whiteDrift += Math.abs(ca[0] - cb[0]) / area;
+                        exitDrift += Math.abs(ea - eb) / area;
+                        ledDrift += (Math.abs(ca[1] - cb[1]) + Math.abs(ca[2] - cb[2])) / area;
+                        if (dominant(ca) == dominant(cb)) sameDominant++;
+                    }
+                }
+            }
+        }
+        System.out.printf("%nat %dx%d blocks (%,d of them, %,d empty in both):%n", block, block,
+                blocks, bothEmpty);
+        System.out.printf("  same dominant class:      %.2f%%%n", 100.0 * sameDominant / blocks);
+        System.out.printf("  mean drift in exit rate:  %.2f percentage points%n",
+                100 * exitDrift / blocks);
+        System.out.printf("  mean drift in led share:  %.2f pp%n", 100 * ledDrift / blocks);
+        System.out.printf("  mean drift in white:      %.2f pp%n", 100 * whiteDrift / blocks);
+    }
+
+    private static void tally(int[] into, int rgb) {
+        int c = rgb & 0xFFFFFF;
+        if (c == UNEXPLAINED) into[0]++;
+        else if (c == PSYBOID_LED) into[1]++;
+        else if (c == THIRD_LED) into[2]++;
+    }
+
+    private static int dominant(int[] counts) {
+        int at = -1, best = 0;
+        for (int i = 0; i < counts.length; i++) if (counts[i] > best) { best = counts[i]; at = i; }
+        return at;
+    }
+
     private static int index(int[] palette, int rgb) {
         int c = rgb & 0xFFFFFF;
         for (int i = 0; i < palette.length; i++) if (palette[i] == c) return i;

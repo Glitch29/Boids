@@ -21,16 +21,40 @@ package boids;
  * @param wSep         separation weight, active only within {@code rSep}
  */
 public record Flocking(double wSep, double wCoh, double wAli, double straightBias,
-                       double rSep, double rFlock) {
+                       double rSep, double rFlock, boolean sepFalloff) {
 
-    /** Exactly what the simulation uses at this turning radius. */
+    /**
+     * Exactly what the simulation uses at this turning radius.
+     * <p>
+     * {@code sepFalloff} is false here because that is what physics 2 does — see the field's own
+     * note. A survey of alternatives sets it explicitly.
+     */
     public static Flocking of(double turningRadius) {
         return new Flocking(Params.W_SEP, Params.W_COH, Params.W_ALI, Params.STRAIGHT_BIAS,
-                Params.separation(turningRadius), Params.flock(turningRadius));
+                Params.separation(turningRadius), Params.flock(turningRadius), false);
+    }
+
+    /**
+     * Whether a lone close neighbour's separation term is scaled by the distance falloff.
+     * <p>
+     * <b>Under physics 2 it is not, and that is an accident rather than a decision.</b>
+     * {@link MovementLogic} does compute {@code (rSep - d) / rSep} — but it then normalises the
+     * separation sum to a fixed magnitude, and normalising a single vector discards its length.
+     * So with one neighbour close the falloff cancels exactly, and a neighbour a pixel inside
+     * {@code rSep} pushes precisely as hard as one on top of the boid. The falloff only ever
+     * shapes a direction, and only when two or more are close.
+     * <p>
+     * This flag is what the single-neighbour closed form in {@link EdgeInfluence#steer} has to
+     * know, because that form <em>is</em> the aggregation restricted to one neighbour and the two
+     * must not be able to disagree. Set it from
+     * {@link Aggregation#separationFalloffAtOne()} and never by hand.
+     */
+    public Flocking sepFalloff(boolean falloff) {
+        return new Flocking(wSep, wCoh, wAli, straightBias, rSep, rFlock, falloff);
     }
 
     public Flocking straightBias(double bias) {
-        return new Flocking(wSep, wCoh, wAli, bias, rSep, rFlock);
+        return new Flocking(wSep, wCoh, wAli, bias, rSep, rFlock, sepFalloff);
     }
 
     /**
@@ -48,7 +72,7 @@ public record Flocking(double wSep, double wCoh, double wAli, double straightBia
      * separation cases.
      */
     public Flocking separation(double weight) {
-        return new Flocking(weight, wCoh, wAli, straightBias, rSep, rFlock);
+        return new Flocking(weight, wCoh, wAli, straightBias, rSep, rFlock, sepFalloff);
     }
 
     /**
@@ -74,7 +98,7 @@ public record Flocking(double wSep, double wCoh, double wAli, double straightBia
      * separation-driven ones.
      */
     public Flocking diluted() {
-        return new Flocking(2 * wSep, 0, 0, straightBias, rSep, rFlock);
+        return new Flocking(2 * wSep, 0, 0, straightBias, rSep, rFlock, sepFalloff);
     }
 
     /** Whether a neighbour this far away is inside the separation term. */

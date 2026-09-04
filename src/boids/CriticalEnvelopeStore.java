@@ -136,6 +136,10 @@ public final class CriticalEnvelopeStore {
     }
 
     private static void flocking(java.util.function.IntConsumer feed, Flocking f) {
+        // The separation profile changes what a single-neighbour influence is, so it changes
+        // every pairing in the table. It has to be part of the name or two different analyses
+        // share a file.
+        feed.accept(f.sepFalloff() ? 1 : 0);
         for (double v : new double[]{f.wSep(), f.wCoh(), f.wAli(), f.straightBias(), f.rSep(),
                 f.rFlock()}) {
             long bits = Double.doubleToLongBits(v);

@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-302 prompts across 8 sessions.
+304 prompts across 8 sessions.
 
 ---
 
@@ -9622,7 +9622,7 @@ A couple examples that I'll probably write after the file is set up are "When tr
 
 ## Session 08 - 2026-08-30
 
-*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 12 prompts.*
+*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 14 prompts.*
 
 ### 1
 
@@ -9784,3 +9784,35 @@ For this, let's stay confined to the center box for the moment. It seems like th
 ### 12
 
 [Image: original 2842x4344, displayed at 1308x2000. Multiply coordinates by 2.17 to map to original image.]
+
+### 13
+
+There's one consistent factor I'm seeing in all of these setups. They seem to be setups that disproportionately benefit from the way that multiple boid signals are normalized. That's fine, but I'm wondering if some of the physics calculations are far more chaotic than they have to be.
+
+In the extreme, we can get cases where signals of X and -X+epsilon*Y can combine into a signal of Y.
+
+This is a bit of an open-ended question. But can you look at how we're aggregating, condensing, and normalizing these signals, and compare them to alternate sensible-looking methods?
+
+Examples would be changing the order at which we apply operations. Or changing a magnitude-setting operations into a magnitude-clamping one.
+
+Particular emphasis should be placed on:
+
+* Does the method add a new layer of complexity, or maintain the same complexity?
+* (Note: Cusps/discontinuities are bound to happen, since even in a 3-boid simulation we're mapping 6 inputs into 3 potential outputs.) How much chaos exists in the calculation and its intermediate steps?
+* Under what conditions does it satisfy the rule min(signal({boid1}),signal({boid2})) < k * signal({boid1, boid2}) < max(signal({boid1}),signal({boid2})), where signal is the result of the penultimate or antepenultimate calculation before assigning a steering direction, and k is a fixed constant, probably 1 or 0.5.
+* How closely does it match current physics?
+* Is it similar to other boids implementations on the internet?
+* How does it affect some of the 3-boid phase map artifacts we've been looking at?
+
+
+I'm off for the night. There's no need to test things trying to force a particular result. I'd start by exploring the space of simple changes and focus on being able to clearly articulate the results. But we are in general looking for a calculation that maintains calculation complexity, but is more predictable in terms of the pseudo triangle rule.
+
+One metric worth looking at (but not necessarily the driving metric) is whether it keeps the 3-boid phase map almost pixel-identical for orange and blue regions, while eliminating many of the currently white regions.
+
+There's no limit on time, as I'm off for the night. But take advantage of what you can do with scripts. It probably makes sense to generate a set of tests and abstract out the physics layer. Then you can write a script to run the set of tests against the set of physics layers. I wouldn't go very far iterating on results once you get this. This is more of a survey than an attempt to optimize.
+
+Feel free to go off-prompt if you see anything else that seems like a high value use of resources. Like it might be good to test my initial hypothesis that the white scenarios do involve abnormally high normalization.
+
+### 14
+
+[Image: original 2152x612, displayed at 2000x569. Multiply coordinates by 1.08 to map to original image.]

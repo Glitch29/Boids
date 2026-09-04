@@ -309,6 +309,47 @@ table taken under physics 2 stops meaning what it means. Hence a survey first.
 the signal is smaller, so the straight bias is effectively stronger — the two want tuning
 together.
 
+**Then: the proposed physics 3, run end to end.** The user picked `RULE_SUM_CLAMP` from the
+survey — unit cohesion, **falloff separation**, each rule's sum capped at 1 rather than rescaled
+to it — on the grounds that ignoring the falloff for a single neighbour is atypical and unhelpful.
+**Not adopted; `Params.PHYSICS` is still 2 and `Flocking.of` still returns `sepFalloff = false`.**
+Full evidence in `ROADMAP.md` §0b.
+
+**The argument that came out of building it.** Under physics 2 a lone neighbour's `u` coefficient
+**jumps from -90 to +30 as it crosses `rSep`** — a step of 120 at a radius nothing else marks. The
+falloff in `MovementLogic` exists to smooth exactly that and the normalisation cancels it. Restore
+it and the handover is continuous, crossing zero at `d = 0.75 rSep`. **The proposal removes a
+discontinuity rather than adding a parameter.** The cost is a sign reversal: a lone neighbour at
+d=49 of rSep=50 used to be fled at -90 and is now approached at +27.6.
+
+**Unlike the earlier variants this is not single-neighbour-identical**, so `EdgeInfluence.steer`,
+stable+ and the envelope tables all had to move with it. `Flocking` gained `sepFalloff`, set from
+`Aggregation.separationFalloffAtOne()`, fed into `CriticalEnvelopeStore`'s key, and
+`AggregationSurvey.checkClosedForm` asserts the closed form and the aggregation agree at n=1 —
+0 disagreements over 4,000 arrangements each, and the pipeline refuses to build a table otherwise.
+That check immediately earned itself by catching `VOTE_NORM`, which **has no closed form at all**
+and is therefore unadoptable without rewriting the critical-envelope analysis.
+
+**Unchanged, verified rather than assumed:** navmap, decomposition, clock, `pureStable(1)` (278),
+map-wide stable (1,610), the envelope (84 states), cost-to-leave. None reads the flocking
+constants.
+
+**Changed:** stable+ q5 19,861 -> 20,008 with **the same edges**; pairings 598,253 -> 612,776;
+exits 491,449 -> 518,535; **unexplained 3.04% -> 1.90%**; centre-panel clumps 20 -> 16 and
+3,777 -> 2,694 cells; diluted model needed **6 -> 479**.
+
+**Two measurement corrections worth keeping.** Cell by cell 38.8% of accounted cells move, which
+reads as a different simulation; at block scale **94.7% keep their dominant class at every window
+size tested (4, 8, 16)**, with exit-rate drift of 1.3-2.5 pp. A cell is a single draw, so a
+dithered band that shifts density slightly churns a third of its cells while looking identical —
+structural questions belong to neighbourhoods. And the survey's **84.9% per-tick agreement
+compounds to about 61% agreement on whether an exit happens**, because a trajectory is dozens of
+decisions; per-tick agreement must not be quoted for a trajectory-level question.
+
+**Open before pulling the trigger:** the 80x jump in diluted-model usage is unexplained; only arc
+`4->0` on dabeone has been run; and the straight bias is untouched, which under a clamped
+aggregation is effectively stronger.
+
 Fixed while writing it: the first version of `Approach.call` tested `psy + third >= demanding`,
 which double-counts ticks both cover and called several uncovered clumps `split`. It counts the
 union now.

@@ -699,6 +699,32 @@ asked for, against **1.21x** for accounted exits. The unexplained residue is sub
 measurement of the aggregation rather than of flocking.
 
 
+
+**A normalised rule has a discontinuity at its radius, and the falloff that was meant to prevent
+it cannot.** Under physics 2 a lone neighbour's influence is `(W_COH - [d < rSep] W_SEP) u +
+W_ALI a`, so the coefficient on `u` **jumps from -90 to +30 as the neighbour crosses `rSep`** — a
+step of 120 at a radius nothing else in the model marks. `MovementLogic` does compute a linear
+falloff `(rSep - d) / rSep` whose evident purpose is to smooth that handover, and the
+normalisation cancels it exactly. Clamp instead of normalise and the falloff becomes real: the
+coefficient runs continuously from -90 at `d = 0` through zero at `d = 0.75 rSep` to +30, and
+nothing happens at the radius at all. **Check whether a smoothing term in a normalised rule can
+still reach the output; if the rule is the only contributor, it cannot.**
+
+**Per-tick agreement is not trajectory agreement, and the gap is large.** Two decision rules
+agreeing on 84.9% of individual three-boid turns produced only about 61% agreement on whether an
+exit happened, because a trajectory is dozens of decisions and disagreements compound. A "these
+are nearly the same physics" claim measured per decision is worth roughly its own square over a
+run, and quoting the per-decision figure for a trajectory-level question overstates the case
+badly.
+
+**Cell-level churn overstates change in a singly-sampled map.** The three-boid phase map draws one
+sample per cell and never a majority, which is what makes its dithering carry data. The
+consequence is that a band whose density moves from 70% to 75% looks identical and churns a third
+of its individual cells. **Ask structural questions of neighbourhoods and arrangement-level
+questions of cells** — on one comparison the two answers were 38.8% of cells moved against 94.7%
+of blocks keeping their dominant class, and only the second is an answer to "does it look the
+same".
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.

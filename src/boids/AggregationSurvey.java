@@ -284,6 +284,77 @@ public final class AggregationSurvey {
                 + "longer the current signal is than the average of what the neighbours asked");
     }
 
+    /**
+     * Proves the single-neighbour closed form is the aggregation restricted to one neighbour.
+     * <p>
+     * {@link EdgeInfluence#steer} is what the whole critical-envelope analysis reasons with, and
+     * {@link Aggregation} is what the simulation flies. They are two implementations of the same
+     * thing at {@code n = 1}, coupled only by {@link Aggregation#separationFalloffAtOne()} — which
+     * is precisely the kind of coupling that drifts silently and invalidates every table built
+     * afterwards. So it is checked rather than trusted, for every variant.
+     *
+     * @return true if all of them agree
+     */
+    public static boolean checkClosedForm(NavMap map, int[] live, int liveCount, Flocking base,
+                                          long seed, int trials) {
+        return checkClosedForm(map, live, liveCount, base, seed, trials, Aggregation.ALL);
+    }
+
+    /**
+     * The same, over a chosen set.
+     * <p>
+     * <b>Not every aggregation has a closed form, and that is a property worth reporting rather
+     * than a failure to route around.</b> {@code VOTE_NORM} renormalises the total, so its
+     * one-neighbour behaviour is not {@link EdgeInfluence#steer} at any setting — which
+     * disqualifies it from being adopted without rewriting the whole critical-envelope analysis,
+     * and is the reason it exists only as a control.
+     */
+    public static boolean checkClosedForm(NavMap map, int[] live, int liveCount, Flocking base,
+                                          long seed, int trials, Aggregation... which) {
+        Random rng = new Random(seed ^ 0xc10ed);
+        double[] scratch = new double[6], dir = new double[2];
+        Aggregation.Neighbours nb = Aggregation.Neighbours.of(2);
+        boolean allWell = true;
+        System.out.printf("%nclosed form vs aggregation at n=1:%n");
+        for (Aggregation a : which) {
+            Flocking f = base.sepFalloff(a.separationFalloffAtOne());
+            int checked = 0, turnGap = 0;
+            double worst = 0;
+            for (int t = 0; t < trials * 8 && checked < trials; t++) {
+                int self = live[rng.nextInt(liveCount)];
+                Aggregation.Neighbours one = see(map, self, new int[]{live[rng.nextInt(liveCount)]},
+                        1, f, nb);
+                if (one.n() != 1) continue;
+                checked++;
+                int heading = self % Params.TURNS;
+                desired(a, one, f, scratch, dir);
+                int mine = turn(dir[0], dir[1], heading, f);
+                int theirs = EdgeInfluence.steer(heading,
+                        (int) Math.round(one.d()[0] * one.ux()[0]),
+                        (int) Math.round(one.d()[0] * one.uy()[0]), headingOf(one), f);
+                if (mine != theirs) turnGap++;
+                worst = Math.max(worst, Math.abs(mine - theirs));
+            }
+            boolean ok = turnGap == 0;
+            allWell &= ok;
+            System.out.printf("  %-16s falloff=%-5s %,6d checked, %d disagreements%s%n", a.id(),
+                    a.separationFalloffAtOne(), checked, turnGap,
+                    ok ? "" : "   *** THE CLOSED FORM AND THE SIMULATION DISAGREE ***");
+        }
+        return allWell;
+    }
+
+    /** The heading index a neighbour's unit heading vector came from. */
+    private static int headingOf(Aggregation.Neighbours nb) {
+        double best = -2;
+        int at = 0;
+        for (int h = 0; h < Params.TURNS; h++) {
+            double dot = Params.COS[h] * nb.ax()[0] + Params.SIN[h] * nb.ay()[0];
+            if (dot > best) { best = dot; at = h; }
+        }
+        return at;
+    }
+
     // ---- the survey ----------------------------------------------------------
 
     public static void run(NavMap map, int[] live, int liveCount, Flocking f,
