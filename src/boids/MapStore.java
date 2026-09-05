@@ -53,9 +53,14 @@ public final class MapStore {
     /**
      * The options that change what a map becomes, beyond its pixels.
      * <p>
-     * All of them alter the ingested image or the rules used to derive it, so the content
-     * hash already separates the results — these are recorded so a hash can be explained,
-     * not so it can be computed.
+     * Radius and trap-trimming alter the display image, so the content hash separates their
+     * results; they are recorded here so a hash can be explained, not so it can be computed.
+     * <p>
+     * ⚠ <b>{@link Params#PHYSICS} is in {@link #key} and is NOT in the content hash.</b> It
+     * changes neither image, so it cannot reach the folder name that way — the claim that the
+     * content hash already separates every build option was true of the others and false of
+     * this one, and it is why derived output moved under {@link Derived}, which addresses the
+     * physics version explicitly. {@link #key} is the in-process cache key and nothing more.
      */
     public record Build(int radius, NavMapBuilder.Navigability navigability, boolean trimTraps) {
 
@@ -81,15 +86,29 @@ public final class MapStore {
      */
     public record Ingest(String name, String hash, Path dir, Path png, Path display, Path source) {
 
-        /** A file inside this version's folder, with its parent directories created. */
-        public Path output(String... parts) {
+        /**
+         * A file inside this version's folder, with its parent directories created.
+         * <p>
+         * <b>Not for derived analysis</b> — see {@link #mapOwnDir}. Addressed by the map's
+         * pixels alone, so two runs at different constants collide silently.
+         */
+        Path mapOwnFile(String... parts) {
             Path p = resolveUnder(parts);
             create(p.getParent());
             return p;
         }
 
-        /** A directory inside this version's folder, created if it is not there. */
-        public Path outputDir(String... parts) {
+        /**
+         * A directory inside this version's folder, created if it is not there.
+         * <p>
+         * <b>Not for derived analysis.</b> A path under the ingest alone is addressed by the
+         * map's pixels and nothing else, so two analyses run at different constants land on the
+         * same one and the second silently replaces the first. That is not hypothetical: it is
+         * what {@code solver/facts.bin} and {@code psyboid/plans.tsv} did until 2026-09-04.
+         * Anything computed from the map belongs under {@link Derived}, which addresses it by
+         * everything it is a function of. This is left for the map's own files.
+         */
+        Path mapOwnDir(String... parts) {
             Path p = resolveUnder(parts);
             create(p);
             return p;

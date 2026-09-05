@@ -24,6 +24,69 @@ import java.util.Random;
  */
 public final class SimTest {
 
+    /**
+     * The weighting the project fits its clock with, and the chain that blends it.
+     * <p>
+     * Constants rather than arguments because they are part of a {@link Derived} address: every
+     * artifact under a structure hash was computed with these, and an entry point that let a
+     * caller vary them without saying so would be able to write two different clocks to one
+     * path. Anything genuinely exploring a different scheme passes it to
+     * {@link Derived#structure} explicitly and gets its own directory.
+     */
+    static final EdgeWeights.Scheme SCHEME = EdgeWeights.Scheme.MOMENTUM;
+
+    static final double[][] CHAIN =
+            EdgeWeights.blend(new double[][]{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}, 0);
+
+    /**
+     * Where output that depends only on the map's geometry belongs: the decomposition, the
+     * clock, and the renders of them.
+     */
+    static Derived.Structure structure(PresetScenarioParameter preset, boolean horizontal,
+                                       int line, int lo, int hi, int dir) {
+        return structure(preset, new SolverFacts.Gate(horizontal, line, lo, hi, dir));
+    }
+
+    static Derived.Structure structure(PresetScenarioParameter preset, SolverFacts.Gate gate) {
+        return Derived.structure(preset.ingest(), preset.turningRadius(), gate, SCHEME, CHAIN);
+    }
+
+    /**
+     * Where output that depends on what a boid decides belongs: envelope tables, windows,
+     * two-boid reachability, the corpus, solver facts, audits.
+     */
+    static Derived.Behaviour behaviour(PresetScenarioParameter preset, boolean horizontal,
+                                       int line, int lo, int hi, int dir, Flocking flock) {
+        return structure(preset, horizontal, line, lo, hi, dir)
+                .behaviour(flock, Aggregation.SIMULATION);
+    }
+
+    static Derived.Behaviour behaviour(PresetScenarioParameter preset, SolverFacts.Gate gate,
+                                       Flocking flock) {
+        return structure(preset, gate).behaviour(flock, Aggregation.SIMULATION);
+    }
+
+    /**
+     * The same, taking the gate from facts that already carry it.
+     * <p>
+     * {@link SolverFacts#gate()} exists precisely so a gate can be traced back from what was
+     * built with it, which makes it the right source here: a caller holding facts cannot then
+     * address an artifact under a different gate than the one those facts were fitted under.
+     */
+    static Derived.Structure structure(PresetScenarioParameter preset, SolverFacts f) {
+        return structure(preset, f.gate());
+    }
+
+    static Derived.Behaviour behaviour(PresetScenarioParameter preset, SolverFacts f,
+                                       Flocking flock) {
+        return structure(preset, f.gate()).behaviour(flock, Aggregation.SIMULATION);
+    }
+
+    /** The simulation's own constants at this map's turning radius. */
+    static Flocking flockingOf(PresetScenarioParameter preset) {
+        return Flocking.of(preset.turningRadius());
+    }
+
     /** Discarded before measuring, so every sample comes from an organised flock. */
     private static final int WARMUP = 500;
     /** Seeds run when none are given on the command line. */
@@ -209,7 +272,7 @@ public final class SimTest {
                                  int lo, int hi, int dir, EdgeWeights.Scheme scheme,
                                  double[][] chain, String tag) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+        EdgeMetric.Metric m = EdgeMetricStore.of(structure(preset, horizontal, line, lo, hi, dir).at("metric"),
                 l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
         NavMap map = l.map();
         int[] edge = l.edge();
@@ -267,8 +330,10 @@ public final class SimTest {
         report("unsteered step, worst per pixel (want 1)", slowest, hasSlowest, 1);
         advance(map, l, m);
 
-        Path a = preset.ingest().output("edges", "tick_rate_" + tag + ".png");
-        Path b = preset.ingest().output("edges", "tick_unsteered_" + tag + ".png");
+        Path a = structure(preset, horizontal, line, lo, hi, dir).at("edges")
+                .resolve("tick_rate_" + tag + ".png");
+        Path b = structure(preset, horizontal, line, lo, hi, dir).at("edges")
+                .resolve("tick_unsteered_" + tag + ".png");
         NavMapRender.writeField(map, spread, hasSpread, 2, 0.25, 0xD2382C, 0x2F6FD0, 2, a);
         NavMapRender.writeField(map, slowest, hasSlowest, 1, 0.25, 0xE8C21E, 0x35A853, 2, b);
         System.out.printf("wrote %s%nwrote %s%n", a, b);
@@ -381,7 +446,7 @@ public final class SimTest {
                               int lo, int hi, int dir, int[] flockSizes, int perSize, int ticks,
                               EdgeWeights.Scheme scheme, double[][] chain) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+        EdgeMetric.Metric m = EdgeMetricStore.of(structure(preset, horizontal, line, lo, hi, dir).at("metric"),
                 l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
         NavMap map = l.map();
         int[] edge = l.edge();
@@ -398,7 +463,8 @@ public final class SimTest {
         System.out.printf("%-7s %8s %9s %9s %10s %9s %9s %8s %9s%n", "boids", "journeys",
                 "mean", "sd", "sd/mean", "rms-100", "rms/100", "routes", "shortest");
         List<Double> spreads = new ArrayList<>();
-        Path file = preset.ingest().output("corpus", "journeys_" + ticks + ".tsv");
+        Path file = behaviour(preset, horizontal, line, lo, hi, dir, flockingOf(preset))
+                .at("corpus").resolve("journeys_" + ticks + ".tsv");
         StringBuilder rows = new StringBuilder("boids\tseed\tboid\tfx\tfy\tfd\ttx\tty\ttd"
                 + "\tfromEdge\ttoEdge\tfromTick\ttoTick\testimate\terror\tshortestWasBest\n");
 
@@ -559,7 +625,7 @@ public final class SimTest {
                 "mean", "sd", "sd/mean", "routes", "shortest");
         double[][] spread = new double[schemes.length][seeds.length];
         for (int c = 0; c < schemes.length; c++) {
-            EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+            EdgeMetric.Metric m = EdgeMetricStore.of(structure(preset, horizontal, line, lo, hi, dir).at("metric"),
                     l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), schemes[c]);
             double total = 0;
             for (double len : m.length()) total += len;
@@ -657,9 +723,14 @@ public final class SimTest {
      * marks the runs still going when the sim ended — their true length is unknown and
      * only bounded below, so averaging them in unmodified biases every run length down.
      */
-    public static void steering(PresetScenarioParameter preset, int[] flockSizes, int perSize,
+    public static void steering(PresetScenarioParameter preset, boolean horizontal, int line,
+                                int lo, int hi, int dir, int[] flockSizes, int perSize,
                                 int ticks) throws IOException {
-        Path file = preset.ingest().output("corpus", "steering_" + ticks + ".tsv");
+        // The marginal does not depend on the gate. It is addressed under one anyway, because a
+        // second addressing scheme for the one artifact that could avoid it is worse than an
+        // over-keyed directory.
+        Path file = behaviour(preset, horizontal, line, lo, hi, dir, flockingOf(preset))
+                .at("corpus").resolve("steering_" + ticks + ".tsv");
         Files.createDirectories(file.getParent());
         // Built here rather than borrowed from the engine so that what counts a boid's
         // neighbours is visibly the same class that acts on them, configured the same way.
@@ -745,16 +816,16 @@ public final class SimTest {
         System.out.printf("  %-6s %17s %17s %17s%n", "boids", "was left", "was straight",
                 "was right");
         for (int f = 0; f < flockSizes.length; f++) {
-            StringBuilder line = new StringBuilder(String.format("  %-6d", flockSizes[f]));
+            StringBuilder row = new StringBuilder(String.format("  %-6d", flockSizes[f]));
             for (int a = 0; a < 3; a++) {
                 long total = moves[f][a][0] + moves[f][a][1] + moves[f][a][2];
                 for (int b = 0; b < 3; b++) {
-                    line.append(String.format(" %5.1f", total == 0 ? Double.NaN
+                    row.append(String.format(" %5.1f", total == 0 ? Double.NaN
                             : 100.0 * moves[f][a][b] / total));
                 }
-                line.append("  ");
+                row.append("  ");
             }
-            System.out.println(line);
+            System.out.println(row);
         }
 
         System.out.printf("%n  completed runs of one steering direction (ticks)%n");
@@ -790,7 +861,7 @@ public final class SimTest {
     public static void metric(PresetScenarioParameter preset, boolean horizontal, int line,
                               int lo, int hi, int dir) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+        EdgeMetric.Metric m = EdgeMetricStore.of(structure(preset, horizontal, line, lo, hi, dir).at("metric"),
                 l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
         int w = l.map().width(), turns = Params.TURNS;
         System.out.printf("%n=== %s @%s: canonical metric ===%n",
@@ -847,7 +918,7 @@ public final class SimTest {
     public static void slice(PresetScenarioParameter preset, boolean horizontal, int line,
                              int lo, int hi, int dir, int from, int keep) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+        EdgeMetric.Metric m = EdgeMetricStore.of(structure(preset, horizontal, line, lo, hi, dir).at("metric"),
                 l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
         EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
                 l.liveCount(), from, keep);
@@ -877,7 +948,8 @@ public final class SimTest {
 
         double mid = Math.rint((first + last) / 2);
         EdgeSlice.Slice s = EdgeSlice.at(l.map(), l.edge(), m, lead, from, mid, true, l.edges());
-        Path out = preset.ingest().output("edges", "leaders_at_tick.png");
+        Path out = behaviour(preset, horizontal, line, lo, hi, dir, flockingOf(preset))
+                .at("influence").resolve("leaders_at_tick.png");
         NavMapRender.write(l.map(), s.states(), 0x101318, 0xFFFFFF, 2, out);
         System.out.printf("%nat tau=%.0f: %d followers, %d leader states drawn%n",
                 mid, s.followers(), count(s.states()));
@@ -908,7 +980,7 @@ public final class SimTest {
                                EdgeWeights.Scheme scheme, double[][] chain, Flocking flock)
             throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        EdgeMetric.Metric m = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+        EdgeMetric.Metric m = EdgeMetricStore.of(structure(preset, horizontal, line, lo, hi, dir).at("metric"),
                 l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
         EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
                 l.liveCount(), from, keep);
@@ -932,8 +1004,8 @@ public final class SimTest {
         double[] widest = new double[edges];
         int[] seen = new int[edges];
 
-        Path file = preset.ingest().output("windows",
-                String.format("window_%d_%d.tsv", from, keep));
+        Path file = behaviour(preset, horizontal, line, lo, hi, dir, flock).at("windows")
+                .resolve(String.format("window_%d_%d.tsv", from, keep));
         StringBuilder rows = new StringBuilder("tau\tfollowers\tleaderEdge\tlo\thi\twidth\tstates\n");
         for (double tau = Math.ceil(first); tau <= last; tau += 1) {
             EdgeSlice.Slice s = EdgeSlice.at(l.map(), l.edge(), m, lead, from, tau, true, edges);
@@ -1236,7 +1308,7 @@ public final class SimTest {
             throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
         long built = System.nanoTime();
-        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(behaviour(preset, horizontal, line, lo, hi, dir, normal).at("envelope"),
                 l.map(), l.edge(), l.live(), l.liveCount(), arcs, normal, widened),
                 new PsyboidOverride[0]);
         System.out.printf("%ntables built in %.0fs%s%n", (System.nanoTime() - built) / 1e9,
@@ -1270,7 +1342,8 @@ public final class SimTest {
         causes.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
                 .forEach(e -> System.out.printf("    %-40s %,6d%n", e.getKey(), e.getValue()));
 
-        Path file = preset.ingest().output("audit", String.format("exits_%dseed_%dt.tsv",
+        Path file = behaviour(preset, horizontal, line, lo, hi, dir, normal).at("audit")
+                .resolve(String.format("exits_%dseed_%dt.tsv",
                 seeds, ticks));
         audit.write(file);
         System.out.printf("  wrote %s%n", file);
@@ -1348,7 +1421,7 @@ public final class SimTest {
             throws IOException {
         SolverFacts f = SolverStore.prepare(preset,
                 new SolverFacts.Gate(horizontal, line, lo, hi, dir), scheme, chain, flock);
-        List<String> labels = PsyboidCorpus.labels(preset.ingest());
+        List<String> labels = PsyboidCorpus.labels(behaviour(preset, horizontal, line, lo, hi, dir, flock));
         Boids2DEngine engine = new Boids2DEngine(preset);
 
         double[] perPlan = new double[labels.size()];
@@ -1451,8 +1524,10 @@ public final class SimTest {
         System.out.printf("leaders at a terminal that could have led: %d states%n",
                 count(lead.atTerminals()));
 
-        Path a = preset.ingest().output("edges", "leaders_source.png");
-        Path b = preset.ingest().output("edges", "leaders_terminal.png");
+        Path a = behaviour(preset, horizontal, line, lo, hi, dir, flockingOf(preset))
+                .at("influence").resolve("leaders_source.png");
+        Path b = behaviour(preset, horizontal, line, lo, hi, dir, flockingOf(preset))
+                .at("influence").resolve("leaders_terminal.png");
         NavMapRender.write(l.map(), lead.atSources(), 0x101318, 0xFFFFFF, 2, a);
         NavMapRender.write(l.map(), lead.atTerminals(), 0x101318, 0xFFFFFF, 2, b);
         System.out.printf("wrote %s%nwrote %s%n", a, b);
@@ -1493,9 +1568,11 @@ public final class SimTest {
         }
         // White for a pixel that works from every heading — the opposite reading to the red
         // a navmap uses for a pixel that works from none.
-        Path dir1 = preset.ingest().output("edges", "influence.png");
+        Path dir1 = behaviour(preset, horizontal, line, lo, hi, dir, flockingOf(preset))
+                .at("influence").resolve("influence.png");
         NavMapRender.write(l.map(), r.influence(), 0x101318, 0xFFFFFF, 2, dir1);
-        Path dir2 = preset.ingest().output("edges", "influence_navigable.png");
+        Path dir2 = behaviour(preset, horizontal, line, lo, hi, dir, flockingOf(preset))
+                .at("influence").resolve("influence_navigable.png");
         NavMapRender.write(l.map(), reachable, 0x101318, 0xFFFFFF, 2, dir2);
         System.out.printf("%d pixels induce a saving turn from every heading, %d of them "
                         + "with every heading navigable%n",
@@ -1628,7 +1705,8 @@ public final class SimTest {
         int liveCount = l.liveCount(), edges = l.edges();
 
         EdgeStats stats = report(preset, map, live, liveCount, edge, edges);
-        EdgePairing pairing = renderEdges(preset, map, live, liveCount, edge, edges, 3);
+        EdgePairing pairing = renderEdges(preset, structure(preset, horizontal, line, lo, hi, dir),
+                map, live, liveCount, edge, edges, 3);
         EdgeNavigation.EdgeNav[] navs = EdgeNavigation.analyse(map, live, liveCount, edge, edges);
         EdgeNavigation.report(navs);
         int[] straightTo = new int[edges];
@@ -1655,7 +1733,7 @@ public final class SimTest {
                 horizontal ? "x" : "y", lo, hi,
                 dir == 0 ? "both ways" : dir > 0 ? "increasing" : "decreasing");
         EdgeGraphRender.write(title, graph, stats.outTo(), EDGE_PALETTE,
-                preset.ingest().output("edges", "graph.html").getParent());
+                structure(preset, horizontal, line, lo, hi, dir).at("edges"));
     }
 
     /** Strongly connected components of the gate-cut graph; each cycle-bearing one is an edge. */
@@ -2328,7 +2406,8 @@ public final class SimTest {
     /** How each edge pairs with the one that undoes it, and how the pairs share colours. */
     private record EdgePairing(int[] inverse, double[] purity, int[] colourOf, int colours) {}
 
-    private static EdgePairing renderEdges(PresetScenarioParameter preset, NavMap map, int[] live,
+    private static EdgePairing renderEdges(PresetScenarioParameter preset, Derived.Structure where,
+                                           NavMap map, int[] live,
                                            int liveCount, int[] edge, int edges, int scale)
             throws IOException {
         int w = map.width(), hh = map.height(), turns = Params.TURNS;
@@ -2407,7 +2486,7 @@ public final class SimTest {
                 }
             }
         }
-        Path out = preset.ingest().output("edges", "decomposition.png");
+        Path out = where.at("edges").resolve("decomposition.png");
         javax.imageio.ImageIO.write(img, "png", out.toFile());
         System.out.printf("wrote %s%n", out);
         return new EdgePairing(inverse, purity, colourOf, colours);
@@ -2535,12 +2614,14 @@ picks, never in what is available to it.
     public static void envelope(PresetScenarioParameter preset, boolean horizontal, int line,
                                 int lo, int hi, int dir, int from, int keep, Flocking flock)
             throws IOException {
-        envelope(preset, label(preset, horizontal, line, lo, hi, dir), from, keep, flock);
+        envelope(preset, behaviour(preset, horizontal, line, lo, hi, dir, flock),
+                label(preset, horizontal, line, lo, hi, dir), from, keep, flock);
     }
 
     /** The same against a labelling already in hand, so a sweep of arcs decomposes once. */
-    public static void envelope(PresetScenarioParameter preset, Labelling l, int from, int keep,
-                                Flocking flock) throws IOException {
+    public static void envelope(PresetScenarioParameter preset, Derived.Behaviour where,
+                                Labelling l, int from, int keep, Flocking flock)
+            throws IOException {
         long start = System.nanoTime();
         CriticalEnvelope.Table t = CriticalEnvelope.analyse(l.map(), l.edge(), l.live(),
                 l.liveCount(), from, keep, flock);
@@ -2572,7 +2653,7 @@ picks, never in what is available to it.
                 .sorted((a, b) -> b.getValue() - a.getValue())
                 .forEach(e -> System.out.printf("  %-16s %,7d%n", e.getKey(), e.getValue()));
 
-        Path file = preset.ingest().output("envelope", String.format("arc_%d_%d%s.tsv",
+        Path file = where.at("envelope").resolve(String.format("arc_%d_%d%s.tsv",
                 from, keep, widened ? "_halfbias" : ""));
         CriticalEnvelope.write(file, t);
         System.out.printf("wrote %s%n", file);
@@ -2704,13 +2785,13 @@ picks, never in what is available to it.
                                    Flocking widened) throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
         long built = System.nanoTime();
-        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(behaviour(preset, horizontal, line, lo, hi, dir, normal).at("envelope"),
                 l.map(), l.edge(), l.live(), l.liveCount(), arcs, normal, widened),
                 new PsyboidOverride[0]);
         System.out.printf("%ntables built in %.0fs%s%n", (System.nanoTime() - built) / 1e9,
                 widened == null ? " (no widened tables: level 3 is not being checked)" : "");
 
-        List<String> labels = PsyboidCorpus.labels(preset.ingest());
+        List<String> labels = PsyboidCorpus.labels(behaviour(preset, horizontal, line, lo, hi, dir, normal));
         Boids2DEngine engine = new Boids2DEngine(preset);
         long ticks = 0;
         for (String label : labels) {
@@ -2756,7 +2837,8 @@ picks, never in what is available to it.
         causes.entrySet().stream().sorted((a, b) -> b.getValue() - a.getValue())
                 .forEach(e -> System.out.printf("    %-40s %,6d%n", e.getKey(), e.getValue()));
 
-        Path file = preset.ingest().output("audit", "exits_corpus.tsv");
+        Path file = behaviour(preset, horizontal, line, lo, hi, dir, normal).at("audit")
+                .resolve("exits_corpus.tsv");
         audit.write(file);
         System.out.printf("  wrote %s%n", file);
     }
@@ -2781,11 +2863,11 @@ picks, never in what is available to it.
                                          Flocking normal, Flocking widened, Path outDir)
             throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
-        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(behaviour(preset, horizontal, line, lo, hi, dir, normal).at("envelope"),
                 l.map(), l.edge(), l.live(), l.liveCount(), arcs, normal, widened),
                 new PsyboidOverride[0]);
 
-        List<String> labels = PsyboidCorpus.labels(preset.ingest());
+        List<String> labels = PsyboidCorpus.labels(behaviour(preset, horizontal, line, lo, hi, dir, normal));
         Boids2DEngine engine = new Boids2DEngine(preset);
         for (String label : labels) {
             PsyboidBits.Replay plan = PsyboidBits.parse(label);
@@ -2877,14 +2959,14 @@ picks, never in what is available to it.
             throws IOException {
         Labelling l = label(preset, horizontal, line, lo, hi, dir);
         NavMap map = l.map();
-        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        ExitAudit audit = new ExitAudit(ExitAudit.Tables.of(behaviour(preset, horizontal, line, lo, hi, dir, normal).at("envelope"),
                 map, l.edge(), l.live(), l.liveCount(), arcs, normal, alt),
                 new PsyboidOverride[0]);
         boolean[] settled = CriticalEnvelope.settled(map, l.edge(), l.live(), l.liveCount(),
                 arcs[0][0]);
 
         Boids2DEngine engine = new Boids2DEngine(preset);
-        for (String label : PsyboidCorpus.labels(preset.ingest())) {
+        for (String label : PsyboidCorpus.labels(behaviour(preset, horizontal, line, lo, hi, dir, normal))) {
             PsyboidBits.Replay plan = PsyboidBits.parse(label);
             long last = 0;
             for (PsyboidOverride o : plan.overrides()) {
@@ -3038,7 +3120,7 @@ picks, never in what is available to it.
 
         // Find the plan holding this exit, then replay it capturing the wanted ticks.
         Boids2DEngine engine = new Boids2DEngine(preset);
-        for (String label : PsyboidCorpus.labels(preset.ingest())) {
+        for (String label : PsyboidCorpus.labels(behaviour(preset, horizontal, line, lo, hi, dir, flock))) {
             PsyboidBits.Replay plan = PsyboidBits.parse(label);
             long last = 0;
             for (PsyboidOverride o : plan.overrides()) {
@@ -3120,7 +3202,7 @@ picks, never in what is available to it.
         String tag = "prop" + from + keep;
         Path out = Path.of("render", tag + "-" + proposal.id().toLowerCase(java.util.Locale.ROOT) + ".png");
         Path base1 = Path.of("render", tag + "-baseline.png");
-        Flocking was = base.sepFalloff(Aggregation.CURRENT.separationFalloffAtOne());
+        Flocking was = base.sepFalloff(Aggregation.RULE_NORMALISE.separationFalloffAtOne());
         Flocking now = base.sepFalloff(proposal.separationFalloffAtOne());
         System.out.printf("%n=== %s @%s: the pipeline under %s, arc %d->%d ===%n", preset.name(),
                 preset.ingest().hash(), proposal.id(), from, keep);
@@ -3131,7 +3213,7 @@ picks, never in what is available to it.
         // AggregationSurvey.checkClosedForm — and one of them failing says nothing about this one.
         if (!AggregationSurvey.checkClosedForm(l.map(), l.live(), l.liveCount(), base,
                 preset.turningRadius(), 11, 4000,
-                Aggregation.CURRENT, proposal)) {
+                Aggregation.RULE_NORMALISE, proposal)) {
             throw new IllegalStateException("closed form disagrees with " + proposal.id()
                     + "; every table built from here would be wrong");
         }
@@ -3195,7 +3277,7 @@ picks, never in what is available to it.
             ground[s] = settled[s] || (l.edge()[s] == from && plus.contains(s));
         }
         long t0 = System.nanoTime();
-        ExitAudit.Tables tabs = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        ExitAudit.Tables tabs = ExitAudit.Tables.of(behaviour(preset, f, flock).at("envelope"),
                 l.map(), l.edge(), l.live(), l.liveCount(), new int[][]{{from, keep}}, flock,
                 flock.diluted(), ground);
         System.out.printf("%ntables in %.0fs%n%s", (System.nanoTime() - t0) / 1e9, tabs.summary());
@@ -3257,7 +3339,7 @@ picks, never in what is available to it.
             int s = l.live()[i];
             ground[s] = settled[s] || (l.edge()[s] == from && plus.contains(s));
         }
-        return ExitAudit.Tables.of(preset.ingest().outputDir("envelope"), l.map(), l.edge(),
+        return ExitAudit.Tables.of(behaviour(preset, f, flock).at("envelope"), l.map(), l.edge(),
                 l.live(), l.liveCount(), new int[][]{{from, keep}}, flock, flock.diluted(),
                 ground);
     }
@@ -3316,7 +3398,7 @@ picks, never in what is available to it.
                 alsoPlus, groundSize);
 
         long t0 = System.nanoTime();
-        ExitAudit.Tables tabs = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        ExitAudit.Tables tabs = ExitAudit.Tables.of(behaviour(preset, f, flock).at("envelope"),
                 l.map(), l.edge(), l.live(), l.liveCount(), new int[][]{{from, keep}}, flock,
                 flock.diluted(), ground);
         System.out.printf("tables on the wider ground in %.0fs%n%s",
@@ -3330,7 +3412,7 @@ picks, never in what is available to it.
         // without holding one of them still. This holds the ground at settled and keeps the
         // wider starts, so the difference between the two runs is the ground alone.
         System.out.printf("%n--- control: the same wider starts, tables still on settled ---%n");
-        ExitAudit.Tables narrow = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+        ExitAudit.Tables narrow = ExitAudit.Tables.of(behaviour(preset, f, flock).at("envelope"),
                 l.map(), l.edge(), l.live(), l.liveCount(), new int[][]{{from, keep}}, flock,
                 flock.diluted(), null);
         ThreeBoidPhase.run(preset, l, f, narrow, from, keep, 8, 8, 8, 0.5, 0.9995, 1, plus,
@@ -3545,59 +3627,33 @@ picks, never in what is available to it.
     }
 
     public static void main(String[] args) throws IOException {
-        // Output goes inside the map's own ingest, so a route trace or an edge map can
-        // never be read against a dabnt that has been edited since it was produced.
+        // A smoke test of the tiered layout: ingest the map, build the structure tier, build the
+        // behaviour tier on top of it, and check that what the simulation flies is what the
+        // closed form thinks it flies. Everything else is entered from here by hand.
         PresetScenarioParameter p = PresetScenarioParameter.DABEONE;
         Flocking f = Flocking.of(p.turningRadius());
-        // Set pruneOutOfRangeLeaders while the exact out-of-range collapse is unbuilt; see ROADMAP.
-        // Approximate, and on because the exact out-of-range collapse is not built yet; see
-        // ROADMAP. Building all three arcs' tables costs about thirteen minutes and is paid on
-        // every run, since the tables are not yet persisted. Drop 4->0 for a fast pass.
+        SolverFacts.Gate gate = new SolverFacts.Gate(false, 202, 174, 191, -1);
         CriticalEnvelope.pruneOutOfRangeLeaders = true;
-        double[][] chain = EdgeWeights.blend(new double[][]{{1,1,1},{1,1,1},{1,1,1}}, 0);
-        CriticalEnvelope.pruneOutOfRangeLeaders = true;
-        SolverFacts facts = SolverStore.prepare(p, new SolverFacts.Gate(false, 202, 174, 191, -1),
-                EdgeWeights.Scheme.MOMENTUM, chain, f);
+
+        System.out.printf("physics %d, simulation flies %s (%s), separation falloff at one: %s%n",
+                Params.PHYSICS, Aggregation.SIMULATION.id(), Aggregation.SIMULATION.describes(),
+                f.sepFalloff());
+
+        Derived.Structure structure = structure(p, gate);
+        Derived.Behaviour behaviour = structure.behaviour(f, Aggregation.SIMULATION);
+        System.out.printf("ingest    %s%nstructure %s%nbehaviour %s%n", p.ingest().dir(),
+                structure.dir(), behaviour.dir());
+
         Labelling lab = label(p, false, 202, 174, 191, -1);
-        ExitAudit.Tables tabs = ExitAudit.Tables.of(p.ingest().outputDir("envelope"), lab.map(),
-                lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
-        int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
-                Path.of("render", "phase40-replays.tsv"));
-        AggregationSurvey.checkClosedForm(lab.map(), lab.live(), lab.liveCount(), f,
-                p.turningRadius(), 11, 4000);
-        AggregationSurvey.run(lab.map(), lab.live(), lab.liveCount(), f, p.turningRadius(), 1,
-                60_000);
-        if (true) return;
-        Path plus = Path.of("render", "phase40-stableplus.png");
-        for (int merge : new int[]{2, 4, 6}) {
-            List<ThreeBoidSamples.Feature> w = ThreeBoidSamples.features(plus, facts, 4, 0.5,
-                    /*route=*/1, /*otherRoute=*/1, ThreeBoidPhase.UNEXPLAINED, merge, 40);
-            System.out.printf("  merge %d: %d features%n", merge, w.size());
-            if (merge != 4) continue;
-            System.out.printf("%n%5s %10s %10s %8s %7s %6s%n", "id", "x range", "y range",
-                    "w x h", "cells", "fill");
-            for (ThreeBoidSamples.Feature v : w) {
-                System.out.printf("%5s %4d..%-5d %4d..%-5d %3d x %-4d %7d %5.0f%%%n", v.id(),
-                        v.x0(), v.x1(), v.y0(), v.y1(), v.width(), v.height(), v.cells(),
-                        100 * v.fill());
-            }
-            ThreeBoidSamples.bands(w, 4);
-            ThreeBoidSamples.windowFit(plus, facts, 4, 0.5, w, ThreeBoidPhase.UNEXPLAINED, 38, 12);
-            ThreeBoidSamples.atlas(plus, facts, 4, 0.5, w, /*cropW=*/150, /*cropH=*/100,
-                    /*scale=*/3, /*columns=*/4,
-                    "DABEONE @609cffdb84be218c — every unexplained clump in the centre panel "
-                            + "[4,2,1,5,8] x [4,2,1,5,8], arc 4->0 on stable+",
-                    Path.of("render", "phase40-stableplus-white-atlas.png"));
-            ExitAudit.Tables tabsPlus = tablesOnStablePlus(p, lab, facts, f, 4, 0, 5);
-            Path reps = Path.of("render", "phase40-stableplus-replays.tsv");
-            ThreeBoidSamples.sampleFeatures(p, facts, tabsPlus, 4, 0, 0.5, plus, reps, w, 4, 2,
-                    Path.of("render", "phase40-stableplus-white-samples.png"));
-            StateSet groundSet = MapStates.of(lab.map(), f, lab.live(), lab.liveCount())
-                    .stablePlus(5);
-            ThreeBoidSamples.classify(p, lab, facts, tabsPlus, 4, w, plus, reps, 0.5, f,
-                    f.diluted(), groundSet);
+        if (!AggregationSurvey.checkClosedForm(lab.map(), lab.live(), lab.liveCount(), f,
+                p.turningRadius(), 11, 4000, Aggregation.SIMULATION)) {
+            throw new IllegalStateException("the closed form is not what the simulation flies");
         }
-        if (true) return;
+        AggregationSurvey.run(lab.map(), lab.live(), lab.liveCount(), f, p.turningRadius(), 1,
+                40_000);
+
+        SolverFacts facts = SolverStore.prepare(p, gate, SCHEME, CHAIN, f);
+        System.out.printf("%n%s%n", facts.summary());
     }
 
     private static ScenarioParameter withFlockSize(ScenarioParameter base, int boids) {

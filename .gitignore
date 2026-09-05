@@ -35,12 +35,19 @@ transcripts/
 
 # Map ingests. The frozen PNG and its metadata are committed, because they are what an
 # old label replays against and cannot be recovered once the source PNG moves on.
-# Everything else in an ingest folder is derived output and is not.
+# Everything else in an ingest folder is derived output and is not: the structure/ and
+# behaviour/ tiers are both regenerable from the frozen map plus the inputs named in their
+# own meta.txt.
 /ingests/**
 !/ingests/**/
 !/ingests/*/map.png
 !/ingests/*/display.png
 !/ingests/*/meta.txt
+
+# Retired output, moved here rather than deleted so a mistake costs a turn instead of a
+# rebuild. Not versioned, and not expected to survive: the maps it was all derived from are
+# in areas/, which is.
+archive/
 
 # The 'latest' pointer is a machine-local directory junction.
 areas/*/latest

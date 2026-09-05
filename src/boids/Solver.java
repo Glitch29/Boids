@@ -46,12 +46,16 @@ public final class Solver {
     }
 
     /**
-     * The solver for a map whose facts have already been built.
+     * The solver for a configuration whose facts have already been built.
+     * <p>
+     * A configuration, not a map: facts depend on the gate, the weighting scheme and the
+     * flocking constants too, so naming only the map would let one map answer with another
+     * configuration's model of it.
      *
      * @throws IllegalStateException if they have not — see {@link #prepare}
      */
-    public static Solver of(PresetScenarioParameter preset) {
-        return new Solver(SolverStore.load(preset), new UnstableEdgeClue());
+    public static Solver of(Derived.Behaviour where) {
+        return new Solver(SolverStore.load(where), new UnstableEdgeClue());
     }
 
     /**

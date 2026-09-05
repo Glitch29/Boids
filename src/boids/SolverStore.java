@@ -52,16 +52,19 @@ public final class SolverStore {
 
     private static final String FILE = "facts.bin";
 
-    /** Facts for this map, as they were last built. Never builds; a miss is an error. */
-    public static SolverFacts load(PresetScenarioParameter preset) {
-        return load(preset.ingest());
-    }
-
-    public static SolverFacts load(MapStore.Ingest ingest) {
-        Path file = ingest.dir().resolve("solver").resolve(FILE);
+    /**
+     * Facts for one configuration, as they were last built. Never builds; a miss is an error.
+     * <p>
+     * Takes the tier rather than the ingest. Facts are a function of the gate, the weighting
+     * scheme and the flocking constants as well as the map, and a path under the ingest alone
+     * could name only the map — so two configurations shared one file and the second silently
+     * replaced the first.
+     */
+    public static SolverFacts load(Derived.Behaviour where) {
+        Path file = where.at("solver").resolve(FILE);
         if (!Files.isRegularFile(file)) {
-            throw new IllegalStateException("no solver facts for " + ingest + " at " + file
-                    + " — run SolverStore.build for this map first");
+            throw new IllegalStateException("no solver facts for " + where + " at " + file
+                    + " — run SolverStore.build for this configuration first");
         }
         try (DataInputStream in = new DataInputStream(
                 new BufferedInputStream(Files.newInputStream(file)))) {
@@ -71,9 +74,9 @@ public final class SolverStore {
         }
     }
 
-    /** Whether {@link #load} would succeed. */
-    public static boolean built(MapStore.Ingest ingest) {
-        return Files.isRegularFile(ingest.dir().resolve("solver").resolve(FILE));
+    /** Whether {@link #load} would succeed for this configuration. */
+    public static boolean built(Derived.Behaviour where) {
+        return Files.isRegularFile(where.at("solver").resolve(FILE));
     }
 
     /**
@@ -85,7 +88,10 @@ public final class SolverStore {
     public static SolverFacts prepare(PresetScenarioParameter preset, SolverFacts.Gate gate,
                                       EdgeWeights.Scheme scheme, double[][] chain,
                                       Flocking flock) throws IOException {
-        if (built(preset.ingest())) return load(preset);
+        Derived.Behaviour where = Derived
+                .structure(preset.ingest(), preset.turningRadius(), gate, scheme, chain)
+                .behaviour(flock, Aggregation.SIMULATION);
+        if (built(where)) return load(where);
         return build(preset, gate, scheme, chain, flock);
     }
 
@@ -113,7 +119,9 @@ public final class SolverStore {
         int[][] exitTurn = EdgeNavigation.exitTurns(navs, l.edges());
         EdgeNavigation.Properties props = SimTest.properties(preset, l);
 
-        EdgeMetric.Metric metric = EdgeMetricStore.of(preset.ingest().outputDir("metric"),
+        Derived.Structure structure = Derived.structure(preset.ingest(), preset.turningRadius(),
+                gate, scheme, chain);
+        EdgeMetric.Metric metric = EdgeMetricStore.of(structure.at("metric"),
                 l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
         SolverFacts.checkLengths(metric.length());
 
@@ -147,7 +155,7 @@ public final class SolverStore {
                 metric.length(), tickLo, tickHi, props.stable(), props.scoring(), straightTo,
                 exitTurn, arcs, windows, edgeOf, tickOf);
 
-        Path file = preset.ingest().output("solver", FILE);
+        Path file = structure.behaviour(flock, Aggregation.SIMULATION).at("solver").resolve(FILE);
         write(file, facts, l.live(), l.liveCount());
         System.out.printf("%nwrote %s in %.1fs%n%s", file, (System.nanoTime() - began) / 1e9,
                 facts.summary());

@@ -43,7 +43,7 @@ public final class Params {
      * in exact integer arithmetic taking both pixels at a tie; navigability requires an
      * infinite past as well as an infinite future.
      */
-    public static final int PHYSICS = 2;
+    public static final int PHYSICS = 3;
 
     /**
      * Distance covered per tick: the chord of the TURNS-gon of the given radius.

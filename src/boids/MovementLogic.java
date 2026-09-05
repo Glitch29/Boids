@@ -17,14 +17,13 @@ public final class MovementLogic implements MovementControl{
     private final double rFlock;
 
     /**
-     * A different way of condensing several neighbours into one direction, or null for the
-     * simulation's own.
+     * How several neighbours become one direction.
      * <p>
-     * <b>Null is the default everywhere and the code path below is untouched by this field
-     * being present.</b> A survey of alternatives has to be able to fly one, and the only
-     * honest way to compare is to leave the thing being compared against exactly as it was —
-     * so the alternative is a branch taken only when one is asked for, not a refactor of the
-     * original into a special case of something more general.
+     * Defaults to {@link Aggregation#SIMULATION}, which is the single place that says what the
+     * simulation flies. There is no second implementation of the rules here for it to drift
+     * from: the physics-2 aggregation lives beside the others as
+     * {@link Aggregation#RULE_NORMALISE} and is reached the same way, so a survey and the
+     * simulation run the same code down to the last branch.
      */
     private final Aggregation aggregation;
 
@@ -36,7 +35,7 @@ public final class MovementLogic implements MovementControl{
      * out that it can actually turn away in time.
      */
     public MovementLogic(double turningRadius) {
-        this(turningRadius, null);
+        this(turningRadius, Aggregation.SIMULATION);
     }
 
     /** The same, deciding with a different aggregation. See {@link Aggregation}. */
@@ -155,63 +154,18 @@ public final class MovementLogic implements MovementControl{
      * so there is one implementation of the rules rather than a diagnostic copy that can drift.
      */
     public Influence decompose(BoidArray s, int i) {
-        if (aggregation != null) return variant(s, i);
-        final double hx = Params.COS[s.h()[i]];
-        final double hy = Params.SIN[s.h()[i]];
-        final double xi = s.x()[i];
-        final double yi = s.y()[i];
-
-        double sepX = 0, sepY = 0, cohX = 0, cohY = 0, aliX = 0, aliY = 0;
-        int seen = 0, close = 0;
-        for (int j = 0; j < s.n(); j++) {
-            if (j == i) continue;
-            double d = perceived(s, i, j, hx, hy);
-            if (d < 0) continue;
-            seen++;
-            double dx = s.x()[j] - xi, dy = s.y()[j] - yi;
-            cohX += dx;
-            cohY += dy;
-            aliX += Params.COS[s.h()[j]];
-            aliY += Params.SIN[s.h()[j]];
-            if (d < rSep) {
-                close++;
-                double falloff = (rSep - d) / rSep;
-                sepX -= dx / d * falloff;
-                sepY -= dy / d * falloff;
-            }
-        }
-
-        double m;
-        double wSepX = 0, wSepY = 0, wCohX = 0, wCohY = 0, wAliX = 0, wAliY = 0;
-        if ((m = len(sepX, sepY)) > 0) { wSepX = Params.W_SEP * sepX / m; wSepY = Params.W_SEP * sepY / m; }
-        if ((m = len(cohX, cohY)) > 0) { wCohX = Params.W_COH * cohX / m; wCohY = Params.W_COH * cohY / m; }
-        if ((m = len(aliX, aliY)) > 0) { wAliX = Params.W_ALI * aliX / m; wAliY = Params.W_ALI * aliY / m; }
-
-        double dirX = wSepX + wCohX + wAliX, dirY = wSepY + wCohY + wAliY;
-        if (dirX == 0.0 && dirY == 0.0) {
-            return new Influence(0, 0, 0, 0, 0, 0, seen, close, 0, false);
-        }
-
-        int best = 0;
-        double bestScore = Double.NEGATIVE_INFINITY;
-        for (int delta : CANDIDATES) {
-            int a = Math.floorMod(s.h()[i] + delta, Params.TURNS);
-            double score = Params.COS[a] * dirX + Params.SIN[a] * dirY
-                    + (delta == 0 ? Params.STRAIGHT_BIAS : 0.0);
-            if (score > bestScore) { bestScore = score; best = delta; }
-        }
-        return new Influence(wSepX, wSepY, wCohX, wCohY, wAliX, wAliY, seen, close, best, true);
+        return decompose(s, i, aggregation);
     }
 
     /**
-     * The same decision under an alternative {@link Aggregation}.
+     * The same decision under a named {@link Aggregation}, for a survey to fly a candidate.
      * <p>
      * The perception test, the turn candidates and the straight bias are the originals; only the
      * step between "these are the neighbours" and "this is the desired direction" differs. That
      * is the whole point — a variant that also changed what a boid can see would not be a
      * comparison of aggregations.
      */
-    private Influence variant(BoidArray s, int i) {
+    public Influence decompose(BoidArray s, int i, Aggregation how) {
         double hx = Params.COS[s.h()[i]], hy = Params.SIN[s.h()[i]];
         Aggregation.Neighbours nb = Aggregation.Neighbours.of(s.n());
         int n = 0, close = 0;
@@ -231,7 +185,7 @@ public final class MovementLogic implements MovementControl{
         if (n == 0) return new Influence(0, 0, 0, 0, 0, 0, 0, 0, 0, false);
 
         double[] out = new double[6];
-        aggregation.combine(nb.count(n), flock, out);
+        how.combine(nb.count(n), flock, out);
         double dirX = out[0] + out[2] + out[4], dirY = out[1] + out[3] + out[5];
         if (dirX == 0.0 && dirY == 0.0) {
             return new Influence(0, 0, 0, 0, 0, 0, n, close, 0, false);

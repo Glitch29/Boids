@@ -95,7 +95,8 @@ public final class PsyboidCorpus {
                     + "would be either");
         }
 
-        Path file = preset.ingest().output("psyboid", FILE);
+        Path file = SimTest.behaviour(preset, f, SimTest.flockingOf(preset))
+                .at("psyboid").resolve(FILE);
         write(file, preset, plans, config);
         System.out.printf("%,d plans in %.0fs; %,d score, %,d beat their own control%n",
                 plans.size(), (System.nanoTime() - began) / 1e9, scoring, lifted);
@@ -238,11 +239,19 @@ public final class PsyboidCorpus {
     }
 
     /** Reads a corpus back. Labels only; everything else is recomputed by whoever wants it. */
-    public static List<String> labels(MapStore.Ingest ingest) throws IOException {
-        Path file = ingest.dir().resolve("psyboid").resolve(FILE);
+    /**
+     * The plan labels of one corpus.
+     * <p>
+     * Takes the tier rather than the ingest. A corpus is a set of flown plans, so it is a
+     * function of the decision rules as much as of the map — and every row was verified by
+     * replay when it was <em>written</em> and never when it is read, so a corpus reached under
+     * physics it was not flown under would be believed.
+     */
+    public static List<String> labels(Derived.Behaviour where) throws IOException {
+        Path file = where.at("psyboid").resolve(FILE);
         if (!Files.isRegularFile(file)) {
-            throw new IllegalStateException("no psyboid corpus for " + ingest + " at " + file
-                    + " — run PsyboidCorpus.build for this map first");
+            throw new IllegalStateException("no psyboid corpus for " + where + " at " + file
+                    + " — run PsyboidCorpus.build for this configuration first");
         }
         List<String> out = new ArrayList<>();
         for (String line : Files.readAllLines(file)) {

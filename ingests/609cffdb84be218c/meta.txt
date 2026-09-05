@@ -8,8 +8,8 @@ open       15297
 dead       1541 (shown as wall in display.png)
 radius     40
 navigable  BIDIRECTIONAL
-physics    2
-ingested   2026-08-17T06:08:03Z
+physics    3
+ingested   2026-09-05T04:30:14Z
 source     areas\dabeone\dabeone.png
 
 map.png is this map. It does not change, and it is the only file here that

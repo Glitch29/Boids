@@ -155,11 +155,11 @@ public final class AggregationSurvey {
     }
 
     /**
-     * Proves {@link Aggregation#CURRENT} is the simulation and not a description of it.
+     * Proves {@link Aggregation#SIMULATION} really is what {@link MovementLogic} flies.
      * <p>
-     * Every comparison below is against this baseline, so a baseline that has drifted from
-     * {@link MovementLogic} would make the whole survey a measurement of my own transcription
-     * error. Checked against the real thing on real arrangements, and loudly.
+     * Every comparison in the survey is against a baseline, so a baseline that had drifted from
+     * the simulation would make the whole thing a measurement of a transcription error. Checked
+     * against the real thing on real arrangements, and loudly.
      */
     private static void checkFidelity(NavMap map, int[] live, int liveCount, Flocking f,
                                       double turningRadius, long seed) {
@@ -189,12 +189,12 @@ public final class AggregationSurvey {
             int[] others = new int[n];
             System.arraycopy(states, 1, others, 0, n);
             Aggregation.Neighbours seen = see(map, rules, states[0], others, n, nb);
-            desired(Aggregation.CURRENT, seen, f, scratch, dir);
+            desired(Aggregation.SIMULATION, seen, f, scratch, dir);
             double gap = Math.hypot(dir[0] - in.dirX(), dir[1] - in.dirY());
             worst = Math.max(worst, gap);
             if (turn(dir[0], dir[1], hs[0], f) != in.turn()) disagreed++;
         }
-        System.out.printf("%nfidelity of Aggregation.CURRENT against MovementLogic over %,d "
+        System.out.printf("%nfidelity of Aggregation.SIMULATION against MovementLogic over %,d "
                         + "arrangements: %d turn disagreements, worst vector gap %.3e%n",
                 checked, disagreed, worst);
         if (disagreed > 0 || worst > 1e-9) {
@@ -263,7 +263,7 @@ public final class AggregationSurvey {
                 if (seenNb.n() < 2) continue;
                 ali[cls].add(alignmentCancellation(seenNb));
                 coh[cls].add(cancellation(seenNb.ux(), seenNb.uy(), seenNb.n()));
-                desired(Aggregation.CURRENT, seenNb, flock, scratch, dirNow);
+                desired(Aggregation.RULE_NORMALISE, seenNb, flock, scratch, dirNow);
                 desired(Aggregation.VOTE_MEAN, seenNb, flock, scratch, dirVote);
                 double a = Math.hypot(dirNow[0], dirNow[1]), b = Math.hypot(dirVote[0], dirVote[1]);
                 if (b > 1e-9) invented[cls].add(a / b);

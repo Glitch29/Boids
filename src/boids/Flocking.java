@@ -26,12 +26,14 @@ public record Flocking(double wSep, double wCoh, double wAli, double straightBia
     /**
      * Exactly what the simulation uses at this turning radius.
      * <p>
-     * {@code sepFalloff} is false here because that is what physics 2 does — see the field's own
-     * note. A survey of alternatives sets it explicitly.
+     * {@code sepFalloff} is taken from {@link Aggregation#SIMULATION} rather than written out, so
+     * the closed form and the decision rules cannot be set to disagree by editing one and
+     * forgetting the other. A survey of alternatives overrides it explicitly.
      */
     public static Flocking of(double turningRadius) {
         return new Flocking(Params.W_SEP, Params.W_COH, Params.W_ALI, Params.STRAIGHT_BIAS,
-                Params.separation(turningRadius), Params.flock(turningRadius), false);
+                Params.separation(turningRadius), Params.flock(turningRadius),
+                Aggregation.SIMULATION.separationFalloffAtOne());
     }
 
     /**

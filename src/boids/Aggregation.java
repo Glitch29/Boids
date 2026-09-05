@@ -31,8 +31,8 @@ package boids;
  * normalises satisfies no bound at all.
  *
  * <h2>Nothing here changes the simulation</h2>
- * {@link #CURRENT} is what {@link MovementLogic} does, and it is the default everywhere. The
- * others exist to be measured against it.
+ * {@link #SIMULATION} is what {@link MovementLogic} does. The others exist to be measured
+ * against it, and {@link #RULE_NORMALISE} is kept as the record of what physics 2 did.
  */
 public interface Aggregation {
 
@@ -97,7 +97,9 @@ public interface Aggregation {
     // ---- the variants --------------------------------------------------------
 
     /**
-     * What the simulation does. Each rule's raw sum is renormalised to its full weight.
+     * <b>Physics 2.</b> Each rule's raw sum is renormalised to its full weight. Kept as the
+     * record of what the simulation did before 2026-09-04, and as the baseline every survey
+     * number is quoted against.
      * <p>
      * Cohesion sums <b>raw offsets</b> rather than unit vectors, so before normalisation a
      * neighbour 140 px away counts fourteen times one at 10 px; after normalisation only the
@@ -106,8 +108,8 @@ public interface Aggregation {
      * single vector discards its length — <b>the falloff only ever shapes a direction, never a
      * magnitude</b>, which is not what a reader of the formula would expect.
      */
-    Aggregation CURRENT = new Aggregation() {
-        public String id() { return "CURRENT"; }
+    Aggregation RULE_NORMALISE = new Aggregation() {
+        public String id() { return "RULE_NORMALISE"; }
 
         public String describes() { return "per-rule sum, renormalised to full weight"; }
 
@@ -332,7 +334,18 @@ public interface Aggregation {
         }
     };
 
-    /** Everything surveyed, {@link #CURRENT} first. */
-    Aggregation[] ALL = {CURRENT, RULE_MEAN, RULE_SUM_CLAMP, RULE_SUM_CLAMP_STEP, VOTE_MEAN,
-            VOTE_SUM_CLAMP, VOTE_NORM};
+    /**
+     * What the simulation flies, and the single place that says so.
+     * <p>
+     * {@link MovementLogic} defaults to it and {@link Flocking#of} takes its separation profile
+     * from it, so the decision rules and the single-neighbour closed form cannot be set to
+     * disagree by editing one of them and forgetting the other.
+     * <p>
+     * <b>Physics 3</b>, shipped 2026-09-04. Physics 2 was {@link #RULE_NORMALISE}.
+     */
+    Aggregation SIMULATION = RULE_SUM_CLAMP;
+
+    /** Everything surveyed, physics 2 first. */
+    Aggregation[] ALL = {RULE_NORMALISE, RULE_MEAN, RULE_SUM_CLAMP, RULE_SUM_CLAMP_STEP,
+            VOTE_MEAN, VOTE_SUM_CLAMP, VOTE_NORM};
 }
