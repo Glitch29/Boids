@@ -96,22 +96,22 @@ public final class AggregationSurvey {
      *
      * @return the neighbour count actually perceived, which may be fewer than offered
      */
-    public static Aggregation.Neighbours see(NavMap map, int self, int[] others, int count,
-                                             Flocking f, Aggregation.Neighbours into) {
+    public static Aggregation.Neighbours see(NavMap map, MovementLogic rules, int self,
+                                             int[] others, int count,
+                                             Aggregation.Neighbours into) {
         int turns = Params.TURNS, w = map.width();
         int hd = self % turns, cell = self / turns, x0 = cell % w, y0 = cell / w;
-        double hx = Params.COS[hd], hy = Params.SIN[hd];
         int n = 0;
         for (int k = 0; k < count; k++) {
             int s = others[k];
             int c = s / turns, x = c % w, y = c / w;
-            double dx = x - x0, dy = y - y0;
-            double d2 = dx * dx + dy * dy;
-            if (d2 == 0 || d2 > f.rFlock() * f.rFlock()) continue;
-            double d = Math.sqrt(d2);
-            if (dx * hx + dy * hy < Params.COS_FOV * d) continue;
-            into.ux()[n] = dx / d;
-            into.uy()[n] = dy / d;
+            // The real perception test, not a copy of it. A survey that decided for itself which
+            // neighbours were visible would be comparing aggregations over a different flock than
+            // the one the simulation flies, and the difference would look like a result.
+            double d = rules.perceived(x0, y0, hd, x, y);
+            if (d < 0) continue;
+            into.ux()[n] = (x - x0) / d;
+            into.uy()[n] = (y - y0) / d;
             into.d()[n] = d;
             into.ax()[n] = Params.COS[s % turns];
             into.ay()[n] = Params.SIN[s % turns];
@@ -188,7 +188,7 @@ public final class AggregationSurvey {
 
             int[] others = new int[n];
             System.arraycopy(states, 1, others, 0, n);
-            Aggregation.Neighbours seen = see(map, states[0], others, n, f, nb);
+            Aggregation.Neighbours seen = see(map, rules, states[0], others, n, nb);
             desired(Aggregation.CURRENT, seen, f, scratch, dir);
             double gap = Math.hypot(dir[0] - in.dirX(), dir[1] - in.dirY());
             worst = Math.max(worst, gap);
@@ -223,6 +223,7 @@ public final class AggregationSurvey {
                                    java.nio.file.Path replays, int perClass, long seed)
             throws java.io.IOException {
         NavMap map = tables.map();
+        MovementLogic rules = new MovementLogic(preset.turningRadius());
         Boids2DEngine engine = new Boids2DEngine(preset);
         Random rng = new Random(seed);
         Spread[] ali = {new Spread(perClass), new Spread(perClass)};
@@ -258,8 +259,7 @@ public final class AggregationSurvey {
                         Boolean.parseBoolean(p[8]));
                 if (at == null) continue;
                 got[cls]++;
-                Aggregation.Neighbours seenNb = see(map, at[2], new int[]{at[0], at[1]}, 2,
-                        flock, nb);
+                Aggregation.Neighbours seenNb = see(map, rules, at[2], new int[]{at[0], at[1]}, 2, nb);
                 if (seenNb.n() < 2) continue;
                 ali[cls].add(alignmentCancellation(seenNb));
                 coh[cls].add(cancellation(seenNb.ux(), seenNb.uy(), seenNb.n()));
@@ -296,8 +296,9 @@ public final class AggregationSurvey {
      * @return true if all of them agree
      */
     public static boolean checkClosedForm(NavMap map, int[] live, int liveCount, Flocking base,
-                                          long seed, int trials) {
-        return checkClosedForm(map, live, liveCount, base, seed, trials, Aggregation.ALL);
+                                          double turningRadius, long seed, int trials) {
+        return checkClosedForm(map, live, liveCount, base, turningRadius, seed, trials,
+                Aggregation.ALL);
     }
 
     /**
@@ -310,7 +311,9 @@ public final class AggregationSurvey {
      * and is the reason it exists only as a control.
      */
     public static boolean checkClosedForm(NavMap map, int[] live, int liveCount, Flocking base,
-                                          long seed, int trials, Aggregation... which) {
+                                          double turningRadius, long seed, int trials,
+                                          Aggregation... which) {
+        MovementLogic rules = new MovementLogic(turningRadius);
         Random rng = new Random(seed ^ 0xc10ed);
         double[] scratch = new double[6], dir = new double[2];
         Aggregation.Neighbours nb = Aggregation.Neighbours.of(2);
@@ -322,8 +325,8 @@ public final class AggregationSurvey {
             double worst = 0;
             for (int t = 0; t < trials * 8 && checked < trials; t++) {
                 int self = live[rng.nextInt(liveCount)];
-                Aggregation.Neighbours one = see(map, self, new int[]{live[rng.nextInt(liveCount)]},
-                        1, f, nb);
+                Aggregation.Neighbours one = see(map, rules, self,
+                        new int[]{live[rng.nextInt(liveCount)]}, 1, nb);
                 if (one.n() != 1) continue;
                 checked++;
                 int heading = self % Params.TURNS;
@@ -364,6 +367,7 @@ public final class AggregationSurvey {
         Score[] score = new Score[all.length];
         for (int i = 0; i < all.length; i++) score[i] = new Score(Math.min(trials, 200_000));
 
+        MovementLogic rules = new MovementLogic(turningRadius);
         double[] scratch = new double[6];
         double[] dirA = new double[2], dirB = new double[2], dirAB = new double[2];
         int[] pick = new int[3];
@@ -384,16 +388,16 @@ public final class AggregationSurvey {
             for (int tries = 0; tries < 64 && found < 3; tries++) {
                 int cand = live[rng.nextInt(liveCount)];
                 pick[found] = cand;
-                Aggregation.Neighbours probe = see(map, self, pick, found + 1, f, one);
+                Aggregation.Neighbours probe = see(map, rules, self, pick, found + 1, one);
                 if (probe.n() == found + 1) found++;
             }
             if (found < 2) continue;
             sampled++;
 
             int heading = self % Params.TURNS;
-            Aggregation.Neighbours nbA = see(map, self, new int[]{pick[0]}, 1, f, one);
-            Aggregation.Neighbours nbB = see(map, self, new int[]{pick[1]}, 1, f, bumped);
-            Aggregation.Neighbours nbAB = see(map, self, pick, 2, f, both);
+            Aggregation.Neighbours nbA = see(map, rules, self, new int[]{pick[0]}, 1, one);
+            Aggregation.Neighbours nbB = see(map, rules, self, new int[]{pick[1]}, 1, bumped);
+            Aggregation.Neighbours nbAB = see(map, rules, self, pick, 2, both);
 
             cancel.add(alignmentCancellation(nbAB));
 
@@ -426,7 +430,7 @@ public final class AggregationSurvey {
                 else if (turnAB == currentTurn) sc.matched++;
 
                 if (nudgeOk) {
-                    Aggregation.Neighbours nb2 = see(map, self, nudged, 2, f, three);
+                    Aggregation.Neighbours nb2 = see(map, rules, self, nudged, 2, three);
                     if (nb2.n() == 2) {
                         desired(all[i], nb2, f, scratch, dirA);
                         sc.flipTrials++;
@@ -441,7 +445,7 @@ public final class AggregationSurvey {
             }
 
             if (found >= 3) {
-                Aggregation.Neighbours nb3 = see(map, self, pick, 3, f, three);
+                Aggregation.Neighbours nb3 = see(map, rules, self, pick, 3, three);
                 int base = 0;
                 for (int i = 0; i < all.length; i++) {
                     desired(all[i], nb3, f, scratch, dirAB);

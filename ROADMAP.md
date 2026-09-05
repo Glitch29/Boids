@@ -708,6 +708,124 @@ here nobody has explained.
 
 ---
 
+
+## 0c. Shipping physics 3 — **blocked on one defect**, and what artifact storage should look like
+
+Asked 2026-09-04: ship `RULE_SUM_CLAMP` project-wide, audit for reproduced steering logic, and
+clean up old artifacts. The audit is done and mostly clean. **The ship is held on a defect found
+while preparing it**, and the cleanup question turns out to be the same question.
+
+### The audit: one reproduction, deliberate, now guarded
+
+Searched every use of the weights, the field of view and the perception test.
+
+- **`TwoBoid` is clean.** It drives the real `MovementLogic` on a two-element array and says so:
+  *"The real MovementLogic rather than a copy of its arithmetic ... a reimplementation here would
+  be a second definition of flocking that has to be kept in step with the first."* Its
+  out-of-range fast path agrees with `perceived` by construction. It will pick up new physics with
+  no change.
+- **`CriticalEnvelope` reproduces nothing itself.** It reasons entirely through
+  `EdgeInfluence.steer`.
+- **`EdgeInfluence.steer` is the one reproduction**, and it is deliberate: the single-neighbour
+  closed form the whole envelope analysis is built on. It is now coupled to the aggregation
+  through `Flocking.sepFalloff` and **asserted equivalent at one neighbour** by
+  `AggregationSurvey.checkClosedForm`, which the pipeline refuses to proceed past.
+- **One accidental copy, mine, from the survey.** `AggregationSurvey.see` had its own
+  range-and-FOV test rather than calling `MovementLogic.perceived`. Fixed; the numbers are
+  unchanged, which is what a faithful copy should do and is not a reason to have kept it.
+
+### The defect: `Params.PHYSICS` does not separate ingests
+
+`GLOSSARY.md` says of the physics version: *"Part of the ingest hash, so a physics change produces
+a different ingest rather than silently reinterpreting an old one."* **That is false.**
+`MapStore.open` computes the folder name as `digest(img, shown)` — the pixels of the source and
+display images and nothing else. `Build.key()`, which does include `p<PHYSICS>`, is only the
+in-process cache key. `MapStore.Build`'s own javadoc makes the same claim and is right about
+radius and trap-trimming, which do change `shown`, and wrong about `PHYSICS`, which changes
+neither image.
+
+**So bumping `PHYSICS` to 3 writes physics-3 artifacts into `ingests/609cffdb84be218c/` beside the
+physics-2 ones.** What happens then, store by store:
+
+| store | keyed on | under a physics bump |
+| --- | --- | --- |
+| `EdgeMetricStore` | inputs + `FORMAT`, hashed into the filename | correct — the clock is navigation-only and genuinely unchanged |
+| `CriticalEnvelopeStore` | inputs + ground + `sepFalloff` + `FORMAT`, hashed into the filename | correct, but **by luck**: `sepFalloff` was added to the key yesterday for a different reason |
+| `SolverStore` | `FORMAT` only, fixed path `solver/facts.bin` | **silently overwritten and silently reread** |
+| `PsyboidCorpus` | nothing, fixed path `psyboid/plans.tsv` | **silently reread.** Rows are verified by replay when *written*, never when read |
+
+The corpus is the ground truth the solver is graded against, so that last row is the serious one.
+
+> **The systemic version of the bug:** this project consistently records the discriminating input
+> in an artifact's **content** and not in its **address**. `meta.txt` records the physics version.
+> The edge graph records the gate in its title. `plans.tsv` records its configuration in a header.
+> None of them is in a path, so none of them can stop a reader picking up the wrong file. The two
+> stores that hash their inputs into the filename are the two that are safe, and they are safe for
+> exactly that reason.
+
+**The gate has the same problem.** `edges/` is a fixed path under the ingest, so decomposing with a
+different gate overwrites the previous decomposition in place — and the gate is a human choice
+that changes every edge number downstream.
+
+### Artifact storage: what I would do
+
+The principle every content-addressed build system converges on is that **an artifact's address is
+a hash of its entire input closure, including the addresses of its inputs.** Two of the four stores
+here already do that. The recommendation is to make the other two match, and to make the tiers
+explicit in the path so a human can see what belongs to what.
+
+The dependency graph has three tiers and they are cleanly separated:
+
+| tier | depends on | holds |
+| --- | --- | --- |
+| **map** | pixels, radius, navigability, trap-trimming | `map.png`, `display.png`, `meta.txt` |
+| **structure** | map + gate + weighting scheme | navmap, edge decomposition, the clock, cost-to-leave, `pureStable`, map-wide stable |
+| **behaviour** | structure + `PHYSICS` + flocking constants | envelope tables, windows, two-boid reachability, psyboid corpus, solver facts, audits, phase maps |
+
+Nothing in the structure tier reads a flocking constant — verified while running the proposal, and
+it is why `pureStable(1)`, map-wide stable, the envelope and cost-to-leave came out identical.
+
+```
+ingests/<mapHash>/
+  map.png  display.png  meta.txt
+  structure/<structureHash>/   edges/  metric/  navmap/     meta.txt
+  behaviour/<behaviourHash>/   envelope/  windows/  twoboid/  psyboid/  solver/  audit/   meta.txt
+```
+
+**What it buys.** A physics bump rebuilds only the behaviour tier — the clock's thousands of
+gradient steps are kept, which is the expensive thing. Cleanup becomes "delete the behaviour
+directories you no longer want", which is safe because it is obvious what each one is. Nothing can
+be read against inputs it was not built from. And a second gate stops silently destroying the
+first decomposition.
+
+**What it costs.** Every store's path construction changes, paths get longer, and "everything
+about this map in one folder" is lost. It is perhaps half a day.
+
+**Two cheaper options, for completeness.**
+
+1. **Minimal, unblocks today:** add `PHYSICS` to `MapStore`'s digest, so the folder name matches
+   what the docs already claim. One line, plus committing the new frozen `map.png` — byte-identical
+   pixels under a new hash. Old artifacts stay under the old hash and are self-evidently physics 2,
+   so *the cleanup becomes nothing*. The cost is rebuilding the structure tier, clock included,
+   for a physics change that does not touch it.
+2. **Flat but addressed:** keep one directory and give every artifact an input-hash filename, the
+   way `envelope/` and `metric/` already do. Least disruptive, but cleanup gets harder because
+   nothing in a filename tells a human which physics it belongs to.
+
+**I would take the three-tier split**, and take option 1 first if the ship should not wait for it —
+they compose, since option 1's new ingest is the same map hash the tiered layout would sit under.
+
+### What is done and what is held
+
+Done and committed: the audit, the accidental-copy fix, and the guard that already catches a
+mismatched closed form.
+
+**Held pending a decision on the layout:** the `PHYSICS` bump, the `MovementLogic` default, the
+`Flocking.of` default, the re-ingest and the rebuild. All four are small; none is safe until an
+artifact written under physics 3 cannot be read as though it were physics 2.
+
+---
+
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
 Specified 2026-08-28, **built 2026-08-29** as `CriticalEnvelope`, driven by `SimTest.envelope`,

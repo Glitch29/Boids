@@ -132,8 +132,14 @@ play forever.
 **live / alive** — in the viability kernel. `Navigability.BIDIRECTIONAL` is the default and
 means both directions; `FORWARD` exists only to widen spawning.
 
-**physics version** — `Params.PHYSICS`, currently 2. Part of the ingest hash, so a physics
-change produces a different ingest rather than silently reinterpreting an old one.
+**physics version** — `Params.PHYSICS`, currently 2. Recorded in `meta.txt` and in a map's
+history line.
+
+> ⚠ **This entry used to say it was part of the ingest hash. Verified false on 2026-09-04.**
+> `MapStore.open` hashes the source and display pixels and nothing else; `Build.key()`, which does
+> carry the physics version, is only the in-process cache key. So a physics change does **not**
+> produce a different ingest, and artifacts at fixed paths — `solver/facts.bin`,
+> `psyboid/plans.tsv` — would be silently reinterpreted. Not fixed; see `ROADMAP.md` §0c.
 
 ---
 

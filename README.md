@@ -234,8 +234,8 @@ a map that has since been edited.
 | `<ingest>/envelope/arc_<f>_<t>.tsv` | `SimTest.envelope` | the same tables in readable form, for inspection only |
 | `<ingest>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
 | `<ingest>/audit/exits_*.tsv` | `ExitAudit` | every classified exit. **Currently unsound** |
-| `<ingest>/psyboid/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact |
-| `<ingest>/solver/facts.bin` | `SolverStore` | everything a solver may know. One per map version |
+| `<ingest>/psyboid/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact. **Fixed path, no input hash — see `ROADMAP.md` §0c** |
+| `<ingest>/solver/facts.bin` | `SolverStore` | everything a solver may know. **Fixed path, keyed only on `FORMAT` — see `ROADMAP.md` §0c** |
 | `render/phase<f>_<t>.png` | `ThreeBoidPhase` | the three-boid phase map, one panel per route pair |
 | `render/phase<f>_<t>-replays.tsv` | `ThreeBoidPhase` | every exit in it, with the three start states, so any cell can be flown again |
 | `analysis/3BoidAreasOfInterest.png` | hand | that map with regions of interest painted over it. **An input, and versioned for that reason** |

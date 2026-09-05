@@ -11,6 +11,55 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-04 (later) — asked to ship physics 3; audited, then stopped on a storage defect
+
+**Asked:** ship `RULE_SUM_CLAMP` project-wide, look for places the steering logic was reproduced
+rather than used in place, and clean up old artifacts. Full write-up in `ROADMAP.md` §0c.
+
+**The audit came out well.** `TwoBoid` drives the real `MovementLogic` on a two-element array and
+documents why, so it needs no change. `CriticalEnvelope` reproduces nothing, reasoning entirely
+through `EdgeInfluence.steer` — which *is* a reproduction, deliberately, and is now coupled to the
+aggregation through `Flocking.sepFalloff` and asserted equivalent at one neighbour. The only
+accidental copy was **mine from last night**: `AggregationSurvey.see` had its own range-and-FOV
+test instead of calling `MovementLogic.perceived`. Fixed; fidelity still 0 disagreements and the
+survey numbers are unchanged, which is what a faithful copy should do.
+
+**Then the ship stopped.** `GLOSSARY.md` claimed `Params.PHYSICS` is part of the ingest hash.
+**It is not.** `MapStore.open` names the folder `digest(img, shown)` — source and display pixels
+only. `Build.key()`, which carries `p<PHYSICS>`, is the in-process cache key and nothing else.
+`MapStore.Build`'s own javadoc makes the same claim; it is right for radius and trap-trimming,
+which change `shown`, and wrong for the physics version, which changes neither image.
+
+So bumping to physics 3 would write into `ingests/609cffdb84be218c/` beside the physics-2
+artifacts. `EdgeMetricStore` and `CriticalEnvelopeStore` survive it because they hash their inputs
+into the filename — the envelope only by luck, since `sepFalloff` went into its key yesterday for
+an unrelated reason. **`SolverStore` (`solver/facts.bin`) and `PsyboidCorpus` (`psyboid/plans.tsv`)
+are fixed paths and would be silently overwritten and silently reread.** The corpus is the ground
+truth the solver is graded against, and its rows are verified by replay when written and never
+when read.
+
+**The systemic version:** this project records the discriminating input in an artifact's *content*
+and not in its *address* — physics in `meta.txt`, the gate in the edge graph's title, the config in
+the corpus header. The two stores that hash inputs into the filename are the two that are safe.
+The same defect means decomposing with a different gate overwrites `edges/` in place.
+
+**Recommended layout**, in §0c: three tiers — map (pixels + build), structure (+ gate + scheme:
+navmap, edges, clock, cost-to-leave, stable sets), behaviour (+ physics + flocking: envelope,
+windows, twoboid, psyboid, solver, audit). Verified while running the proposal that nothing in the
+structure tier reads a flocking constant. A physics bump then rebuilds only the behaviour tier,
+cleanup is deleting behaviour directories, and nothing can be read against inputs it was not built
+from. A one-line minimal alternative — put `PHYSICS` into `MapStore`'s digest — unblocks today and
+composes with the tiered layout.
+
+**Held, pending the layout decision:** the `PHYSICS` bump, the `MovementLogic` default, the
+`Flocking.of` default, the re-ingest and the rebuild. All small; none safe until an artifact
+written under physics 3 cannot be read as though it were physics 2.
+
+**Not a concern, per the user:** the 80x diluted-model jump on `4->0`. Nothing suggests a bug.
+
+
+---
+
 ## 2026-09-04 — arc `2->1` under the proposed physics 3
 
 Second arc for the `RULE_SUM_CLAMP` proposal (`ROADMAP.md` §0b). `5->6` skipped by agreement:

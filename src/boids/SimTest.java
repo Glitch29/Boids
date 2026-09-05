@@ -3129,7 +3129,8 @@ picks, never in what is available to it.
 
         // Only the proposal has to have a closed form. Some variants deliberately do not — see
         // AggregationSurvey.checkClosedForm — and one of them failing says nothing about this one.
-        if (!AggregationSurvey.checkClosedForm(l.map(), l.live(), l.liveCount(), base, 11, 4000,
+        if (!AggregationSurvey.checkClosedForm(l.map(), l.live(), l.liveCount(), base,
+                preset.turningRadius(), 11, 4000,
                 Aggregation.CURRENT, proposal)) {
             throw new IllegalStateException("closed form disagrees with " + proposal.id()
                     + "; every table built from here would be wrong");
@@ -3562,15 +3563,10 @@ picks, never in what is available to it.
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
         int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
                 Path.of("render", "phase40-replays.tsv"));
-        ThreeBoidPhase.panelSheet(
-                List.of(Path.of("render", "prop21-baseline.png"),
-                        Path.of("render", "prop21-rule_sum_clamp.png")),
-                List.of("CURRENT (physics 2) — 245 unexplained of 62,980",
-                        "RULE_SUM_CLAMP — 183 of 79,293"),
-                facts, 2, 0.5, 0, 0, 2,
-                "DABEONE @609cffdb84be218c — panel [2,1,5,8,4] x [2,1,5,8,4] of the 2->1 phase "
-                        + "map, current against proposed",
-                Path.of("render", "prop21-panels.png"));
+        AggregationSurvey.checkClosedForm(lab.map(), lab.live(), lab.liveCount(), f,
+                p.turningRadius(), 11, 4000);
+        AggregationSurvey.run(lab.map(), lab.live(), lab.liveCount(), f, p.turningRadius(), 1,
+                60_000);
         if (true) return;
         Path plus = Path.of("render", "phase40-stableplus.png");
         for (int merge : new int[]{2, 4, 6}) {
