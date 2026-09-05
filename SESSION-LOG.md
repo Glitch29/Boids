@@ -11,6 +11,61 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-04 (night) — physics 3 shipped, and derived output re-addressed
+
+Given free rein on storage, plus permission to archive `analysis/`, `ingests/`, `render/`,
+`packet/`, `data/` and `out/`. Full account in `ROADMAP.md` §0c; the corpus proposal, which was
+asked for as a consideration rather than a build, is §0d.
+
+**Archived first, into `archive/2026-09-04/`:** 842 MB across the six folders, 55 of them tracked.
+`archive/` is gitignored. Nothing was deleted, and every map is reproducible from `areas/`, which
+stays versioned.
+
+**Physics 3 is live.** `Params.PHYSICS = 3`; `Aggregation.SIMULATION` is the one place that says
+what the flock flies; `MovementLogic` defaults to it and `Flocking.of` takes `sepFalloff` from it,
+so the rules and the closed form cannot be set to disagree. `CURRENT` became `RULE_NORMALISE` —
+it had stopped being current — and stays as the physics-2 record and the survey baseline.
+
+> **`MovementLogic` lost its own copy of the rules.** It now goes through the aggregation like
+> everything else, so the survey and the simulation run identical code. The fidelity check's worst
+> vector gap fell from `7.1e-14` to **exactly zero**: that residue had been two transcriptions of
+> one formula.
+
+**The storage defect is fixed.** `Derived` addresses derived output by its whole input closure in
+two tiers — structure (map geometry, gate, weighting scheme: decomposition and clock) and
+behaviour nested inside it (physics, flocking, aggregation: envelope, windows, corpora, solver
+facts, audits, influence renders). Each writes a `meta.txt` naming its inputs.
+`MapStore.output`/`outputDir` are unreachable for derived output, so all **33 call sites** had to
+name a tier — the compiler rather than a convention. `SolverStore` and `PsyboidCorpus` now take
+the gate and constants they were already being handed instead of a fixed path, which was the
+actual bug.
+
+`edges/` had been mixing the decomposition and graph renders with flocking-dependent influence
+renders; the latter moved to `behaviour/influence/`.
+
+**Verified end to end.** A clean re-ingest from `areas/` produced the **same map hash**
+(`609cffdb84be218c`) with `map.png` and `display.png` **byte-identical** — only `meta.txt` moved,
+carrying the physics stamp. The clock's filename hash is unchanged too, confirming it is
+physics-independent rather than merely believed to be. `SolverStore.prepare` rebuilt facts end to
+end in 36s into
+`ingests/609cffdb84be218c/structure/b65011999ad52a55/behaviour/cc1ab3e9a4831bfd/solver/`, and both
+guards pass: the closed form agrees with the aggregation at one neighbour over 4,000 arrangements,
+and `Aggregation.SIMULATION` agrees with `MovementLogic` over 20,000.
+
+**The audit the user asked for.** `TwoBoid` drives the real `MovementLogic` on a two-element array
+and documents why — no change needed. `CriticalEnvelope` reproduces nothing, reasoning through
+`EdgeInfluence.steer`, the one deliberate reproduction, now asserted equivalent every run. The
+only accidental copy was in `AggregationSurvey` from the night before; it is gone, and the survey
+numbers did not move, which is what a faithful copy should do.
+
+**Open.** Nothing has been regenerated beyond the smoke test — no envelope tables, no corpus, no
+phase map, no two-boid enumeration. Every figure in the docs from before today is a **physics 2**
+figure and is marked as such rather than carried forward. The diluted-model jump on `4->0` is
+noted as not suspicious, per the user.
+
+
+---
+
 ## 2026-09-04 (later) — asked to ship physics 3; audited, then stopped on a storage defect
 
 **Asked:** ship `RULE_SUM_CLAMP` project-wide, look for places the steering logic was reproduced

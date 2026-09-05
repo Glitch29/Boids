@@ -709,11 +709,12 @@ here nobody has explained.
 ---
 
 
-## 0c. Shipping physics 3 — **blocked on one defect**, and what artifact storage should look like
+## 0c. Physics 3 and the addressing rework — **shipped**
 
 Asked 2026-09-04: ship `RULE_SUM_CLAMP` project-wide, audit for reproduced steering logic, and
-clean up old artifacts. The audit is done and mostly clean. **The ship is held on a defect found
-while preparing it**, and the cleanup question turns out to be the same question.
+clean up old artifacts. Preparing it turned up a defect that made the ship unsafe, and the
+cleanup question turned out to be the same question. Both are now fixed and shipped — see the end
+of this section.
 
 ### The audit: one reproduction, deliberate, now guarded
 
@@ -744,8 +745,9 @@ in-process cache key. `MapStore.Build`'s own javadoc makes the same claim and is
 radius and trap-trimming, which do change `shown`, and wrong about `PHYSICS`, which changes
 neither image.
 
-**So bumping `PHYSICS` to 3 writes physics-3 artifacts into `ingests/609cffdb84be218c/` beside the
-physics-2 ones.** What happens then, store by store:
+**So bumping `PHYSICS` to 3 would have written physics-3 artifacts into
+`ingests/609cffdb84be218c/` beside the physics-2 ones.** What that would have done, store by
+store:
 
 | store | keyed on | under a physics bump |
 | --- | --- | --- |
@@ -767,7 +769,7 @@ The corpus is the ground truth the solver is graded against, so that last row is
 different gate overwrites the previous decomposition in place — and the gate is a human choice
 that changes every edge number downstream.
 
-### Artifact storage: what I would do
+### Artifact storage: the design, and what was built
 
 The principle every content-addressed build system converges on is that **an artifact's address is
 a hash of its entire input closure, including the addresses of its inputs.** Two of the four stores
@@ -812,19 +814,98 @@ about this map in one folder" is lost. It is perhaps half a day.
    way `envelope/` and `metric/` already do. Least disruptive, but cleanup gets harder because
    nothing in a filename tells a human which physics it belongs to.
 
-**I would take the three-tier split**, and take option 1 first if the ship should not wait for it —
-they compose, since option 1's new ingest is the same map hash the tiered layout would sit under.
+**What was built is the tiered split, with two tiers rather than three.** The clock was going to
+need its own level to avoid being over-keyed on the physics version; instead it sits in the
+structure tier, which is keyed on the gate and the weighting scheme it genuinely depends on, and
+the behaviour tier nests inside it. That costs one deliberate over-keying — the envelope does not
+depend on the weighting scheme — and buys a layout that fits in the head. The minimal option was
+not needed: the map hash never had to move, because the map never changed.
 
-### What is done and what is held
+### Shipped, 2026-09-04
 
-Done and committed: the audit, the accidental-copy fix, and the guard that already catches a
-mismatched closed form.
+Both halves landed together, because either alone is unsafe: physics 3 without the addressing
+would have written into physics 2's paths, and the addressing without the physics would have been
+a refactor nobody could check.
 
-**Held pending a decision on the layout:** the `PHYSICS` bump, the `MovementLogic` default, the
-`Flocking.of` default, the re-ingest and the rebuild. All four are small; none is safe until an
-artifact written under physics 3 cannot be read as though it were physics 2.
+**The physics.** `Params.PHYSICS` is 3. `Aggregation.SIMULATION` is the single place that says
+what the flock flies; `MovementLogic` defaults to it and `Flocking.of` takes its separation
+profile from it, so the decision rules and the single-neighbour closed form **cannot be set to
+disagree** by editing one and forgetting the other. `CURRENT` is renamed `RULE_NORMALISE` — it
+stopped being current — and remains the record of physics 2 and the baseline every survey number
+in §0a is quoted against.
+
+> **`MovementLogic` no longer holds its own copy of the rules.** The physics-2 aggregation sits
+> beside the others and is reached the same way, so the survey and the simulation run the same
+> code down to the last branch. The fidelity check's worst vector gap went from `7.1e-14` to
+> **exactly zero** — the residue had been two transcriptions of one formula, and now there is one.
+
+**The addressing.** `Derived` gives two tiers under the ingest, each writing a `meta.txt` naming
+its own inputs. `MapStore.output` and `outputDir` are no longer reachable for derived output, so
+all thirty-three call sites had to name a tier — which is the point: the compiler, not a
+convention, is what stops the next artifact landing at a fixed path.
+
+**Verified end to end.** The map hash is unchanged at `609cffdb84be218c` and `map.png` and
+`display.png` came back **byte-identical** after re-ingesting from `areas/` — only `meta.txt`
+moved, because it carries the physics stamp. The map did not change, and now the layout says so.
+The clock's filename hash is likewise unchanged, confirming it is physics-independent rather than
+merely believed to be.
+
+**The audit, for the record.** `TwoBoid` drives the real `MovementLogic` on a two-element array.
+`CriticalEnvelope` reasons entirely through `EdgeInfluence.steer`, which is the one deliberate
+reproduction and is asserted equivalent at one neighbour on every run. The only accidental copy
+was in `AggregationSurvey`, and it is gone.
 
 ---
+
+## 0d. Corpus addressing — specified, not built
+
+Raised 2026-09-04: corpora have been under-labelled, and it is worth asking whether they should
+use the same addressing as everything else. **They should, one level deeper, and the same argument
+applies.**
+
+A corpus is a set of plans; a plan is a seed plus a list of overrides. Now that it lives in the
+behaviour tier it is already addressed by the map, the gate, the weighting scheme, the physics
+version, the flocking constants and the aggregation. **What is still only in its content is the
+recipe**: how many seeds, the warm-up, the run length, the branch policy, which arcs it targets.
+Two corpora differing in any of those collide at `psyboid/plans.tsv`, exactly as facts did.
+
+**The proposal.**
+
+```
+behaviour/<behaviour>/psyboid/<recipe>/plans.tsv
+                                       meta.txt
+```
+
+where `<recipe>` hashes a **corpus preset** — the user's own suggestion, and the right shape.
+`PresetScenarioParameter` names maps; an enum in the same spirit names corpus recipes, so that a
+corpus is generated by naming one rather than by passing six numbers that nothing records
+together:
+
+```java
+public enum CorpusPreset {
+    PLANS_40(/* seeds */ 40, /* warm */ PsyboidBits.WARM, /* run */ 3000, ...),
+    ...
+}
+```
+
+`Derived.corpus(behaviour, preset)` then addresses it and writes the `meta.txt`, exactly as the
+other two tiers do.
+
+**What a row should carry, beyond the label.** The label is the artifact and must stay
+replay-exact, so this is additional columns rather than a change to it. Worth having, in rough
+order of usefulness:
+
+- **which arcs the plan actually exercises**, and how many exits of each — today the only way to
+  know is to fly it;
+- **score and control**, already computed during the build and then thrown away for all but a
+  summary line;
+- **the warm-up state's fingerprint**, so a corpus flown under a different warm-up is detectable
+  rather than merely differently addressed;
+- **whether the plan needed the diluted model**, which is the cheapest signal of a crowd effect.
+
+**Not built.** The physics ship is the change worth landing on its own, and no corpus exists to
+migrate: the pre-physics-3 one is in `archive/`. The next corpus generated is the right moment,
+and it should be generated through a preset from the start rather than migrated into one.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 

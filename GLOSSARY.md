@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-04, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-04, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -114,6 +114,26 @@ SHA-256 of its pixels plus radius, navigability, trap-trimming and physics versi
 reads.** Everything derived from a map is written inside its own ingest, so a result can
 never be read against a map that has since been edited.
 
+
+**structure tier** — everything derived from a map's geometry and nothing a boid decides: the
+navmap, the edge decomposition and the clock. Addressed by the map hash, the step geometry, the
+gate and the weighting scheme. `Derived.Structure`, at
+`ingests/<map>/structure/<hash>/`. **Nothing under it reads a flocking constant**, which is why a
+physics change leaves it alone.
+
+**behaviour tier** — everything that also depends on what a boid decides: critical-envelope tables
+and their windows, two-boid reachability, the psyboid corpus, solver facts, audits, influence
+renders and flown corpora. Addressed by the structure hash plus the physics version, the flocking
+constants and the aggregation. `Derived.Behaviour`, nested **inside** its structure because it
+depends on it, so deleting a decomposition takes its tables with it.
+
+> **The rule both tiers exist for:** an artifact's address is a hash of its whole input closure,
+> including the addresses of its inputs. Recording the discriminating input in an artifact's
+> *content* — the physics version in `meta.txt`, the gate in the edge graph's title, the recipe in
+> a corpus header — cannot stop a reader picking up the wrong file, and until 2026-09-04
+> `solver/facts.bin` and `psyboid/plans.tsv` were being silently overwritten and silently reread.
+> **Over-keying costs a rebuild; under-keying returns the wrong answer without saying so.**
+
 **`map.png`** — the frozen map. **The only file physics may be computed from.**
 
 **`display.png`** — the same map with dead pixels painted as wall. **Rendering only.**
@@ -132,14 +152,15 @@ play forever.
 **live / alive** — in the viability kernel. `Navigability.BIDIRECTIONAL` is the default and
 means both directions; `FORWARD` exists only to widen spawning.
 
-**physics version** — `Params.PHYSICS`, currently 2. Recorded in `meta.txt` and in a map's
-history line.
+**physics version** — `Params.PHYSICS`, **currently 3**. Names the decision rules, so it changes
+when {@code Aggregation.SIMULATION} does. Recorded in `meta.txt` and in a map history line, and —
+since 2026-09-04 — **in the behaviour tier's hash**, which is what actually separates one
+physics's artifacts from another's.
 
-> ⚠ **This entry used to say it was part of the ingest hash. Verified false on 2026-09-04.**
-> `MapStore.open` hashes the source and display pixels and nothing else; `Build.key()`, which does
-> carry the physics version, is only the in-process cache key. So a physics change does **not**
-> produce a different ingest, and artifacts at fixed paths — `solver/facts.bin`,
-> `psyboid/plans.tsv` — would be silently reinterpreted. Not fixed; see `ROADMAP.md` §0c.
+> It is deliberately **not** in the ingest hash. The map's pixels do not depend on the decision
+> rules, and on the physics 2 to 3 bump `map.png` and `display.png` came back byte-identical. An
+> earlier version of this entry claimed the ingest hash carried it; that was false, and the gap
+> is what `Derived` closes. See `ROADMAP.md` §0c.
 
 ---
 
@@ -483,6 +504,7 @@ anything not listed.
 | three-boid phase map | `ThreeBoidPhase` | `render/phase<f>_<t>.png` |
 | region overlay | hand | `analysis/3BoidAreasOfInterest.png` |
 | region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
+| artifact addressing | `Derived` (structure and behaviour tiers) | `ingests/<map>/structure/<h>/behaviour/<h>/` |
 | map-wide stable, stable+ | `StateSet` + `MapStates.stablePlus`, scanned by `SimTest.stablePlusScan` | `render/stable-plus-by-ratio.png` |
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |

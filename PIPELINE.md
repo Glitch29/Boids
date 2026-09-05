@@ -10,7 +10,11 @@ Worked throughout on **dabeone**: 379×407 px, turning radius 40, ingest hash
 Nothing here is wired into a single entry point — steps are invoked from a driver class in the
 package. Making that unnecessary is one of this era's landmark goals.
 
-**Status:** 2026-08-30 (later). Steps 1-10 are current. **Step 11 was rewritten** on 2026-08-29:
+**Status:** 2026-09-04, physics 3. **Every path below moved**: derived output is addressed by
+the inputs it depends on, in a structure tier and a behaviour tier under the ingest — see
+`README.md`'s artifact index and `ROADMAP.md` §0c. Entry points take a `Derived.Structure` or
+`Derived.Behaviour`, which `SimTest.structure` and `SimTest.behaviour` build from the gate and the
+constants a call site already has. Steps 1-10 are otherwise current. **Step 11 was rewritten** on 2026-08-29:
 `ExitAudit` is now table lookup over `CriticalEnvelope` and the invocation below is out of date,
 though the plumbing it describes is not. Steps 12-17 were added 2026-08-28 to 30.
 
@@ -165,7 +169,8 @@ Gives per edge:
 ```java
 double[][] chain = EdgeWeights.blend(new double[][]{{1,1,1},{1,1,1},{1,1,1}}, 0);
 EdgeMetric.Metric m = EdgeMetricStore.of(
-        preset.ingest().outputDir("metric"), l.map(), l.edge(), l.live(), l.liveCount(),
+        SimTest.structure(preset, horizontal, line, lo, hi, dir).at("metric"),
+        l.map(), l.edge(), l.live(), l.liveCount(),
         l.edges(), EdgeWeights.Scheme.MOMENTUM, chain);
 ```
 
@@ -344,7 +349,8 @@ Three things that decide what the grade means:
 
 ```java
 CriticalEnvelope.pruneOutOfRangeLeaders = true;          // approximate; see ROADMAP §1
-ExitAudit.Tables tables = ExitAudit.Tables.of(preset.ingest().outputDir("envelope"),
+ExitAudit.Tables tables = ExitAudit.Tables.of(
+        SimTest.behaviour(preset, horizontal, line, lo, hi, dir, flock).at("envelope"),
         l.map(), l.edge(), l.live(), l.liveCount(),
         new int[][]{{2, 1}, {4, 0}, {5, 6}}, flock, flock.diluted());
 SimTest.auditCorpus(preset, false, 202, 174, 191, -1, arcs, flock, flock.diluted());

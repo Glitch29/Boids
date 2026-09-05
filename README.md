@@ -1,8 +1,9 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-04. Verified against dabeone ingest `609cffdb84be218c` unless stated.
-Every figure below carries the ingest it was measured on; a figure without one is not
-reproducible and should not be trusted.
+**Status:** 2026-09-04. **Physics 3** — see `ROADMAP.md` §0a-§0c. Verified against dabeone ingest
+`609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
+figure without one is not reproducible and should not be trusted, and **figures taken under
+physics 2 are marked as such** rather than silently carried forward.
 
 ---
 
@@ -119,7 +120,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 49 files.
+One package, `src/boids`, 50 files.
 
 **Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
 the single definition of what a boid perceives) · `Aggregation` (candidate ways of condensing
@@ -129,8 +130,9 @@ with the `Trace` tap) · `MovementControl`, `BoidArray`, `Engine` (the decision 
 `PsyboidOverride` · `Sim` (the state container) · `ScenarioParameter`,
 `PresetScenarioParameter` (registered maps).
 
-**Maps** — `MapStore` (content-addressed ingests) · `NavMap`, `NavMapBuilder` (viability
-kernel, successors, predecessors, the veto).
+**Maps and storage** — `MapStore` (content-addressed ingests) · `Derived` (the structure and
+behaviour tiers: an artifact is addressed by everything it is a function of) · `NavMap`,
+`NavMapBuilder` (viability kernel, successors, predecessors, the veto).
 
 **Macro structure** — `EdgeNavigation` (per-edge navigation, stability, scoring, exit turns) ·
 `EdgeMetric`, `EdgeMetricStore` (the clock) · `EdgeWeights` (transition weights) ·
@@ -215,40 +217,63 @@ invocations in order with expected numbers.
 
 ## Artifact index
 
-Everything derived from a map lives inside that map's ingest, so it can never be read against
-a map that has since been edited.
+**Every artifact is addressed by everything it is a function of.** That is `Derived`'s whole job:
+a path names the map, and then the inputs each further tier adds, so nothing can be read against
+inputs it was not built from. Before 2026-09-04 the discriminating input was recorded in an
+artifact's *content* — the physics version in `meta.txt`, the gate in the edge graph's title —
+which cannot stop a reader picking up the wrong file, and `solver/facts.bin` and
+`psyboid/plans.tsv` were being silently overwritten and silently reread.
+
+```
+ingests/<map>/                                pixels, radius, navigability, trap-trimming
+  map.png  display.png  meta.txt
+  structure/<structure>/                      + step geometry, gate, weighting scheme
+      edges/  metric/                         meta.txt
+    behaviour/<behaviour>/                    + physics version, flocking constants, aggregation
+        envelope/  windows/  corpus/  audit/
+        influence/  twoboid/  psyboid/  solver/    meta.txt
+```
+
+**Nothing in the structure tier reads a flocking constant**, so a physics change costs the
+behaviour tier and leaves the clock's thousands of gradient steps alone. Each tier writes a
+`meta.txt` naming its inputs, because a hash nobody can explain is a hash nobody will trust.
 
 | path | produced by | what it is |
 | --- | --- | --- |
 | `areas/<name>/<name>.png` | hand | the editable map. A design document |
 | `areas/<name>/ingests.txt` | `MapStore` | which hash is which build |
-| `ingests/<hash>/map.png` | `MapStore` | frozen map. **Physics reads only this** |
-| `ingests/<hash>/display.png` | `MapStore` | dead pixels as wall. Rendering only |
-| `ingests/<hash>/meta.txt` | `MapStore` | dimensions, pixel counts, radius, physics version |
-| `<ingest>/edges/decomposition.png` | `SimTest.decompose` | where each edge lies |
-| `<ingest>/edges/graph.dot`, `graph.html` | `EdgeGraphRender` | the edge graph. **Gate is recorded in the title** |
-| `<ingest>/metric/metric-*.bin` | `EdgeMetricStore` | the clock, keyed on inputs *and* `FORMAT` |
-| `<ingest>/corpus/*.tsv` | `SimTest.corpus` | flown journeys vs clock estimates |
-| `<ingest>/windows/window_<f>_<t>.tsv` | `SimTest.windows` | critical-envelope bands, tau by tau |
-| `<ingest>/envelope/envelope-*.bin` | `CriticalEnvelopeStore` | the CEA pairing tables, keyed on inputs, the admission ground, *and* `FORMAT` (now 2). Minutes to build, instant to load |
-| `<ingest>/envelope/arc_<f>_<t>.tsv` | `SimTest.envelope` | the same tables in readable form, for inspection only |
-| `<ingest>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
-| `<ingest>/audit/exits_*.tsv` | `ExitAudit` | every classified exit. **Currently unsound** |
-| `<ingest>/psyboid/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact. **Fixed path, no input hash — see `ROADMAP.md` §0c** |
-| `<ingest>/solver/facts.bin` | `SolverStore` | everything a solver may know. **Fixed path, keyed only on `FORMAT` — see `ROADMAP.md` §0c** |
+| `ingests/<map>/map.png` | `MapStore` | frozen map. **Physics reads only this** |
+| `ingests/<map>/display.png` | `MapStore` | dead pixels as wall. Rendering only |
+| `ingests/<map>/meta.txt` | `MapStore` | dimensions, pixel counts, radius, physics version |
+| **structure tier** | | **map geometry, gate and weighting scheme** |
+| `<structure>/meta.txt` | `Derived` | what this hash is of |
+| `<structure>/edges/decomposition.png` | `SimTest.decompose` | where each edge lies |
+| `<structure>/edges/graph.dot`, `graph.html` | `EdgeGraphRender` | the edge graph |
+| `<structure>/edges/tick_*.png` | `SimTest.tickField` | the per-pixel field maps |
+| `<structure>/metric/metric-*.bin` | `EdgeMetricStore` | the clock, keyed on inputs *and* `FORMAT` |
+| **behaviour tier** | | **+ physics version, flocking constants, aggregation** |
+| `<behaviour>/meta.txt` | `Derived` | what this hash is of |
+| `<behaviour>/envelope/envelope-*.bin` | `CriticalEnvelopeStore` | the CEA pairing tables, keyed on inputs, the admission ground *and* `FORMAT`. Minutes to build, instant to load |
+| `<behaviour>/envelope/arc_<f>_<t>.tsv` | `SimTest.envelope` | the same tables in readable form, for inspection only |
+| `<behaviour>/windows/window_<f>_<t>.tsv` | `SimTest.windows` | critical-envelope bands, tau by tau |
+| `<behaviour>/influence/*.png` | `SimTest.slice`, `influence`, `envelopeReport` | where a leader could be. **Moved out of `edges/`, which mixed these with structure** |
+| `<behaviour>/corpus/*.tsv` | `SimTest.corpus`, `steering` | flown journeys against the clock; measured steering marginals |
+| `<behaviour>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
+| `<behaviour>/audit/exits_*.tsv` | `ExitAudit` | every classified exit |
+| `<behaviour>/psyboid/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact. **Under-addressed — see `ROADMAP.md` §0d** |
+| `<behaviour>/solver/facts.bin` | `SolverStore` | everything a solver may know |
+| **loose renders** | | **gitignored, regenerable** |
 | `render/phase<f>_<t>.png` | `ThreeBoidPhase` | the three-boid phase map, one panel per route pair |
 | `render/phase<f>_<t>-replays.tsv` | `ThreeBoidPhase` | every exit in it, with the three start states, so any cell can be flown again |
-| `analysis/3BoidAreasOfInterest.png` | hand | that map with regions of interest painted over it. **An input, and versioned for that reason** |
-| `render/phase<f>_<t>-samples.png` | `ThreeBoidSamples` | one replayed arrangement per painted region, at critical-envelope entry |
-| `render/phase<f>_<t>-<region>-approach.png` | `ThreeBoidSamples.explain` | one region's approach at the ticks that decide it |
-| `render/stable-plus-by-ratio.png` | `SimTest.stablePlusScan` | stable+ projected to `(x, y)`, one panel per agreement ratio |
-| `render/phase40-stableplus.png` | `SimTest.phaseMapOnStablePlus` | the arc `4->0` phase map on stable+ throughout. **3.0% unexplained against the old 21.0%** |
-| `render/phase40-stableplus-white-atlas.png` | `ThreeBoidSamples.atlas` | every unexplained clump of the centre panel, cropped in place |
-| `render/phase40-stableplus-white-samples.png` | `ThreeBoidSamples.sampleFeatures` | one replayed arrangement per clump, at envelope entry |
-| `render/agg-*.png` | `SimTest.aggregationPhaseMaps` | the phase map under each candidate aggregation, plus a centre-panel comparison |
-| `render/prop<f><t>-*.png` | `SimTest.proposedPhysics` | physics 2 against the proposed `RULE_SUM_CLAMP`, end to end, one set per arc |
-| `render/` | various | frames and check images. Gitignored, regenerable |
+| `render/*-samples.png`, `-atlas.png` | `ThreeBoidSamples` | one replayed arrangement per region or clump, at envelope entry |
+| `render/prop<f><t>-*.png` | `SimTest.proposedPhysics` | one physics against another, end to end, per arc |
+| `archive/<date>/` | hand | retired output, ignored. **Not a backup** — the maps it came from are in `areas/` |
 
+**Retired 2026-09-04.** `analysis/`, `ingests/` (the eighteen pre-physics-3 hashes), `render/`,
+`packet/`, `data/` and `out/` moved to `archive/`, 842 MB. Everything in them was either stale
+under physics 3 or loose analysis that had served its purpose, and every map is reproducible from
+`areas/`, which is versioned. The frozen `map.png` and `display.png` for the surviving ingest came
+back **byte-identical**, which is the check that the map itself did not change.
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,
 `Proposal.txt` and `ANSWER-KEY.txt`. The shipped case packet was invalidated wholesale by
 physics 2; it will be rebuilt as the last step of the project rather than restored, so its

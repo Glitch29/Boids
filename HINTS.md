@@ -6,7 +6,8 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-04. This file is also the *training-wheels* condition of the evaluation —
+**Status:** 2026-09-04, physics 3. Figures taken under physics 2 are marked as such. This file is
+also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
 
@@ -701,7 +702,7 @@ measurement of the aggregation rather than of flocking.
 
 
 **A normalised rule has a discontinuity at its radius, and the falloff that was meant to prevent
-it cannot.** Under physics 2 a lone neighbour's influence is `(W_COH - [d < rSep] W_SEP) u +
+it cannot.** (Fixed in physics 3, shipped 2026-09-04; the description below is of physics 2.) Under physics 2 a lone neighbour's influence is `(W_COH - [d < rSep] W_SEP) u +
 W_ALI a`, so the coefficient on `u` **jumps from -90 to +30 as the neighbour crosses `rSep`** — a
 step of 120 at a radius nothing else in the model marks. `MovementLogic` does compute a linear
 falloff `(rSep - d) / rSep` whose evident purpose is to smooth that handover, and the
