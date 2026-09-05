@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-304 prompts across 8 sessions.
+306 prompts across 8 sessions.
 
 ---
 
@@ -9622,7 +9622,7 @@ A couple examples that I'll probably write after the file is set up are "When tr
 
 ## Session 08 - 2026-08-30
 
-*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 14 prompts.*
+*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 16 prompts.*
 
 ### 1
 
@@ -9816,3 +9816,19 @@ Feel free to go off-prompt if you see anything else that seems like a high value
 ### 14
 
 [Image: original 2152x612, displayed at 2000x569. Multiply coordinates by 1.08 to map to original image.]
+
+### 15
+
+Give me a pseudocode breakdown of how current physics works. Then explain where RULE_CLAMP_STEP would change that behavior.
+
+### 16
+
+I feel like adding this behavior for alignment and cohesion is basically free, as it takes pretty serious disagreement between boids to leave the magnitude of the sum of their unit vectors less than 1.
+
+Regarding separation, I understand the instinct to remove the falloff, since it would affect single-boid behavior. But I'm more inclined to consider the single-boid separation behavior to be wrong to ignore falloff. As far as I can tell, that isn't typical behavior for a boids simulation. And I think it's been relatively unhelpful overall.
+
+This is deep into the project, but at this point so much of the output is programmatic that I don't feel too bad about making a physics change that has overall desirable effects.
+
+Let's proceed with a version of rule_clamp_step that preserves falloff (meaning a boid with 1/3 falloff and one with 2/3 falloff both in the same direction could max out total separation).
+
+Before pulling the trigger on making the project-wide change, I'd like to see the 3-boid phase map under the proposed rules. This likely also means rerunning some of the inputs to the map under the new rules. I want to make sure that end-to-end things are looking similar.

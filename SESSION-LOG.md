@@ -11,6 +11,47 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-04 — arc `2->1` under the proposed physics 3
+
+Second arc for the `RULE_SUM_CLAMP` proposal (`ROADMAP.md` §0b). `5->6` skipped by agreement:
+cold-start only, so its behaviour under a physics change is not information anybody will use.
+`SimTest.proposedPhysics` now names its output by the arc, so the two runs cannot overwrite each
+other, and it picks the panel to draw by which one holds the most unexplained cells — the previous
+hard-coded index picked edge 2's *smallest* panel and showed nothing.
+
+**A cleaner comparison than `4->0`'s.** Stable+ restricted to edge 2 is unchanged at 9,284 states,
+so both runs used the same starts and the sampler took an identical path — 2,576,562 cells from
+1,599,436 simulations out of 26,794,174 attempts, in both. The only difference is the physics.
+
+| | physics 2 | proposed |
+| --- | --- | --- |
+| envelope / pairings | 97 / 596,805 | 97 / 580,789 (down 2.7%) |
+| exits | 62,980 | **79,293 (+25.9%)** |
+| psyboid-led / third-led | 51,239 / 11,496 | 68,071 (+32.8%) / 11,039 (−4.0%) |
+| unexplained | 245 — 0.39% | 183 — **0.23%** |
+| diluted | 28 | 33 |
+| clumps of 40+ | 0 | 0 |
+
+**Classification barely moves and exit frequency moves a lot.** 4.49% of accounted cells changed,
+**none to unexplained**, and 125 of 62,707 swapped leader (0.20%); at block scale 96.6–98.0% keep
+their dominant class, exit-rate drift 0.8 pp, white drift 0.01 pp. Against that, the arc is taken
+a quarter more often, essentially all of it the psyboid getting better at inducing it — the outer
+separation annulus sign reversal showing up as behaviour.
+
+**`2->1` has no white structure to fix**: 245 cells across four panels and not one clump of 40+,
+before or after. The banded white is a `4->0` phenomenon, consistent with §1 — `2->1` is
+separation-carried so one boid holds a whole history.
+
+**The 80x diluted-model jump is `4->0`-specific**, confirmed: 28 -> 33 here against 6 -> 479
+there. Still unexplained, and now the only unexplained result in the proposal. Cheapest next
+thing.
+
+Comparison across both arcs and the remaining checklist are in `ROADMAP.md` §0b. Still not
+adopted: `Params.PHYSICS` is 2 and `Flocking.of` returns `sepFalloff = false`.
+
+
+---
+
 ## 2026-08-30 (following session) — one sample per marked region of the phase map
 
 **Asked for:** a render of the critical-envelope entry tick for each region the user painted onto

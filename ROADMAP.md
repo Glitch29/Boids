@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-08-30 (later). `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-04. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it.
 
 ---
@@ -632,16 +632,79 @@ The survey measured **84.9% agreement on individual three-boid turns**. A trajec
 decisions, so 85% per tick compounds to roughly 61% agreement on whether an exit happens at all.
 Per-tick agreement is not trajectory agreement and should not be quoted as if it were.
 
+
+### Arc `2->1` under the same proposal
+
+Run 2026-09-04. `5->6` is deliberately not run: it occurs only in the first 500 ticks and then
+never again across 1.28M boid-ticks, so its behaviour under a physics change is not information
+anybody will use.
+
+**This comparison is cleaner than `4->0`'s.** Stable+ restricted to edge 2 is **unchanged** at
+9,284 states, so both runs used the same 9,284 suspect starts and the sampler took the identical
+path — 2,576,562 cells from 1,599,436 simulations out of 26,794,174 attempts, in both. Nothing
+varies except the physics and the tables it moved.
+
+| | physics 2 | proposed |
+| --- | --- | --- |
+| envelope | 97 states | 97 states |
+| pairings | 596,805 | 580,789 (**down** 2.7%) |
+| exits | 62,980 | **79,293 (+25.9%)** |
+| led by the psyboid | 51,239 | 68,071 (+32.8%) |
+| led by the third boid | 11,496 | 11,039 (−4.0%) |
+| diluted model needed | 28 | 33 |
+| unexplained | 245 — **0.39%** | 183 — **0.23%** |
+| clumps of 40+, any panel | **0** | **0** |
+
+**The classification barely moves: 4.49% of accounted cells changed, none of them to
+unexplained**, and only 125 of 62,707 swapped which boid led — 0.20%. At block scale 96.6% to
+98.0% keep their dominant class with an exit-rate drift of 0.8 pp and a white drift of 0.01 pp.
+`render/prop21-panels.png` shows two pictures that are hard to tell apart.
+
+**But the arc is taken a quarter more often**, which is a larger relative change than `4->0`'s
++5.5%, and essentially all of it is the psyboid becoming more effective at inducing the exit
+(+32.8%) while the third boid becomes slightly less so (−4.0%). That is the sign reversal in the
+outer separation annulus showing up as behaviour: a psyboid sitting just inside `rSep` used to
+push the suspect away and now draws it in.
+
+**And `2->1` has no white structure to fix.** 245 unexplained cells across all four panels and
+**not one clump of 40 or more**, before or after. The banded white regions are a `4->0`
+phenomenon, which is consistent with §1: `2->1` is separation-carried and one boid holds a whole
+history, while `4->0` is alignment-carried and the leadership shifts.
+
+### The two arcs side by side
+
+| | `4->0` | `2->1` |
+| --- | --- | --- |
+| exits | +5.5% | **+25.9%** |
+| unexplained rate | 3.04% → **1.90%** | 0.39% → **0.23%** |
+| accounted cells moved | 38.8% | **4.5%** |
+| blocks keeping dominant class | 94.7% | **96.6–98.0%** |
+| leader reattributed | 1.1% | 0.20% |
+| diluted model needed | **6 → 479** | 28 → 33 |
+| white clumps of 40+ | 20 → 16 | 0 → 0 |
+
+**The 80x jump in diluted-model usage is specific to `4->0`.** On `2->1` it barely moves. Whatever
+it is, it is not a general consequence of restoring the falloff, and it remains the one result
+here nobody has explained.
+
 ### Before pulling the trigger
 
 - **`Params.PHYSICS` -> 3**, which re-hashes every ingest. Every stored table, the psyboid corpus
   and every plan label taken under physics 2 stops meaning what it means and has to be rebuilt.
-- **The 80x jump in the diluted model** (6 -> 479) is unexplained and worth a look first.
-  `Flocking.diluted` doubles `wSep` and now carries the falloff too, so the fallback has changed
-  shape as well as the base model.
-- Only arc `4->0` on dabeone has been run. `2->1` and `5->6` have not.
+- **The 80x jump in the diluted model on `4->0`** (6 -> 479) is unexplained, and confirmed
+  arc-specific by `2->1`, where it goes 28 -> 33. `Flocking.diluted` doubles `wSep` and now
+  carries the falloff too, so the fallback changed shape as well as the base model. **This is the
+  one result nobody has explained and the cheapest thing to look at next.**
+- **The arcs are run.** `4->0` and `2->1` both done, on dabeone. `5->6` deliberately not:
+  it occurs only in the first 500 ticks and then never again over 1.28M boid-ticks, so its
+  behaviour under a physics change is not information anybody will use.
+- **Exit frequency moves more than classification does, and by more on `2->1` (+25.9%) than on
+  `4->0` (+5.5%).** Almost all of it is the psyboid becoming better at inducing the exit. Whether
+  a psyboid with more leverage is wanted is a judgement about the evaluation, not a measurement —
+  it means more signal per scene, and also a flock that is easier to herd.
 - The straight bias is untouched, and under a clamped aggregation the signal is smaller, so the
   bias is effectively stronger. The two want tuning together.
+- Only dabeone. Plait has not been looked at.
 
 ---
 

@@ -3114,7 +3114,12 @@ picks, never in what is available to it.
      */
     public static void proposedPhysics(PresetScenarioParameter preset, Labelling l, SolverFacts f,
                                        Flocking base, int from, int keep, int quorum,
-                                       Aggregation proposal, Path out) throws IOException {
+                                       Aggregation proposal) throws IOException {
+        // Named by the arc, because one arc's answer says nothing about another's and two of
+        // them under one filename is how a comparison ends up being drawn against the wrong run.
+        String tag = "prop" + from + keep;
+        Path out = Path.of("render", tag + "-" + proposal.id().toLowerCase(java.util.Locale.ROOT) + ".png");
+        Path base1 = Path.of("render", tag + "-baseline.png");
         Flocking was = base.sepFalloff(Aggregation.CURRENT.separationFalloffAtOne());
         Flocking now = base.sepFalloff(proposal.separationFalloffAtOne());
         System.out.printf("%n=== %s @%s: the pipeline under %s, arc %d->%d ===%n", preset.name(),
@@ -3142,15 +3147,39 @@ picks, never in what is available to it.
                 plusWas.size(), plusNow.size(), MapStates.byEdge(plusWas, l.edge(), f.edges()),
                 MapStates.byEdge(plusNow, l.edge(), f.edges()));
 
-        Path base1 = Path.of("render", "prop-baseline.png");
         runPipeline(preset, l, f, was, from, keep, plusWas, null, base1);
         runPipeline(preset, l, f, now, from, keep, plusNow, proposal, out);
         ThreeBoidPhase.compare(base1, out, f, from, 0.5);
+        for (int block : new int[]{4, 8, 16}) {
+            ThreeBoidPhase.compareBlocks(base1, out, f, from, 0.5, block);
+        }
+
+        // Which panel is worth drawing depends on the edge — edge 4 has three simple loops and
+        // the middle pair carries the cross, edge 2 has two and the largest pair carries almost
+        // everything. Pick the one holding the most unexplained cells rather than guessing an
+        // index, which on edge 2 picked the smallest panel and showed nothing.
+        int routes = ThreeBoidPhase.loops(f, from).size();
+        int panel = 0, mostWhite = -1;
+        for (Path v : new Path[]{base1, out}) {
+            for (int rp = 0; rp < routes; rp++) {
+                for (int rb = 0; rb < routes; rb++) {
+                    List<ThreeBoidSamples.Feature> w = ThreeBoidSamples.features(v, f, from, 0.5,
+                            rp, rb, ThreeBoidPhase.UNEXPLAINED, 4, 40);
+                    int cells = 0;
+                    for (ThreeBoidSamples.Feature x : w) cells += x.cells();
+                    System.out.printf("  %s panel %dx%d: %d clumps of 40+%n", v.getFileName(),
+                            rp, rb, w.size());
+                    if (v == base1 && rp == rb && cells > mostWhite) { mostWhite = cells; panel = rp; }
+                }
+            }
+        }
         ThreeBoidPhase.panelSheet(List.of(base1, out),
-                List.of("CURRENT (physics 2)", proposal.id() + " (proposed)"), f, from, 0.5, 1, 1,
-                2, String.format("%s @%s — centre panel of the %d->%d phase map, current against "
-                        + "proposed", preset.name(), preset.ingest().hash(), from, keep),
-                out.resolveSibling("prop-centre-panels.png"));
+                List.of("CURRENT (physics 2)", proposal.id() + " (proposed)"), f, from, 0.5,
+                panel, panel, 2,
+                String.format("%s @%s — panel %d x %d of the %d->%d phase map, current against "
+                        + "proposed", preset.name(), preset.ingest().hash(), panel, panel, from,
+                        keep),
+                Path.of("render", tag + "-panels.png"));
     }
 
     /** Tables on the given constants and ground, then the phase map they colour. */
@@ -3533,18 +3562,15 @@ picks, never in what is available to it.
                 lab.edge(), lab.live(), lab.liveCount(), new int[][]{{4, 0}}, f, f.diluted());
         int[] path = ThreeBoidSamples.suspectPath(p, facts, tabs, 4, 2, 1, 158, 255,
                 Path.of("render", "phase40-replays.tsv"));
-        Path proposed = Path.of("render", "prop-rule_sum_clamp.png");
-        Path propBase = Path.of("render", "prop-baseline.png");
-        ThreeBoidPhase.compare(propBase, proposed, facts, 4, 0.5);
-        for (int block : new int[]{4, 8, 16}) {
-            ThreeBoidPhase.compareBlocks(propBase, proposed, facts, 4, 0.5, block);
-        }
-        for (Path v : new Path[]{propBase, proposed}) {
-            List<ThreeBoidSamples.Feature> w = ThreeBoidSamples.features(v, facts, 4, 0.5, 1, 1,
-                    ThreeBoidPhase.UNEXPLAINED, 4, 40);
-            System.out.printf("  %s: %d clumps of 40+ in the centre panel%n", v.getFileName(),
-                    w.size());
-        }
+        ThreeBoidPhase.panelSheet(
+                List.of(Path.of("render", "prop21-baseline.png"),
+                        Path.of("render", "prop21-rule_sum_clamp.png")),
+                List.of("CURRENT (physics 2) — 245 unexplained of 62,980",
+                        "RULE_SUM_CLAMP — 183 of 79,293"),
+                facts, 2, 0.5, 0, 0, 2,
+                "DABEONE @609cffdb84be218c — panel [2,1,5,8,4] x [2,1,5,8,4] of the 2->1 phase "
+                        + "map, current against proposed",
+                Path.of("render", "prop21-panels.png"));
         if (true) return;
         Path plus = Path.of("render", "phase40-stableplus.png");
         for (int merge : new int[]{2, 4, 6}) {

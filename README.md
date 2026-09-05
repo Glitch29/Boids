@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-08-30 (later). Verified against dabeone ingest `609cffdb84be218c` unless stated.
+**Status:** 2026-09-04. Verified against dabeone ingest `609cffdb84be218c` unless stated.
 Every figure below carries the ingest it was measured on; a figure without one is not
 reproducible and should not be trusted.
 
@@ -246,7 +246,7 @@ a map that has since been edited.
 | `render/phase40-stableplus-white-atlas.png` | `ThreeBoidSamples.atlas` | every unexplained clump of the centre panel, cropped in place |
 | `render/phase40-stableplus-white-samples.png` | `ThreeBoidSamples.sampleFeatures` | one replayed arrangement per clump, at envelope entry |
 | `render/agg-*.png` | `SimTest.aggregationPhaseMaps` | the phase map under each candidate aggregation, plus a centre-panel comparison |
-| `render/prop-*.png` | `SimTest.proposedPhysics` | physics 2 against the proposed `RULE_SUM_CLAMP`, end to end |
+| `render/prop<f><t>-*.png` | `SimTest.proposedPhysics` | physics 2 against the proposed `RULE_SUM_CLAMP`, end to end, one set per arc |
 | `render/` | various | frames and check images. Gitignored, regenerable |
 
 **Deleted, 2026-08-27 to 29.** `cases/`, `transcript.pdf`, `routes/`, `psyboid-packet.zip`,
