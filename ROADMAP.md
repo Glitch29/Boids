@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-09-04. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-05. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it.
 
 ---
@@ -857,7 +857,7 @@ was in `AggregationSurvey`, and it is gone.
 
 ---
 
-## 0d. Corpus addressing — specified, not built
+## 0d. Corpus addressing — **built**
 
 Raised 2026-09-04: corpora have been under-labelled, and it is worth asking whether they should
 use the same addressing as everything else. **They should, one level deeper, and the same argument
@@ -903,9 +903,21 @@ order of usefulness:
   rather than merely differently addressed;
 - **whether the plan needed the diluted model**, which is the cheapest signal of a crowd effect.
 
-**Not built.** The physics ship is the change worth landing on its own, and no corpus exists to
-migrate: the pre-physics-3 one is in `archive/`. The next corpus generated is the right moment,
-and it should be generated through a preset from the start rather than migrated into one.
+**Built 2026-09-05**, and generated through a preset from the start rather than migrated into one.
+`CorpusPreset` holds the recipes, `Derived.Corpus` addresses them, and
+`PsyboidCorpus.labels(Derived.Behaviour)` **refuses when more than one corpus exists** rather than
+picking — naming a preset is then a fix the caller has to make deliberately.
+
+All four extra columns landed: `occFlock`, `occPsy`, `occOthers`, `occControl` and `impactful`.
+The warm-up fingerprint did not, because the warm-up question turned out to want measuring rather
+than recording — see `CORPUS.md`.
+
+> **The psyboid/others split earned itself on its first run.** On `PLANS_40` under physics 3 the
+> psyboid scores at 0.1125 occupancy against 0.0400 for the boids it is herding — 2.8x — while the
+> control is exactly 0.0000, so every point the others score is psyboid-caused. **Two of forty
+> plans move nobody at all**, scoring purely by parking. Total score cannot see any of that.
+
+Full treatment, and the four figures, in `CORPUS.md`.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 

@@ -123,8 +123,38 @@ public final class Derived {
             return p;
         }
 
+        /** One corpus recipe flown under these rules. */
+        public Corpus corpus(CorpusPreset preset) {
+            return Derived.corpus(this, preset);
+        }
+
         @Override
         public String toString() { return structure + "/b:" + hash; }
+    }
+
+    /**
+     * One psyboid corpus: a recipe, flown under one set of rules, on one decomposition of one map.
+     * <p>
+     * A third level rather than a file in the behaviour tier, because a corpus is a function of
+     * more than the physics: how many seeds, how long the warm-up, how far the search looks. Those
+     * used to live in the file's header, where nothing could act on them — two recipes collided at
+     * one {@code plans.tsv} and the second silently replaced the first.
+     */
+    public record Corpus(Behaviour behaviour, CorpusPreset preset, String hash, Path dir) {
+
+        public Path at(String... parts) {
+            Path p = dir;
+            for (String part : parts) p = p.resolve(part);
+            try {
+                Files.createDirectories(p);
+            } catch (IOException e) {
+                throw new UncheckedIOException("cannot create " + p, e);
+            }
+            return p;
+        }
+
+        @Override
+        public String toString() { return behaviour + "/c:" + preset + "@" + hash; }
     }
 
     /**
@@ -215,6 +245,37 @@ public final class Derived {
                 flocking.wSep(), flocking.wCoh(), flocking.wAli(), flocking.straightBias(),
                 flocking.rSep(), flocking.rFlock(), flocking.sepFalloff()));
         return b;
+    }
+
+    /** One corpus recipe under one set of decision rules. */
+    public static Corpus corpus(Behaviour behaviour, CorpusPreset preset) {
+        Digest d = new Digest();
+        d.text("boids-corpus-v" + FORMAT);
+        d.text(behaviour.hash());
+        d.text(preset.name());
+        d.text(preset.fingerprint());
+
+        String hash = d.hex();
+        Path dir = behaviour.dir().resolve("psyboid").resolve(preset.name().toLowerCase(
+                java.util.Locale.ROOT) + "-" + hash);
+        Corpus c = new Corpus(behaviour, preset, hash, dir);
+        explain(dir, """
+                tier       corpus
+                of         %s
+                preset     %s — %s
+                hash       %s
+                format     %d
+
+                %s
+
+                Seeds are 0 to %d. A corpus is a set of plans, each a seed plus the overrides
+                that were committed for it, and every row was replayed from its own label and
+                matched position for position before being written. The recipe is in this
+                directory's name as well as in this file, so a corpus flown under a different
+                one cannot be picked up in its place.
+                """.formatted(behaviour, preset.name(), preset.describes(), hash, FORMAT,
+                preset.fingerprint(), preset.seeds() - 1));
+        return c;
     }
 
     /**

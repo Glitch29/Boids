@@ -32,8 +32,26 @@ public final class PsyboidCorpus {
 
     private static final String FILE = "plans.tsv";
 
+    /**
+     * The columns, label last so a row stays readable as the metrics grow.
+     * <p>
+     * <b>Occupancy rather than raw score.</b> One score point is one boid in a scoring zone for
+     * one tick, so dividing by the flock size gives the fraction of the flock scoring at any
+     * moment — a number that means the same thing across flock sizes and run lengths, which raw
+     * score does not. The psyboid and non-psyboid shares are separated because a psyboid that
+     * scores by parking itself in a zone and one that scores by moving the flock look identical
+     * otherwise, and only the second is what the project is about.
+     * <p>
+     * <b>{@code impactful} is what a psyboid spends.</b> Not the override count: an override the
+     * map refuses, or one the flock would have obeyed anyway, costs nothing and changes nothing.
+     * This counts ticks where the psyboid's turn <em>after the veto</em> differed from what the
+     * flocking rules alone would have produced, which is the quantity a psyboid algorithm should
+     * be judged against occupancy on.
+     */
     private static final String HEADER = "seed\tpsyboid\twarm\tspread\tlookahead\talpha"
-            + "\trun\tusableFrom\tusableTo\tusable\tperTick\tcontrol\tbits\tturns\tlabel";
+            + "\trun\tusableFrom\tusableTo\tusable\tperTick\tcontrol"
+            + "\toccFlock\toccPsy\toccOthers\toccControl\timpactful"
+            + "\tbits\tturns\tlabel";
 
     /**
      * @param plans   one per seed, in seed order
@@ -62,15 +80,19 @@ public final class PsyboidCorpus {
      * @param measure ticks past the warmup the plan is scored over, and the window a scene
      *                should be sampled from
      */
-    public static Corpus build(PresetScenarioParameter preset, SolverFacts f, int seeds,
-                               int run) throws IOException {
+    public static Corpus build(PresetScenarioParameter preset, SolverFacts f,
+                               CorpusPreset recipe) throws IOException {
         NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
                 Math.round(preset.turningRadius()));
         PsyboidBits.Branches b = PsyboidBits.branches(map, f);
-        PsyboidBits.Config config = PsyboidBits.standard(PsyboidBits.WARM, run);
+        PsyboidBits.Config config = recipe.config();
+        int seeds = recipe.seeds();
+        Derived.Corpus where = SimTest.behaviour(preset, f, SimTest.flockingOf(preset))
+                .corpus(recipe);
 
-        System.out.printf("%n=== %s @%s: psyboid corpus, %d seeds ===%n", preset.name(),
-                preset.ingest().hash(), seeds);
+        System.out.printf("%n=== %s @%s: psyboid corpus %s (%s), %d seeds ===%n%s%n%s%n",
+                preset.name(), preset.ingest().hash(), recipe.name(), recipe.describes(), seeds,
+                recipe.fingerprint(), where);
         for (int i = 0; i < b.branch().length; i++) {
             System.out.printf("  branch: edge %d -> %d, right held %d ticks%n", b.branch()[i],
                     b.exit()[i], b.hold()[i]);
@@ -80,7 +102,7 @@ public final class PsyboidCorpus {
         List<PsyboidBits.Plan> plans = new ArrayList<>();
         int scoring = 0, lifted = 0, unverified = 0;
         for (long seed = 0; seed < seeds; seed++) {
-            PsyboidBits.Plan plan = PsyboidBits.search(preset, f, b, config, seed);
+            PsyboidBits.Plan plan = PsyboidBits.search(preset, map, f, b, config, seed);
             if (!verify(preset, plan, config)) {
                 unverified++;
                 continue;
@@ -95,13 +117,13 @@ public final class PsyboidCorpus {
                     + "would be either");
         }
 
-        Path file = SimTest.behaviour(preset, f, SimTest.flockingOf(preset))
-                .at("psyboid").resolve(FILE);
-        write(file, preset, plans, config);
+        Path file = where.at().resolve(FILE);
+        write(file, preset, plans, config, recipe);
         System.out.printf("%,d plans in %.0fs; %,d score, %,d beat their own control%n",
                 plans.size(), (System.nanoTime() - began) / 1e9, scoring, lifted);
         System.out.printf("mean %.5f per tick against %.5f unsteered%n",
                 mean(plans, true), mean(plans, false));
+        occupancy(plans);
 
         int asked = 0, took = 0, unbid = 0, exactPlans = 0, reported = 0;
         long usable = 0;
@@ -247,10 +269,45 @@ public final class PsyboidCorpus {
      * replay when it was <em>written</em> and never when it is read, so a corpus reached under
      * physics it was not flown under would be believed.
      */
+    /**
+     * The plan labels of the one corpus under these rules, or an error naming the choices.
+     * <p>
+     * A reader that does not care which recipe it gets is usually a reader that has only ever
+     * seen one. Rather than pick — which is how the old fixed path came to hand back whatever had
+     * been written last — this insists there is exactly one and says what the alternatives are
+     * when there is not. Naming a {@link CorpusPreset} is then the fix, and it is a fix the
+     * caller has to make deliberately.
+     */
     public static List<String> labels(Derived.Behaviour where) throws IOException {
-        Path file = where.at("psyboid").resolve(FILE);
+        Path root = where.at("psyboid");
+        List<Path> found = new ArrayList<>();
+        try (java.util.stream.Stream<Path> kids = Files.list(root)) {
+            kids.filter(Files::isDirectory)
+                    .filter(p -> Files.isRegularFile(p.resolve(FILE)))
+                    .forEach(found::add);
+        }
+        if (found.isEmpty()) {
+            throw new IllegalStateException("no psyboid corpus under " + root
+                    + " — run PsyboidCorpus.build for this configuration first");
+        }
+        if (found.size() > 1) {
+            StringBuilder s = new StringBuilder("several corpora under " + root
+                    + "; name a CorpusPreset rather than letting this guess:");
+            for (Path p : found) s.append(System.lineSeparator()).append("    ")
+                    .append(p.getFileName());
+            throw new IllegalStateException(s.toString());
+        }
+        return read(found.get(0).resolve(FILE));
+    }
+
+    /** The plan labels of one named corpus. */
+    public static List<String> labels(Derived.Corpus where) throws IOException {
+        return read(where.at().resolve(FILE));
+    }
+
+    private static List<String> read(Path file) throws IOException {
         if (!Files.isRegularFile(file)) {
-            throw new IllegalStateException("no psyboid corpus for " + where + " at " + file
+            throw new IllegalStateException("no psyboid corpus at " + file
                     + " — run PsyboidCorpus.build for this configuration first");
         }
         List<String> out = new ArrayList<>();
@@ -262,9 +319,41 @@ public final class PsyboidCorpus {
         return out;
     }
 
+    /**
+     * The four occupancy rates, and the one comparison that says what the psyboid is doing.
+     * <p>
+     * <b>A psyboid can raise the flock's score two ways</b>, and only one of them is what this
+     * project is about: it can herd the others into a scoring region, or it can fly into one
+     * itself. Total score cannot tell those apart. Splitting the psyboid's own occupancy from
+     * everyone else's can, and a corpus where {@code others} sits near zero is a corpus of plans
+     * that score by parking — which is a fact about what the search optimises, not about the map.
+     */
+    private static void occupancy(List<PsyboidBits.Plan> plans) {
+        if (plans.isEmpty()) return;
+        double flock = 0, psy = 0, others = 0, control = 0, impact = 0;
+        int parked = 0;
+        for (PsyboidBits.Plan p : plans) {
+            flock += p.steered().occupancy();
+            psy += p.steered().psyOccupancy();
+            others += p.steered().othersOccupancy();
+            control += p.unsteered().occupancy();
+            impact += p.steered().impactful();
+            if (p.steered().othersOccupancy() <= 0) parked++;
+        }
+        int n = plans.size();
+        System.out.printf("occupancy: flock %.4f, psyboid %.4f, others %.4f, control %.4f%n",
+                flock / n, psy / n, others / n, control / n);
+        System.out.printf("  %.1f impactful ticks per plan; %d of %d plans move nobody at all%n",
+                impact / n, parked, n);
+        if (parked > 0) {
+            System.out.printf("  ** %d plan(s) score only through the psyboid itself. Total score "
+                    + "cannot see this; the split can. **%n", parked);
+        }
+    }
+
     private static void write(Path file, PresetScenarioParameter preset,
-                              List<PsyboidBits.Plan> plans, PsyboidBits.Config config)
-            throws IOException {
+                              List<PsyboidBits.Plan> plans, PsyboidBits.Config config,
+                              CorpusPreset recipe) throws IOException {
         StringBuilder s = new StringBuilder();
         s.append("# psyboid plans for ").append(preset.name()).append(" @")
                 .append(preset.ingest().hash()).append(", ")
@@ -288,6 +377,11 @@ public final class PsyboidCorpus {
                     .append(p.usable()).append('\t')
                     .append(String.format("%.6f", p.perTick())).append('\t')
                     .append(String.format("%.6f", p.control())).append('\t')
+                    .append(String.format("%.6f", p.steered().occupancy())).append('\t')
+                    .append(String.format("%.6f", p.steered().psyOccupancy())).append('\t')
+                    .append(String.format("%.6f", p.steered().othersOccupancy())).append('\t')
+                    .append(String.format("%.6f", p.unsteered().occupancy())).append('\t')
+                    .append(p.steered().impactful()).append('\t')
                     .append(p.overrides().length).append('\t').append(turns(p)).append('\t')
                     .append(p.label()).append(System.lineSeparator());
         }

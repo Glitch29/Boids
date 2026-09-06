@@ -89,7 +89,8 @@ public final class PsyboidBits {
      *                   boid is coasting, and the root never passed it either
      */
     public record Plan(long seed, int psyboid, PsyboidOverride[] overrides, String label,
-                       double perTick, double control, long usableFrom, long usableTo) {
+                       double perTick, double control, long usableFrom, long usableTo,
+                       Scored steered, Scored unsteered) {
 
         /** How much the psyboid was worth, as a multiple of what the flock does on its own. */
         public double lift() { return control <= 0 ? Double.NaN : perTick / control; }
@@ -215,9 +216,10 @@ public final class PsyboidBits {
      * Sequential rather than concurrent, and deliberately so: the whole point of searching bits
      * instead of override parameters is that the tree is now small enough not to need it.
      */
-    public static Plan search(PresetScenarioParameter preset, SolverFacts f, Branches b,
-                              Config config, long seed) throws java.io.IOException {
+    public static Plan search(PresetScenarioParameter preset, NavMap map, SolverFacts f,
+                              Branches b, Config config, long seed) throws java.io.IOException {
         Boids2DEngine engine = new Boids2DEngine(preset);
+        MovementLogic rules = new MovementLogic(preset.turningRadius());
 
         Sim.State root = engine.init(seed);
         for (int t = 0; t < config.warm(); t++) root = engine.tick(root);
@@ -275,14 +277,15 @@ public final class PsyboidBits {
         // The plan is only worth what it scores when flown straight through, so the number
         // reported is a replay rather than anything the search believed along the way, and it
         // is measured over exactly the window a case may be drawn from.
-        double perTick = replay(engine, seed, config.warm(), usableFrom, usableTo, plan);
-        double control = replay(engine, seed, config.warm(), usableFrom, usableTo,
-                new PsyboidOverride[0]);
+        Scored steered = replay(engine, map, rules, seed, config.warm(), usableFrom, usableTo,
+                plan, config.psyboid());
+        Scored unsteered = replay(engine, map, rules, seed, config.warm(), usableFrom, usableTo,
+                new PsyboidOverride[0], config.psyboid());
 
         StringBuilder label = new StringBuilder("seed" + seed);
         for (PsyboidOverride o : plan) label.append('|').append(o.label());
-        return new Plan(seed, config.psyboid(), plan, label.toString(), perTick, control,
-                usableFrom, usableTo);
+        return new Plan(seed, config.psyboid(), plan, label.toString(), steered.flock(),
+                unsteered.flock(), usableFrom, usableTo, steered, unsteered);
     }
 
     /**
@@ -366,15 +369,68 @@ public final class PsyboidBits {
     }
 
     /** Score per tick over the usable window alone, flying a fixed plan. */
-    private static double replay(Boids2DEngine engine, long seed, int warm, long from, long to,
-                                 PsyboidOverride[] plan) {
+    /**
+     * What one replay was worth, in the units analysis actually wants.
+     *
+     * @param flock     flock score per tick over the window. One point is one boid in a scoring
+     *                  zone for one tick, so dividing by the flock size gives an occupancy rate
+     * @param psy       the psyboid's own share of that, which is already a rate because it is
+     *                  one boid
+     * @param impactful ticks on which the psyboid's turn <b>after the collision veto</b> differed
+     *                  from what the flocking rules alone would have produced. The override is a
+     *                  request, and a request the map refuses or that the flock would have obeyed
+     *                  anyway costs nothing and changes nothing — so this, not the number of
+     *                  overrides, is what a psyboid spends
+     * @param n         flock size, carried so a rate can be taken without asking elsewhere
+     */
+    public record Scored(double flock, double psy, int impactful, int n) {
+
+        /** Mean fraction of the flock in a scoring zone. */
+        public double occupancy() { return n == 0 ? 0 : flock / n; }
+
+        /** The same for the psyboid alone. */
+        public double psyOccupancy() { return psy; }
+
+        /** And for everyone else, which is what a psyboid is supposed to be moving. */
+        public double othersOccupancy() { return n <= 1 ? 0 : (flock - psy) / (n - 1); }
+    }
+
+    /**
+     * Flies a plan straight through and measures it.
+     * <p>
+     * <b>Measured on a replay rather than on anything the search believed.</b> A plan is only
+     * worth what it scores when flown as written, over exactly the window a case may be drawn
+     * from.
+     */
+    private static Scored replay(Boids2DEngine engine, NavMap map, MovementLogic rules, long seed,
+                                 int warm, long from, long to, PsyboidOverride[] plan,
+                                 int psyboid) {
         Sim.State s = engine.init(seed);
         for (int t = 0; t < warm; t++) s = engine.tick(s);
         s = SimTest.withOverrides(s, plan);
         while (s.tick < from) s = engine.tick(s);
-        long base = s.score;
-        while (s.tick < to) s = engine.tick(s);
-        return (s.score - base) / (double) Math.max(1, s.tick - from);
+        long base = s.score, basePsy = s.boidScore[psyboid];
+        int n = s.n;
+
+        // Counted from inside the tick, because the comparison is between two turns the boid
+        // could have taken from the same mid-tick arrangement — and a tick has an interior.
+        int[] impactful = {0};
+        long window = to;
+        engine.trace((tick, i, boids, want) -> {
+            if (i != psyboid || tick < from || tick >= window) return;
+            int x = boids.x()[i], y = boids.y()[i], h = boids.h()[i];
+            int steered = map.constrainTurn(x, y, h, want);
+            int unsteered = map.constrainTurn(x, y, h, rules.decompose(boids, i).turn());
+            if (steered != unsteered) impactful[0]++;
+        });
+        try {
+            while (s.tick < to) s = engine.tick(s);
+        } finally {
+            engine.trace(null);
+        }
+        double ticks = Math.max(1, s.tick - from);
+        return new Scored((s.score - base) / ticks, (s.boidScore[psyboid] - basePsy) / ticks,
+                impactful[0], n);
     }
 
     /**

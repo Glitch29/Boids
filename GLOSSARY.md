@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-04, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-05, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -68,9 +68,9 @@ hand, since `EdgeInfluence.steer` *is* the aggregation at one neighbour and the 
 
 
 **aggregation** — how several neighbours are condensed into one desired direction, as opposed to
-what each rule wants from one neighbour. `Aggregation`, with `CURRENT` the simulation's own and
-six alternatives surveyed beside it. **The rules are not where implementations differ; the
-aggregation is.**
+what each rule wants from one neighbour. `Aggregation`, with `SIMULATION` naming the one the
+flock flies (physics 3: `RULE_SUM_CLAMP`), `RULE_NORMALISE` the physics-2 record, and five more
+surveyed beside them. **The rules are not where implementations differ; the aggregation is.**
 
 **cancellation ratio** — for one rule, `sum of the contributions' lengths / length of their sum`.
 One is unanimity; ten means the neighbours nearly cancelled and only a short residue survived.
@@ -133,6 +133,30 @@ depends on it, so deleting a decomposition takes its tables with it.
 > a corpus header — cannot stop a reader picking up the wrong file, and until 2026-09-04
 > `solver/facts.bin` and `psyboid/plans.tsv` were being silently overwritten and silently reread.
 > **Over-keying costs a rebuild; under-keying returns the wrong answer without saying so.**
+
+**corpus tier** — one psyboid corpus: a named recipe flown under one set of decision rules on one
+decomposition of one map. `Derived.Corpus`, at
+`<behaviour>/psyboid/<preset>-<hash>/`. The third addressing level, added because a corpus is a
+function of more than the physics — seeds, warm-up, run length, search spread — and those used to
+live in a header comment where nothing could act on them. Full treatment in `CORPUS.md`.
+
+**corpus preset** — a named recipe for generating a corpus, in the same spirit as
+`PresetScenarioParameter`. `CorpusPreset`, currently `SMOKE` (3 seeds, not a sample) and
+`PLANS_40` (the standard corpus). Seeds are always `0 .. N-1`, so a preset is reproducible from
+its name and a larger one is a superset of a smaller one.
+
+**occupancy rate** — the mean fraction of the flock in a scoring zone at any moment: score divided
+by flock size, since one score point is one boid in a zone for one tick. The unit corpus figures
+are read in, because it means the same thing across flock sizes and run lengths where raw score
+does not. Recorded four ways — flock, psyboid, others, control — because **a psyboid that herds
+the flock into a zone and one that flies into a zone itself are indistinguishable by total
+score**, and only the first is what this project is about.
+
+**impactful tick** — a tick on which the psyboid's turn *after the collision veto* differed from
+what the flocking rules alone would have produced. **What a psyboid spends**, as against the
+override count: an override the map refuses, or one the flock would have obeyed anyway, costs
+nothing and changes nothing. The second axis of the Pareto frontier a psyboid algorithm is judged
+on, the first being flock occupancy.
 
 **`map.png`** — the frozen map. **The only file physics may be computed from.**
 
@@ -509,13 +533,13 @@ anything not listed.
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
+| psyboid corpus | `PsyboidCorpus` + `CorpusPreset` | `<behaviour>/psyboid/<preset>-<hash>/` |
 | proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |
 | psyboid search | `PsyboidBits` | — |
-| psyboid corpus | `PsyboidCorpus` | `<ingest>/psyboid/plans.tsv` |
 
 > **Two different two-boid analyses. Do not conflate them.**
 > **`EdgeInfluence`** is the single-neighbour *closed form*, and it is what the critical

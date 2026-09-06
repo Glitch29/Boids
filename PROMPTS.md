@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-306 prompts across 8 sessions.
+310 prompts across 9 sessions.
 
 ---
 
@@ -9622,7 +9622,7 @@ A couple examples that I'll probably write after the file is set up are "When tr
 
 ## Session 08 - 2026-08-30
 
-*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 16 prompts.*
+*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 19 prompts.*
 
 ### 1
 
@@ -9832,3 +9832,52 @@ This is deep into the project, but at this point so much of the output is progra
 Let's proceed with a version of rule_clamp_step that preserves falloff (meaning a boid with 1/3 falloff and one with 2/3 falloff both in the same direction could max out total separation).
 
 Before pulling the trigger on making the project-wide change, I'd like to see the 3-boid phase map under the proposed rules. This likely also means rerunning some of the inputs to the map under the new rules. I want to make sure that end-to-end things are looking similar.
+
+### 17
+
+I'm fine with 5->6 having arbitrary behavior, since it rarely comes up outside of warmup periods. I don't expect 2-1 to have significant changes, but you're right that it's worth testing.
+
+### 18
+
+I'm happy with this. Ship the new steering logic project-wide.
+
+Be on the lookout for any instances where steering logic was reproduced rather than used in place. The two places I might expect to find this would be in the different pieces of 2-boid analysis. One enumerated all reachable 2-boid states, and another that did the critical envelope analysis.
+
+The diluted-model usage doesn't terribly surprise me. At the moment nothing makes me suspect that it's a bug.
+
+We're also going to need to do cleanup of old artifacts. This brings me to question how artifacts are being stored. Right now structural artifacts are mixed in with other analysis. I'm not sure how this is traditionally handled. I'd like to hear thoughts on best practices.
+
+### 19
+
+I'm going to give you free reign to do whatever you think is best regarding storage.
+
+Right now we're in a position where I don't think anything in analysis\, ingests\, render\, packet\, data\, or \out actually matters. I have a local backup of the entire project folder, including everything that's been gitignored. The loose analysis that doesn't feed into anything has already served its purpose and doesn't need to stick around. We don't have an in-progress packet. We just bumped physics, so most everything else is stale. Just do what you think is going to produce the best system going forward.
+
+I'd suggest starting by moving those listed folders to an archive, which I can manually move out of the project later. If they were accidentally deleted it would just cost a turn to restore, so the archive folder isn't so much for preservation as just an abundance of caution regarding deletes, and your ability to reference the contents mid-turn.
+
+Beyond that, not much needs to be immediately regenerated. Just figure out a good structure to go with, and set up the code to make it work.
+
+The only comment that I'll make is that it we've had problems in previous sessions with under-labeled corpuses. I think the raw data in corpuses is just a series of seeds and overrides. But having additional info about them could be useful. We don't need to lock in on that this turn, as I'm not asking you to generate any corpuses. But it's worth considering whether it makes sense to use the same file structure for them as we do with the ingests. It might also make sense to use a class of presets for corpus generation to facilitate that.
+
+I'm off for quite a while, if not the entire night. So you have as much time as you need to set things up.
+
+---
+
+## Session 09 - 2026-09-04
+
+*Log `30eea36c-fd48-40ff-b8f1-f6f324323e12`, 1 prompts.*
+
+### 1
+
+I'm building a game. It's an async social deduction game that takes place in a haunted house. One player, "The Coven" designs 3 different supernatural entities, one of which will be picked at random to haunt the house. One-to-four other players "The Investigators" go into that house, try to deduce which type of ghost is present, as well as complete side objectives.  This will give them the resources to order a special weapon to eliminate the entity. The entity meanwhile is following a preset routine to racing toward their own objective that will result in dire consequences for the investigators.
+
+One example entity, the Poltergeist, has an extremely simple task of destroying $10k worth of property, causing the investigators to violate a condition of their SLA. The Poltergeist is mostly racing against the clock, hoping to keep the investigators locked out of rooms containing valuables long enough to complete their task. Defenestrating items might in some cases disguise their efforts. But the default strategy is to delay house exploration, then try to outrace capture with the property damage win condition. Poltergeist stats are, in general:
+
+* Difficulty to detect: Low
+* Corporeal: Always
+* Visible: While active
+* HVAC control: via panel
+* Electric control: via circuit breaker
+* Psychic misdirection: None
+* 
+*

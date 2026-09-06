@@ -3653,7 +3653,16 @@ picks, never in what is available to it.
                 40_000);
 
         SolverFacts facts = SolverStore.prepare(p, gate, SCHEME, CHAIN, f);
-        System.out.printf("%n%s%n", facts.summary());
+
+        // The smoke test: a small corpus, flown and replayed, under the addressing that now
+        // names its recipe. Three seeds says nothing about the map; it says the pipeline is
+        // intact, which is the whole question after a physics change.
+        PsyboidCorpus.build(p, facts, CorpusPreset.SMOKE);
+        Derived.Corpus corpus = behaviour(p, facts, f).corpus(CorpusPreset.SMOKE);
+        List<String> labels = PsyboidCorpus.labels(corpus);
+        System.out.printf("%nread back %d labels from %s%n", labels.size(), corpus);
+
+        PsyboidCorpus.build(p, facts, CorpusPreset.PLANS_40);
     }
 
     private static ScenarioParameter withFlockSize(ScenarioParameter base, int boids) {

@@ -11,6 +11,69 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-05 — corpus addressing built, and a corpus smoke test under physics 3
+
+Finished the one thing §0d had specified and not built, wrote `CORPUS.md`, and ran the corpus end
+to end. **Nothing is on fire.**
+
+**Corpora are addressed now.** `CorpusPreset` names a recipe — seeds, warm-up, run, spread,
+lookahead, alpha, settle — and `Derived.Corpus` hashes it into
+`<behaviour>/psyboid/<preset>-<hash>/`, with a `meta.txt`. Seeds are always `0 .. N-1`.
+`PsyboidCorpus.labels(Derived.Behaviour)` **refuses when more than one corpus exists** and lists
+them, rather than picking; naming a preset is a fix the caller has to make deliberately.
+
+**New columns**, all four the notes asked for plus the spend metric: `occFlock`, `occPsy`,
+`occOthers`, `occControl`, `impactful`. Occupancy rather than raw score, because one point is one
+boid in a zone for one tick and dividing by flock size gives a number that means the same thing
+across flock sizes and run lengths. `impactful` counts ticks where the psyboid's turn **after the
+veto** differed from what flocking alone would have produced — an override the map refuses, or one
+the flock would have obeyed anyway, costs nothing.
+
+**Smoke test, `SMOKE` (3 seeds):** 3 plans, all verified by replay, fidelity 6 of 6 turns crossed,
+3 of 3 plans matching branch for branch. Labels read back from the addressed directory.
+
+**Standard corpus, `PLANS_40`, regenerated under physics 3:** 40 plans in 5 s, all 40 score, all
+40 beat their own control, mean 0.23242 per tick, usable window 2,739 ticks per plan. Fidelity
+**248 turns asked, 248 crossed, 0 crossings nobody asked for, 40 of 40 matching branch for
+branch.**
+
+| occupancy | |
+| --- | --- |
+| flock | 0.0581 |
+| psyboid | 0.1125 |
+| others | 0.0400 |
+| control | **0.0000** |
+
+**The psyboid/others split earned itself on its first run.** The psyboid scores at 2.8x the rate
+of the boids it is herding — it does much of the work itself — but the others' 0.0400 against a
+control of exactly zero means all non-psyboid scoring is psyboid-caused, which isolates the
+herding effect for the first time. **Two of forty plans move nobody at all**, scoring purely by
+parking. No total-score measure can see either fact.
+
+> **A correction I nearly reported as a finding.** The 3-seed smoke test said *2 of 3* plans move
+> nobody, which looked alarming; at 40 seeds it is 2 of 40. Its usable window is 249 ticks against
+> 2,739, and short windows favour parking because herding takes time to pay. Occupancy must not be
+> read off `SMOKE`.
+
+**Flagged, not changed: `PsyboidBits.WARM` is 5,000 and the two rationales for it disagree by 5x.**
+WARM was chosen by asking when unsteered scoring stops depending on when you started watching — a
+*settling* criterion, which is the thing the minimality argument in `CORPUS.md` says not to
+optimise for. Total edge length on dabeone is **940 ticks**. Concrete evidence of over-warming:
+control occupancy is identically **0.0000** across all 40 plans, so the warm-up diagnostic carries
+no information at all. Edge-occupancy decay is the better proxy and measuring it is the next move.
+
+**Docs.** New `CORPUS.md`, canonical for corpora, registered in `README.md` and in `CLAUDE.md`'s
+reading list and freshness table. `GLOSSARY.md` gains corpus tier, corpus preset, occupancy rate
+and impactful tick, and its stale `aggregation` entry — which still named `CURRENT` — is fixed.
+`ROADMAP.md` §0d goes from specified to built.
+
+**Open.** Still nothing else regenerated under physics 3: no envelope tables beyond the smoke
+path, no phase map, no two-boid enumeration. The warm-up question above is the first real piece of
+corpus work.
+
+
+---
+
 ## 2026-09-04 (night) — physics 3 shipped, and derived output re-addressed
 
 Given free rein on storage, plus permission to archive `analysis/`, `ingests/`, `render/`,

@@ -11,6 +11,7 @@ Java, one package, `src/boids`. See `README.md` for what exists.
    lives. **Start here.**
 2. `GLOSSARY.md` — the terms below have precise meanings. Do not guess at them.
 3. `EDGES.md` — canonical for edges, routes and leader windows.
+   `CORPUS.md` — canonical for psyboid corpora and their metrics.
 4. `ROADMAP.md` — what is being built now and why.
 5. `HAPPY.md` — the user's standing feedback on what has and has not worked here. **Read it
    once; that is the entire obligation.** It holds no permissions, prohibitions or instructions,
@@ -100,6 +101,7 @@ So before ending, check each against what changed:
 | `EDGES.md` | anything about edges, routes, tau or leader windows |
 | `ROADMAP.md` | what is being built now, and what just stopped being true |
 | `PIPELINE.md` | any new step, or a step that has become unsound |
+| `CORPUS.md` | anything about corpora: how they are generated, addressed, or measured |
 | `HINTS.md` | findings about the *physics* that transfer beyond this codebase |
 | `SESSION-LOG.md` | append every session |
 | `HAPPY.md` | **nothing — the user writes it.** Read it at the start; never add to it or edit it |

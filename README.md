@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-04. **Physics 3** — see `ROADMAP.md` §0a-§0c. Verified against dabeone ingest
+**Status:** 2026-09-05. **Physics 3** — see `ROADMAP.md` §0a-§0d. Verified against dabeone ingest
 `609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
 figure without one is not reproducible and should not be trusted, and **figures taken under
 physics 2 are marked as such** rather than silently carried forward.
@@ -120,7 +120,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 50 files.
+One package, `src/boids`, 51 files.
 
 **Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
 the single definition of what a boid perceives) · `Aggregation` (candidate ways of condensing
@@ -158,7 +158,8 @@ that map, drawn at envelope entry).
 `Solver` · `Clue` · `UnstableEdgeClue` · `SolverScore` (how an answer is graded).
 
 **Psyboid** — `PsyboidBits` (bit-string search over branch decisions) · `PsyboidCorpus`
-(plans, verified by replay).
+(plans, verified by replay) · `CorpusPreset` (named recipes, so a corpus is addressed by the
+settings that produced it). See `CORPUS.md`.
 
 **Audit** — `ExitAudit` (a shareable `Tables` plus a cheap per-thread instance) ·
 `CriticalEnvelopeStore` · `ExitRender`.
@@ -260,7 +261,8 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `<behaviour>/corpus/*.tsv` | `SimTest.corpus`, `steering` | flown journeys against the clock; measured steering marginals |
 | `<behaviour>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
 | `<behaviour>/audit/exits_*.tsv` | `ExitAudit` | every classified exit |
-| `<behaviour>/psyboid/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact. **Under-addressed — see `ROADMAP.md` §0d** |
+| `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact; the recipe is in the path. See `CORPUS.md` |
+| `<behaviour>/psyboid/<preset>-<hash>/meta.txt` | `Derived` | which recipe, and its every setting |
 | `<behaviour>/solver/facts.bin` | `SolverStore` | everything a solver may know |
 | **loose renders** | | **gitignored, regenerable** |
 | `render/phase<f>_<t>.png` | `ThreeBoidPhase` | the three-boid phase map, one panel per route pair |
@@ -298,6 +300,7 @@ format diverged from it substantially: it described 25 case folders, Python, and
 | `EDGES.md` | canonical for edges, routes and leader windows |
 | `ROADMAP.md` | what is being built now, and the specifications for it |
 | `PIPELINE.md` | every step from a PNG to the current analysis, with real invocations |
+| `CORPUS.md` | canonical for corpora: generation, addressing, and which numbers to read |
 | `HINTS.md` | transferable knowledge; also the training-wheels condition of the evaluation |
 | `CONTRACTS.md` | what a play area guarantees. Partly historical — see its header |
 | `BACKLOG.md` | parked work, with the reasoning for parking it. Ageing |
