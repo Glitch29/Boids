@@ -24,6 +24,7 @@ not reproduce would be worse than none.
 ```
 ingests/<map>/structure/<structure>/behaviour/<behaviour>/psyboid/<preset>-<hash>/
     plans.tsv
+    floor.tsv
     meta.txt
 ```
 
@@ -133,6 +134,74 @@ any total-score measure.
 stable configurations, which is not bad in itself but means later ticks are more homogeneous
 across seeds. Whether it is happening should be checked rather than assumed.
 
+## The scoring floor
+
+**A corpus that scores well should score predictably**, and the thing to check it against is the
+score of **one psyboid alone on the map**. A psyboid in a flock can always fall back on flying the
+scoring loop itself and ignoring everyone else, so one plan may be worse at *herding* than another
+but none should be worse than a boid with nothing to herd.
+
+`SimTest.scoringFloor` measures it, writing `floor.tsv` beside `plans.tsv`. The comparison is
+**exactly paired**: `Boids2DEngine.init` draws boid 0 first and boid 0 is the psyboid, so a seed
+flown at flock size one starts the psyboid in the same place and heading as the same seed flown
+with the whole flock. Each row is one timeline with and without company, not two samples.
+
+**On dabeone the floor is exact, and it is a map constant:**
+
+| | |
+| --- | --- |
+| scoring pass | **54 ticks**, sd 0.00 over 40 seeds |
+| period between passes | **533 ticks**, sd 0.00 |
+| solo rate | **54 / 533 = 0.101313** per tick |
+| unsteered, alone | **0.000000** — every point a solo psyboid scores is override-caused |
+| flock of 4 floors at | **0.025328** occupancy |
+
+Not approximately: forty seeds, forty identical numbers. The lone psyboid flies `4 2 1 5 8` and
+scores on the same 54 ticks of it every lap. The flown 533 against the clock's 528.30 for loop
+`[4, 2, 1, 5, 8]` is a 0.9% disagreement, inside the clock's own 1.65% `sd/mean` — see `EDGES.md`
+§6.
+
+**The corpus respects it.** Measured on `PLANS_40` in settled terms:
+
+| | mean | sd | cv | min | max |
+| --- | --- | --- | --- | --- | --- |
+| psyboid rate | 0.10113 | 0.00081 | **0.8%** | 0.09925 | 0.10295 |
+| psyboid pass | 53.85 | 0.40 | 0.7% | 53.00 | 54.50 |
+| psyboid period | 532.50 | 1.80 | 0.3% | 526.50 | 535.20 |
+
+**0.998x the solo rate on average, 0.980x at worst.** So the flock costs the psyboid under 2% of
+its own scoring and never more — the boids it is herding do not get in its way. The lowest plan of
+the forty scores 0.10019 per tick, 0.989x the floor, and 0.02505 occupancy against the floor's
+0.025328; both are the two parked plans, where the psyboid scores and nobody else does.
+
+### The window inflates every rate by 12%, and that is where the "spread" comes from
+
+**Read off the usable window instead of off whole laps, the same solo psyboid reads 0.11350 per
+tick with a 4.6% spread across seeds.** Both numbers are artifacts of the window: it is 2,739
+ticks against a 533-tick lap, so it holds 5.14 laps and catches either five passes or six
+depending on where its edges fall. Six passes in 2,784 ticks reads as one per 464 when the boid
+is coming round every 533.
+
+Two consequences worth carrying:
+
+- **The seed-to-seed variation in the psyboid's own rate is not variation.** It is the fifth-or-
+  sixth-pass boundary. Divided by whole laps the cv is 0.0% solo and 0.8% in a flock.
+- **Every occupancy figure in the table above — flock 0.0581, psyboid 0.1125, others 0.0400 — is
+  windowed**, and so is high by about this much. That is the right measurement for *what a case
+  is drawn from*, and the wrong one to quote as an asymptotic rate. The 12% is measured for the
+  psyboid's own scoring; whether the others' 0.0400 carries the same bias is untested, since
+  their scoring has no reason to be periodic.
+
+**A window edge cuts a pass in half, and the halves must not be counted.** Seed 8's solo window
+opens seven ticks before the boid leaves a scoring region, and counting that fragment as a pass
+drags its mean pass from 54 to 44.6 and its period from 533 to 486 — which reads exactly like a
+second, shorter scoring loop that does not exist. `Passes` therefore discards any pass already
+under way when the window opens, and measures between the first and last pass *start*.
+
+**The variance that is real is herding**, and it is large: `occOthers` has a cv of 49.5% and
+`occFlock` 26.6% against the psyboid's 0.8%. That is the axis a psyboid algorithm should be judged
+on, and the only one where seeds genuinely differ.
+
 ## Impactful ticks
 
 `impactful` counts ticks where the psyboid's turn **after the collision veto** differed from what
@@ -179,3 +248,8 @@ parameter; see `PsyboidBits.Config`'s javadoc.
 `PLANS_40`, dabeone `609cffdb84be218c`: 40 plans in 5 s, all 40 score, all 40 beat their own
 control, mean 0.23242 per tick. Fidelity **248 turns asked, 248 crossed, 0 crossings nobody asked
 for, 40 of 40 plans matching branch for branch.** Usable window 2,739 ticks per plan.
+
+**Regenerated 2026-09-05 and byte-identical to the previous build** apart from the timestamp
+comment, which is the reproducibility check the addressing exists to make possible. Against the
+scoring floor: every psyboid within 2% of what it scores alone, and the two parked plans sitting
+on the floor itself.

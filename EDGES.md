@@ -3,6 +3,10 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
+**Status:** 2026-09-05. Structure is physics-independent and stands; **figures are physics 2
+unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
+physics 3.
+
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
 definition exactly, then everything derived from it.
@@ -246,6 +250,13 @@ Dabeone has exactly three from edge 4, enumerated by `ThreeBoidPhase.loops`:
 The two exit loops agreeing to **0.11 ticks** is a free correctness check of the same kind as
 inverse edge pairs: nothing in the clock's fit knows they are near-mirrors.
 
+**A lap flown is 533 ticks against the clock's 528.30.** A psyboid alone on the map goes round
+`[4, 2, 1, 5, 8]` in exactly 533 ticks and scores on exactly 54 of them, identically in all 40
+seeds of `PLANS_40` — `SimTest.scoringFloor`, and `CORPUS.md`. The 0.9% disagreement with the
+clock sits inside the clock's own 1.65% `sd/mean`, so this is **a third independent check on the
+metric** rather than a defect in it: nothing in the clock's gradient fit knows how long a lap
+takes in ticks.
+
 **Edge 6 lies on no simple loop**, which is correct and useful — it is reachable only during
 warmup, and anything keyed on loops drops it without needing to special-case it.
 
@@ -368,6 +379,7 @@ Ingest `609cffdb84be218c`, 379×407, turning radius 40, physics 2.
 | follow-through states | 20 on edge 2, 16 on edge 4, 18 on edge 5 |
 | route A lap | 278 ticks |
 | exit routes | 533–536 ticks, score 54 |
+| flown scoring lap | **exactly 533 ticks, exactly 54 points**, physics 3 |
 | reachable pairs | 213,423,450 (1.15%), bit-identical from 5 seeds |
 | psyboid reaches | 100% of live states; the boid reaches 79.86% |
 

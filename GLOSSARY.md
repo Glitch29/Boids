@@ -158,6 +158,24 @@ override count: an override the map refuses, or one the flock would have obeyed 
 nothing and changes nothing. The second axis of the Pareto frontier a psyboid algorithm is judged
 on, the first being flock occupancy.
 
+**scoring pass** — one maximal run of consecutive ticks a boid spends in a scoring region. A
+rate factors into how often a boid comes round and how long it stays, and those move
+independently, so a pass is the unit to measure rather than the rate. **On dabeone a solo
+psyboid's pass is 54 ticks and its period is 533, in every seed and to the tick.**
+
+**scoring floor** — the score per tick of **one psyboid alone on the map**, and the lower bound a
+corpus's scoring rate should sit on: a psyboid in a flock can always fall back on flying the
+scoring loop itself, so a plan may be worse at herding but not worse than a boid with nothing to
+herd. `SimTest.scoringFloor`, per-seed detail in `SimTest.scoringLaps`. On dabeone it is
+`54 / 533 = 0.101313` per tick. See `CORPUS.md`.
+
+**settled rate** — a rate measured over **whole laps only**, first pass start to last, as against
+one measured over a window. **The two differ by more than they look.** A 2,739-tick window over a
+533-tick lap holds 5.14 laps and so catches either five passes or six; the windowed rate reads
+12% high and varies 4.6% across seeds where the settled rate varies not at all. Every occupancy
+figure in `CORPUS.md` is windowed, which is correct for what a case is drawn from and wrong to
+read as an asymptotic rate.
+
 **`map.png`** — the frozen map. **The only file physics may be computed from.**
 
 **`display.png`** — the same map with dead pixels painted as wall. **Rendering only.**
@@ -534,6 +552,7 @@ anything not listed.
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
 | psyboid corpus | `PsyboidCorpus` + `CorpusPreset` | `<behaviour>/psyboid/<preset>-<hash>/` |
+| scoring floor | `SimTest.scoringFloor`, per-seed detail in `SimTest.scoringLaps` | `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` |
 | proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |

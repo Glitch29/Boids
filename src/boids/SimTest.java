@@ -3626,6 +3626,313 @@ picks, never in what is available to it.
         return plus;
     }
 
+    /**
+     * The floor a corpus's scoring rate should sit on, and where its plans actually sit.
+     * <p>
+     * <b>The claim being tested.</b> A psyboid in a flock can always fall back on flying the
+     * scoring loop itself and ignoring everyone else, so one plan may be worse at <em>herding</em>
+     * than another but none should be worse than a boid with nothing to herd. That makes the
+     * score of <b>one psyboid alone on the map</b> a floor, and a corpus whose rates trail off
+     * below it is a corpus with something wrong rather than a corpus of hard seeds.
+     * <p>
+     * <b>Why the comparison is exactly paired.</b> {@link Boids2DEngine#init} draws boid 0 first
+     * and boid 0 is the psyboid, so a seed flown at flock size one starts the psyboid in the same
+     * place and heading as the same seed flown with the whole flock. Every row below is therefore
+     * one psyboid's timeline with and without company rather than two samples of a population —
+     * the difference between the two rates is the flock and nothing else.
+     * <p>
+     * <b>Passes, because a rate on its own does not say how it was earned.</b> A scoring pass is
+     * a maximal run of consecutive ticks in a scoring region, so a rate factors into how often
+     * the boid comes round and how long it stays. Those move independently — a flock can hold a
+     * boid in the region longer or knock it out early — and the rate alone cannot tell them
+     * apart.
+     */
+    public static void scoringFloor(PresetScenarioParameter preset, SolverFacts f,
+                                    CorpusPreset recipe, PsyboidCorpus.Corpus corpus)
+            throws IOException {
+        NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
+                Math.round(preset.turningRadius()));
+        PsyboidBits.Branches b = PsyboidBits.branches(map, f);
+        PsyboidBits.Config config = recipe.config();
+        ScenarioParameter alone = withFlockSize(preset, 1);
+
+        System.out.printf("%n=== %s @%s: the scoring floor, %s (%s) ===%n", preset.name(),
+                preset.ingest().hash(), recipe.name(), recipe.describes());
+        System.out.printf("%s%n", recipe.fingerprint());
+        System.out.printf("%n%4s  %9s %6s %5s %7s %9s  %9s %6s %5s %7s  %8s  %9s %9s%n",
+                "seed", "solo", "passes", "pass", "period", "settled", "psyboid", "passes",
+                "pass", "period", "psy/solo", "flock", "others");
+
+        List<double[]> rows = new ArrayList<>();
+        StringBuilder tsv = new StringBuilder("seed\tsolo\tsoloPasses\tsoloPass\tsoloPeriod"
+                + "\tsoloSettled\tsoloTicks\tsoloControl\tpsy\tpsyPasses\tpsyPass\tpsyPeriod"
+                + "\tpsySettled\tpsyTicks\tflock\tothers" + System.lineSeparator());
+        double control = 0;
+        for (PsyboidBits.Plan plan : corpus.plans()) {
+            PsyboidBits.Plan solo = PsyboidBits.search(alone, map, f, b, config, plan.seed());
+            Passes sp = passes(alone, solo, solo.psyboid());
+            Passes pp = passes(preset, plan, plan.psyboid());
+            double rate = solo.perTick(), psy = plan.steered().psyOccupancy();
+            control += solo.control();
+            System.out.printf("%4d  %9.5f %6d %5.1f %7.1f %9.5f  %9.5f %6d %5.1f %7.1f  %8.3f  "
+                            + "%9.5f %9.5f%n", plan.seed(), rate, sp.passes(), sp.perPass(),
+                    sp.period(), sp.settled(), psy, pp.passes(), pp.perPass(), pp.period(),
+                    rate <= 0 ? Double.NaN : psy / rate, plan.steered().occupancy(),
+                    plan.steered().othersOccupancy());
+            rows.add(new double[]{rate, psy, plan.steered().occupancy(),
+                    plan.steered().othersOccupancy(), plan.perTick(), sp.settled(),
+                    pp.settled(), sp.period(), pp.period(), sp.perPass(), pp.perPass(),
+                    pp.ticks()});
+            tsv.append(plan.seed()).append('\t').append(String.format("%.6f", rate))
+                    .append('\t').append(sp.passes())
+                    .append('\t').append(String.format("%.2f", sp.perPass()))
+                    .append('\t').append(String.format("%.2f", sp.period()))
+                    .append('\t').append(String.format("%.6f", sp.settled()))
+                    .append('\t').append(sp.ticks())
+                    .append('\t').append(String.format("%.6f", solo.control()))
+                    .append('\t').append(String.format("%.6f", psy))
+                    .append('\t').append(pp.passes())
+                    .append('\t').append(String.format("%.2f", pp.perPass()))
+                    .append('\t').append(String.format("%.2f", pp.period()))
+                    .append('\t').append(String.format("%.6f", pp.settled()))
+                    .append('\t').append(pp.ticks())
+                    .append('\t').append(String.format("%.6f", plan.steered().occupancy()))
+                    .append('\t').append(String.format("%.6f", plan.steered().othersOccupancy()))
+                    .append(System.lineSeparator());
+        }
+        if (rows.isEmpty()) return;
+
+        double[] solo = column(rows, 0), psy = column(rows, 1), flock = column(rows, 2);
+        double[] others = column(rows, 3), perTick = column(rows, 4);
+        double[] soloSettled = column(rows, 5), psySettled = column(rows, 6);
+        double[] soloPeriod = column(rows, 7), psyPeriod = column(rows, 8);
+        double[] soloPass = column(rows, 9), psyPass = column(rows, 10);
+        System.out.printf("%n%-14s %9s %9s %7s %9s %9s%n", "", "mean", "sd", "cv%", "min", "max");
+        summarise("solo", solo);
+        summarise("solo settled", soloSettled);
+        summarise("solo pass", soloPass);
+        summarise("solo period", soloPeriod);
+        summarise("psyboid", psy);
+        summarise("psy settled", psySettled);
+        summarise("psy pass", psyPass);
+        summarise("psy period", psyPeriod);
+        summarise("others", others);
+        summarise("flock", flock);
+
+        // The floor is the settled solo rate, not the windowed one. A window catching five laps
+        // or six is worth 5% either way, so quoting the windowed mean as a bound would put the
+        // bound itself inside the noise it is supposed to explain.
+        int n = corpus.plans().get(0).steered().n();
+        double floor = mean(soloSettled);
+        System.out.printf("%nunsteered, alone: %.5f per tick — every point a solo psyboid scores "
+                + "is override-caused%n", control / rows.size());
+        System.out.printf("floor: one psyboid alone flies %.1f points every %.1f ticks = %.6f "
+                        + "per tick, so a flock of %d floors at %.6f occupancy%n",
+                mean(soloPass), mean(soloPeriod), floor, n, floor / n);
+        System.out.printf("  the same window the corpus is measured over reads %.5f, %.1f%% high "
+                        + "— five laps or six in %,d ticks%n", mean(solo),
+                100 * (mean(solo) / floor - 1), (long) mean(column(rows, 11)));
+        System.out.printf("lowest plan: %.5f per tick, %.5f occupancy, %.3fx the floor%n",
+                min(perTick), min(flock), min(perTick) / floor);
+
+        double worst = Double.POSITIVE_INFINITY;
+        long worstSeed = -1;
+        for (int i = 0; i < rows.size(); i++) {
+            double r = psySettled[i] / soloSettled[i];
+            if (r < worst) { worst = r; worstSeed = corpus.plans().get(i).seed(); }
+        }
+        System.out.printf("the psyboid against its own solo run, settled: %.3fx mean, %.3fx "
+                        + "worst (seed %d), %.3fx best%n", mean(psySettled) / floor, worst,
+                worstSeed, max(psySettled) / floor);
+        System.out.printf("%s%n", worst >= 1
+                ? "no plan's psyboid falls below the floor it sets itself"
+                : String.format("the floor holds to within %.1f%%: the flock costs the psyboid "
+                        + "that much of its own scoring and no more", 100 * (1 - worst)));
+
+        Path file = behaviour(preset, f, flockingOf(preset)).corpus(recipe).at()
+                .resolve("floor.tsv");
+        Files.writeString(file, tsv.toString());
+        System.out.printf("wrote %s%n", file);
+    }
+
+    /**
+     * How a psyboid's score was earned: how many times it entered a scoring region, and how long
+     * it stayed each time.
+     *
+     * @param passes   visits that <em>began</em> inside the plan's usable window. A pass already
+     *                 under way when the window opens is not one, and is not counted
+     * @param points   scoring ticks in that window, which for one boid is exactly its score,
+     *                 and which does include any such fragment — this has to match the rate the
+     *                 corpus row reports
+     * @param ticks    the window's length, so a rate can be taken without asking elsewhere
+     * @param laps     whole laps seen: passes that both began and ended inside the window, which
+     *                 is one fewer than the number of pass <em>starts</em>
+     * @param lapPoints scored over those laps alone
+     * @param lapTicks  the span they took, first pass start to last pass start
+     */
+    private record Passes(int passes, long points, long ticks, int laps, long lapPoints,
+                          long lapTicks) {
+
+        /**
+         * Points per whole pass — how long a visit lasts, as against how often one happens.
+         * <p>
+         * <b>Whole passes only.</b> A window opening or closing part way through a visit clips
+         * it, and a mean over every run counts a 7-tick fragment against a 54-tick flight; seed
+         * 8's solo window opens inside a pass and reads 46.2 rather than 54 for exactly that
+         * reason. Everything here is measured between the first and last pass <em>start</em>,
+         * where every pass is one the boid flew end to end.
+         */
+        double perPass() { return laps == 0 ? 0 : lapPoints / (double) laps; }
+
+        /** Mean ticks between consecutive pass starts: how often the boid comes round. */
+        double period() { return laps == 0 ? 0 : lapTicks / (double) laps; }
+
+        /** Points per tick over the window. Agrees with the corpus row for a corpus plan. */
+        double rate() { return ticks == 0 ? 0 : points / (double) ticks; }
+
+        /**
+         * The rate an unbounded window would settle on: one whole pass per period.
+         * <p>
+         * <b>Not the same as {@link #rate()}, and the gap is not noise.</b> A window holding 5.1
+         * periods catches either five passes or six depending on where its edges fall, so a
+         * finite measurement is quantised and biased upward — six passes in 2,784 ticks reads as
+         * one per 464 when the boid is actually coming round every 533. This counts only whole
+         * laps over the time they took, so it is what the rate <em>means</em>.
+         */
+        double settled() { return lapTicks == 0 ? rate() : lapPoints / (double) lapTicks; }
+    }
+
+    /**
+     * One solo psyboid's scoring passes, lap by lap, with the route each one came round on.
+     * <p>
+     * The aggregate in {@link #scoringFloor} says the period is 533 ticks on most seeds and a
+     * little under on a few, which a lone boid — whose whole timeline is fixed by its start
+     * state and its own bits — has no business doing. This prints the individual laps instead of
+     * their mean, and names the edges the psyboid crossed between one pass and the next, because
+     * dabeone has two scoring loops and the interesting answer is that they are not the same
+     * length in ticks.
+     */
+    public static void scoringLaps(PresetScenarioParameter preset, SolverFacts f,
+                                   CorpusPreset recipe, long seed) throws IOException {
+        NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
+                Math.round(preset.turningRadius()));
+        PsyboidBits.Branches b = PsyboidBits.branches(map, f);
+        ScenarioParameter alone = withFlockSize(preset, 1);
+        PsyboidBits.Plan plan = PsyboidBits.search(alone, map, f, b, recipe.config(), seed);
+
+        System.out.printf("%n=== %s @%s: solo laps, seed %d ===%n", preset.name(),
+                preset.ingest().hash(), seed);
+        System.out.printf("%s per tick over %d usable ticks%n", String.format("%.5f",
+                plan.perTick()), plan.usable());
+
+        Boids2DEngine engine = new Boids2DEngine(alone);
+        Sim.State s = engine.init(seed);
+        for (int t = 0; t < recipe.config().warm(); t++) s = engine.tick(s);
+        s = withOverrides(s, plan.overrides());
+        while (s.tick < plan.usableFrom()) s = engine.tick(s);
+
+        int p = plan.psyboid();
+        long was = s.boidScore[p], start = -1, previous = -1;
+        boolean scoring = false;
+        StringBuilder route = new StringBuilder();
+        int edge = f.edgeAt(s.x[p], s.y[p], s.h[p]);
+        System.out.printf("%n%8s %7s %7s   %s%n", "start", "length", "gap", "edges since the "
+                + "last pass");
+        while (s.tick < plan.usableTo()) {
+            s = engine.tick(s);
+            int now = f.edgeAt(s.x[p], s.y[p], s.h[p]);
+            if (now != edge && now >= 0) {
+                route.append(route.isEmpty() ? "" : " ").append(now);
+                edge = now;
+            }
+            boolean on = s.boidScore[p] > was;
+            if (on && !scoring) {
+                start = s.tick;
+            } else if (!on && scoring) {
+                System.out.printf("%8d %7d %7s   %s%n", start, s.tick - start,
+                        previous < 0 ? "-" : String.valueOf(start - previous), route);
+                previous = start;
+                route.setLength(0);
+            }
+            scoring = on;
+            was = s.boidScore[p];
+        }
+    }
+
+    /**
+     * Replays a plan and takes the psyboid's scoring apart into visits.
+     * <p>
+     * Flown from the plan's own overrides over exactly the window it declares usable, so the
+     * rate this implies is the one the corpus row reports rather than a differently-measured
+     * neighbour of it.
+     */
+    private static Passes passes(ScenarioParameter sp, PsyboidBits.Plan plan, int psyboid)
+            throws IOException {
+        Boids2DEngine engine = new Boids2DEngine(sp);
+        Sim.State s = engine.init(plan.seed());
+        for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+        s = withOverrides(s, plan.overrides());
+        while (s.tick < plan.usableFrom()) s = engine.tick(s);
+
+        long base = s.boidScore[psyboid], was = base, from = s.tick;
+        int visits = 0;
+        long firstStart = -1, lastStart = -1, atFirst = 0, atLast = 0;
+        // True, not false: a boid already inside the region when the window opens is part way
+        // through a pass that began before anything here could see it, and counting that as a
+        // start puts a fragment where a flown pass should be. Seed 8's solo window opens seven
+        // ticks before the boid leaves, and read the other way that fragment drags the mean
+        // pass from 54 to 44.6 and the period from 533 to 486. Starting true discards it.
+        boolean scoring = true;
+        while (s.tick < plan.usableTo()) {
+            s = engine.tick(s);
+            boolean now = s.boidScore[psyboid] > was;
+            if (now && !scoring) {
+                visits++;
+                lastStart = s.tick;
+                // The point counter one tick before the pass began, so a span between two
+                // starts carries exactly the passes flown inside it and no part of either end.
+                atLast = was;
+                if (firstStart < 0) { firstStart = s.tick; atFirst = was; }
+            }
+            scoring = now;
+            was = s.boidScore[psyboid];
+        }
+        return new Passes(visits, was - base, s.tick - from, Math.max(0, visits - 1),
+                atLast - atFirst, Math.max(0, lastStart - firstStart));
+    }
+
+    private static double[] column(List<double[]> rows, int i) {
+        double[] out = new double[rows.size()];
+        for (int r = 0; r < rows.size(); r++) out[r] = rows.get(r)[i];
+        return out;
+    }
+
+    private static double mean(double[] v) {
+        double t = 0;
+        for (double x : v) t += x;
+        return v.length == 0 ? Double.NaN : t / v.length;
+    }
+
+    private static double min(double[] v) {
+        double m = Double.POSITIVE_INFINITY;
+        for (double x : v) m = Math.min(m, x);
+        return m;
+    }
+
+    private static double max(double[] v) {
+        double m = Double.NEGATIVE_INFINITY;
+        for (double x : v) m = Math.max(m, x);
+        return m;
+    }
+
+    private static void summarise(String what, double[] v) {
+        double m = mean(v), var = 0;
+        for (double x : v) var += (x - m) * (x - m);
+        double sd = v.length < 2 ? 0 : Math.sqrt(var / (v.length - 1));
+        System.out.printf("%-10s %9.5f %9.5f %7.1f %9.5f %9.5f%n", what, m, sd,
+                m == 0 ? Double.NaN : 100 * sd / m, min(v), max(v));
+    }
+
     public static void main(String[] args) throws IOException {
         // A smoke test of the tiered layout: ingest the map, build the structure tier, build the
         // behaviour tier on top of it, and check that what the simulation flies is what the
@@ -3644,25 +3951,15 @@ picks, never in what is available to it.
         System.out.printf("ingest    %s%nstructure %s%nbehaviour %s%n", p.ingest().dir(),
                 structure.dir(), behaviour.dir());
 
-        Labelling lab = label(p, false, 202, 174, 191, -1);
-        if (!AggregationSurvey.checkClosedForm(lab.map(), lab.live(), lab.liveCount(), f,
-                p.turningRadius(), 11, 4000, Aggregation.SIMULATION)) {
-            throw new IllegalStateException("the closed form is not what the simulation flies");
-        }
-        AggregationSurvey.run(lab.map(), lab.live(), lab.liveCount(), f, p.turningRadius(), 1,
-                40_000);
-
         SolverFacts facts = SolverStore.prepare(p, gate, SCHEME, CHAIN, f);
 
-        // The smoke test: a small corpus, flown and replayed, under the addressing that now
-        // names its recipe. Three seeds says nothing about the map; it says the pipeline is
-        // intact, which is the whole question after a physics change.
-        PsyboidCorpus.build(p, facts, CorpusPreset.SMOKE);
-        Derived.Corpus corpus = behaviour(p, facts, f).corpus(CorpusPreset.SMOKE);
-        List<String> labels = PsyboidCorpus.labels(corpus);
-        System.out.printf("%nread back %d labels from %s%n", labels.size(), corpus);
-
-        PsyboidCorpus.build(p, facts, CorpusPreset.PLANS_40);
+        // Generate the corpus, then ask whether it scores well: consistently across seeds, and
+        // down to a floor that is the score of one psyboid with nothing to herd.
+        CorpusPreset recipe = CorpusPreset.PLANS_40;
+        PsyboidCorpus.Corpus corpus = PsyboidCorpus.build(p, facts, recipe);
+        scoringFloor(p, facts, recipe, corpus);
+        scoringLaps(p, facts, recipe, 0);
+        scoringLaps(p, facts, recipe, 8);
     }
 
     private static ScenarioParameter withFlockSize(ScenarioParameter base, int boids) {

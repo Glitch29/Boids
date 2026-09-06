@@ -6,7 +6,7 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-04, physics 3. Figures taken under physics 2 are marked as such. This file is
+**Status:** 2026-09-05, physics 3. Figures taken under physics 2 are marked as such. This file is
 also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
@@ -553,11 +553,51 @@ well enough to be useful and is **map-independent by construction**.
 
 ---
 
+## 9a. A psyboid's own score is a map constant, not a scenario fact
+
+Measured 2026-09-05 on dabeone, physics 3, and the sharpest structural number the project has.
+
+**A psyboid alone on the map scores 54 points every 533 ticks — 0.101313 per tick — with a
+standard deviation of zero across forty seeds.** It flies one scoring loop, over and over, and
+the loop's length and its scoring stretch are properties of the map. Left unsteered and alone it
+scores *nothing*: the unsteered cycle never touches a scoring region, so every point is
+override-caused.
+
+**Put the flock back and that barely moves: 0.998x on average, 0.980x at worst.** The boids being
+herded cost the psyboid under 2% of its own scoring, and occasionally pay it 1.6% back by holding
+it in the region an extra tick.
+
+Two things follow, and both are about where the information is.
+
+- **What the psyboid scores says almost nothing about a scenario.** It is nearly the same number
+  in every seed, by construction. **What the *others* score says everything** — that quantity has
+  a 49.5% coefficient of variation where the psyboid's has 0.8%, and its control is exactly zero,
+  so all of it is psyboid-caused. Any measure that sums the flock's score buries a 50%-varying
+  signal under a constant four times its size.
+- **A floor exists and can be computed rather than observed.** A psyboid can always ignore the
+  flock and fly the loop, so no plan should score below the solo rate. That makes "is this corpus
+  healthy" a question with a numeric answer instead of a judgement, and it is cheap: the same
+  search, the same seed, flock size one.
+
+> **Beware measuring a periodic rate over a window.** The corpus window is 2,739 ticks against a
+> 533-tick lap, so it holds 5.14 laps and catches five passes or six depending where its edges
+> fall. That reads 12% high, and gives the *solo* psyboid — whose behaviour is identical in every
+> seed — a 4.6% spread across seeds that is entirely an artifact. Count whole periods, and
+> discard any period the window cut in half: a seed whose window opened seven ticks before the
+> boid left a scoring region reported a period of 486 rather than 533, which looks exactly like
+> the discovery of a second, shorter loop.
+
+---
+
 ## 10. Method notes that repeatedly paid off
 
 - **Cache expensive results content-addressed, and put the *code version* in the key.** A
   metric store keyed only on inputs silently returned answers from the old solver after a bug
   fix, producing bit-identical wrong numbers. That cost a full wrong conclusion.
+- **Make the control an exactly paired one where the seeding lets you.** Boid 0 is drawn first
+  and boid 0 is the psyboid, so the same seed at flock size one starts it in the same place: the
+  difference between the two runs is the flock and nothing else. A comparison that costs one
+  line of plumbing beats a population of samples that needs statistics.
 - **A control that isolates one variable is worth more than the experiment.** Running the
   lifted weighting at zero momentum revealed that the entire gain was the lifting, not the
   momentum — and that the measured marginals contributed nothing at all.

@@ -10,13 +10,13 @@ Worked throughout on **dabeone**: 379×407 px, turning radius 40, ingest hash
 Nothing here is wired into a single entry point — steps are invoked from a driver class in the
 package. Making that unnecessary is one of this era's landmark goals.
 
-**Status:** 2026-09-04, physics 3. **Every path below moved**: derived output is addressed by
+**Status:** 2026-09-05, physics 3. **Every path below moved**: derived output is addressed by
 the inputs it depends on, in a structure tier and a behaviour tier under the ingest — see
 `README.md`'s artifact index and `ROADMAP.md` §0c. Entry points take a `Derived.Structure` or
 `Derived.Behaviour`, which `SimTest.structure` and `SimTest.behaviour` build from the gate and the
 constants a call site already has. Steps 1-10 are otherwise current. **Step 11 was rewritten** on 2026-08-29:
 `ExitAudit` is now table lookup over `CriticalEnvelope` and the invocation below is out of date,
-though the plumbing it describes is not. Steps 12-17 were added 2026-08-28 to 30.
+though the plumbing it describes is not. Steps 12-17 were added 2026-08-28 to 30; step 13a on 2026-09-05.
 
 **Terminology.** This file writes *tick* in places where it means **tau**, a state's position
 along its own edge. Canonical now: **tau** for position, **tick** for simulation time.
@@ -310,6 +310,35 @@ boid accounts for everything the arrangement demands.
 
 `report` prints each clue's verdict per boid, with the edge each boid is on and a `*` on edges
 unsteered travel does not keep a boid on — which is how you see *which* clue did the excluding.
+
+## 13a. Generate a corpus, and check that it scores
+
+```java
+CorpusPreset recipe = CorpusPreset.PLANS_40;
+PsyboidCorpus.Corpus corpus = PsyboidCorpus.build(preset, facts, recipe);
+SimTest.scoringFloor(preset, facts, recipe, corpus);       // and scoringLaps for one seed
+```
+
+**Grading needs a corpus, and a corpus needs checking before anything is graded on it.** `build`
+searches every seed, verifies each plan by replaying it from its own label, and writes
+`<behaviour>/psyboid/<preset>-<hash>/plans.tsv`. Six seconds for forty seeds on dabeone.
+
+What to read off it, in order:
+
+1. **Every plan reproduced.** `build` throws otherwise; a corpus that does not replay would
+   corrupt everything downstream silently.
+2. **Fidelity is exact** — every turn asked for was crossed, nothing crossed unbid. 248 of 248
+   on dabeone, 40 of 40 plans matching branch for branch.
+3. **`scoringFloor` puts every plan against what its own psyboid scores alone.** On dabeone the
+   floor is 54 points every 533 ticks, `sd 0.00` across all forty seeds, and the corpus sits at
+   0.998x it. A plan well below its own solo rate is the signal that something is wrong with the
+   search, the warm-up or the window — not that the seed was hard.
+4. **Control should be zero, or explained.** Non-zero control is scoring the psyboid does not
+   account for.
+
+**Do not read a rate off the usable window without dividing by whole laps.** The window is 5.14
+laps long, so it catches five passes or six and reads about 12% high with a 4.6% spread that is
+pure quantisation. `CORPUS.md` has the treatment.
 
 ## 14. Grade the solver
 

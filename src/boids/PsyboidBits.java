@@ -215,8 +215,13 @@ public final class PsyboidBits {
      * <p>
      * Sequential rather than concurrent, and deliberately so: the whole point of searching bits
      * instead of override parameters is that the tree is now small enough not to need it.
+     * <p>
+     * <b>Takes a {@link ScenarioParameter} rather than a preset</b> so the same search can be run
+     * on a flock of one. That is the only sensible way to ask what a psyboid is worth by itself —
+     * the same algorithm, the same map, the same seed, and nothing to herd — and the answer is
+     * the floor a corpus's scoring rate should sit on. See {@code SimTest.scoringFloor}.
      */
-    public static Plan search(PresetScenarioParameter preset, NavMap map, SolverFacts f,
+    public static Plan search(ScenarioParameter preset, NavMap map, SolverFacts f,
                               Branches b, Config config, long seed) throws java.io.IOException {
         Boids2DEngine engine = new Boids2DEngine(preset);
         MovementLogic rules = new MovementLogic(preset.turningRadius());

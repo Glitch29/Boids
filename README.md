@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-05. **Physics 3** — see `ROADMAP.md` §0a-§0d. Verified against dabeone ingest
+**Status:** 2026-09-05. **Physics 3** — see `ROADMAP.md` §0a-§0e. Verified against dabeone ingest
 `609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
 figure without one is not reproducible and should not be trusted, and **figures taken under
 physics 2 are marked as such** rather than silently carried forward.
@@ -60,7 +60,8 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | two-boid reachability | 213,423,450 arrangements, bit-identical from 5 seeds | `TwoBoid` |
 | steerable arcs | **exactly three** on dabeone: `2→1`, `4→0`, `5→6` | `TwoBoid.boidEdgeMoves` |
 | leader windows | opening bands per arc; tightest `2→1` at leader edge 7, 0.2 ticks | `<ingest>/windows/` |
-| psyboid corpus | 47 plans, every row verified by replay | `<ingest>/psyboid/plans.tsv` |
+| psyboid corpus | 40 plans, every row verified by replay, regenerates byte-identical | `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` |
+| the scoring floor | a solo psyboid scores 54 points every 533 ticks, `sd 0.00` over 40 seeds | `<preset>-<hash>/floor.tsv` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -168,7 +169,7 @@ settings that produced it). See `CORPUS.md`.
 `StateSetRender` (state sets projected to `(x, y)`, several to a sheet) ·
 `SceneRender` · `TwoBoidRender` · `TwoBoidRouteSheet`.
 
-**Driver** — `SimTest`, 2,573 lines. Holds every entry point below *and* the whole
+**Driver** — `SimTest`, 3,974 lines. Holds every entry point below *and* the whole
 decomposition algorithm. Splitting the algorithm out is an open item in `ROADMAP.md`.
 
 ## Entry points
@@ -193,6 +194,8 @@ ways → 6 edges.
 | `census` | which windows the audit actually sees, and how often |
 | `solve` | grade the solver on synthetic overrides |
 | `graded` | grade the solver on the plan corpus |
+| `scoringFloor` | what one psyboid scores alone, and every plan against it. Writes `floor.tsv` |
+| `scoringLaps` | one solo seed's passes lap by lap, with the route each came round on |
 | `solverInvariants` | assert what the solver must do with no windows |
 | `envelope` | build one arc's critical-envelope table and report it |
 | `chains` | how far a history walks back inside an edge, and by what |
@@ -262,6 +265,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `<behaviour>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
 | `<behaviour>/audit/exits_*.tsv` | `ExitAudit` | every classified exit |
 | `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact; the recipe is in the path. See `CORPUS.md` |
+| `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` | `SimTest.scoringFloor` | every plan's scoring rate against what its psyboid scores alone |
 | `<behaviour>/psyboid/<preset>-<hash>/meta.txt` | `Derived` | which recipe, and its every setting |
 | `<behaviour>/solver/facts.bin` | `SolverStore` | everything a solver may know |
 | **loose renders** | | **gitignored, regenerable** |

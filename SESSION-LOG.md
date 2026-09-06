@@ -11,6 +11,80 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-05 (evening) — the corpus regenerated, and its scoring floor found and confirmed
+
+Asked to generate a corpus for dabeone and check that it scores well, against a stated
+expectation: consistent across seeds, with a clearly defined lower bound equal to the score per
+tick of a single psyboid simulation. **The expectation is right, and the bound turned out to be
+exact rather than approximate.**
+
+**The corpus regenerates byte-identical.** `PLANS_40` rebuilt under physics 3: 40 plans in 6 s,
+all 40 score, all 40 beat their own control, mean 0.23242 per tick, fidelity 248 of 248 turns
+crossed with 0 unbid, 40 of 40 plans matching branch for branch. Diffed against the copy on disk —
+identical apart from the timestamp comment. That is the check the recipe addressing was built to
+make possible, and it had not been run before.
+
+**Built `SimTest.scoringFloor`** (+ `SimTest.scoringLaps` for one seed at a time), writing
+`floor.tsv` beside `plans.tsv`. The one code change it needed was widening `PsyboidBits.search` to
+take a `ScenarioParameter` rather than a `PresetScenarioParameter`, so the same search can be flown
+on a flock of one.
+
+**The comparison is exactly paired**, which is what makes the numbers worth anything:
+`Boids2DEngine.init` draws boid 0 first and boid 0 is the psyboid, so a seed at flock size one
+starts the psyboid in the same place and heading as the same seed with the whole flock. Each row
+is one timeline with and without company.
+
+**The floor, dabeone `609cffdb84be218c`:**
+
+| | |
+| --- | --- |
+| scoring pass | **54 ticks**, sd **0.00** over 40 seeds |
+| period | **533 ticks**, sd **0.00** |
+| solo rate | **54 / 533 = 0.101313** per tick |
+| unsteered, alone | **0.000000** |
+
+Forty seeds, forty identical numbers. The lone psyboid flies `4 2 1 5 8` and scores on the same 54
+ticks of it every lap. Against the clock's 528.30 for that loop this is 0.9% out, inside the
+clock's own 1.65% `sd/mean` — a third independent check on the metric.
+
+**The corpus respects it.** Psyboid settled rate 0.10113 ± 0.00081 (cv **0.8%**), **0.998x the
+solo rate on average and 0.980x at worst**, so the flock costs a psyboid under 2% of its own
+scoring. Lowest whole plan 0.10019 per tick, 0.989x the floor; lowest flock occupancy 0.02505
+against a floor of 0.025328. Both are the two parked plans.
+
+**Correction to how every corpus occupancy figure should be read.** The usable window is 2,739
+ticks against a 533-tick lap — 5.14 laps — so it catches five passes or six depending where its
+edges fall. Measured that way the *solo* psyboid, whose behaviour is identical in every seed,
+reads 0.11350 with a **4.6% cv**. So the seed-to-seed spread in the psyboid's own rate is not
+variance, it is the fifth-or-sixth-pass boundary, and **flock 0.0581 / psyboid 0.1125 / others
+0.0400 are all windowed and about 12% high as asymptotic rates.** They remain the right numbers
+for what a case is drawn from. Whether the others' 0.0400 carries the same bias is untested,
+since their scoring has no reason to be periodic.
+
+**One measurement bug found and fixed on the way, which is worth recording because it produced a
+plausible false finding.** Counting a scoring run already under way when the window opens as a
+pass gave seed 8 a mean pass of 44.6 and a period of 486 against everyone else's 54 and 533 — and
+seven seeds showed the same, which read exactly like the discovery of a second, shorter scoring
+loop. `scoringLaps` on that one seed showed the truth in one line: its window opens seven ticks
+before the boid leaves a scoring region. `Passes` now discards any pass in progress at the window
+edge and measures between the first and last pass *start*; the seven anomalies went to zero.
+
+**The variance that is real is herding**, and it is large: `occOthers` cv 49.5% and `occFlock`
+26.6% against the psyboid's 0.8%, on a control of exactly zero. So a total-score measure buries a
+50%-varying signal under a constant four times its size — which is the argument for the psyboid /
+others split, made quantitative.
+
+**Docs.** `CORPUS.md` gains "The scoring floor" and is canonical for it. `GLOSSARY.md` gains
+scoring pass, scoring floor and settled rate, plus the analysis table row. `EDGES.md` records the
+flown 533/54 lap in §6 and §9 and gains the `**Status:**` line it was missing. `HINTS.md` gains
+§9a. `PIPELINE.md` gains step 13a. `README.md` and `ROADMAP.md` §0e updated.
+
+**Open.** The settled-versus-windowed distinction is not applied to the *others'* occupancy, and
+`PsyboidBits.WARM` is still 5,000 with the two rationales disagreeing by 5x — untouched, and still
+the next real piece of corpus work.
+
+---
+
 ## 2026-09-05 — corpus addressing built, and a corpus smoke test under physics 3
 
 Finished the one thing §0d had specified and not built, wrote `CORPUS.md`, and ran the corpus end

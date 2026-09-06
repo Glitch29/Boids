@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-310 prompts across 9 sessions.
+311 prompts across 9 sessions.
 
 ---
 
@@ -9622,7 +9622,7 @@ A couple examples that I'll probably write after the file is set up are "When tr
 
 ## Session 08 - 2026-08-30
 
-*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 19 prompts.*
+*Log `3ca846d3-00f2-4288-b395-43243acddab7`, 20 prompts.*
 
 ### 1
 
@@ -9860,6 +9860,54 @@ Beyond that, not much needs to be immediately regenerated. Just figure out a goo
 The only comment that I'll make is that it we've had problems in previous sessions with under-labeled corpuses. I think the raw data in corpuses is just a series of seeds and overrides. But having additional info about them could be useful. We don't need to lock in on that this turn, as I'm not asking you to generate any corpuses. But it's worth considering whether it makes sense to use the same file structure for them as we do with the ingests. It might also make sense to use a class of presets for corpus generation to facilitate that.
 
 I'm off for quite a while, if not the entire night. So you have as much time as you need to set things up.
+
+### 20
+
+I agree with the content of your last response. I don't want to try to pick out what's been implemented from what was proposed for fear of accidentally dropping something. But go forward with anything that still needs doing.
+
+I'm going to also paste in some ideas about corpus generation this turn, because some of it may be relevant to decision-making. This can also go into a markdown. Feel free to reorder, clean up, make additions, or consolidate it with existing materials.
+
+We're approaching the end of context, so I'd like to wrap up this session with a corpus smoke test. If nothing's on fire, we can prepare to go next.
+
+Corpuses
+
+Psyboid compute can be expensive. Corpuses are a way of running a psyboid algorithm once on a set of seeds, and being able to replay the seeds cheaply. This is done through deterministic physics, and recording all psyboid overrides via the label of the canonical state.
+
+Seeds
+* Corpuses should default to using seeds 0 through N-1, unless augmenting an already-existing sample or generating a corpus for a packet.
+
+Warmup
+* Warmups exist to allow boids to flush out of spaces that they would not typically occupy.
+* The theoretically perfect warmup length would be "the minimal number of ticks such that no inferences can be made about any single boid's spawn location."
+* It's not necessary, and in fact is undesired, to allow boids time to settle into a perfectly stable orbit. This has a result of homogenizing all the seeds, and fails to account for slightly unstable multi-boid configurations that we'd like to include.
+* The total length of all edges divided by speed can be taken to be a prima facia reasonable warmup period.
+* Decay to equilibrium of edge occupancy over time is likely a better proxy for warmup completion than score over time.
+
+Canonical states
+* A state becomes canonical when all other states for that seed at the same tick are pruned. Only canonical overrides become part of the corpus.
+
+Control
+* Seed-specific control scores should be recorded. But they are only useful for diagnosing warmup behavior. They aren't a suitable benchmark for measuring excess score.
+* Mean control score over time is a useful metric for probing warmup behavior. It does not need to decay completely to its steady state, but it should be flagged if it hasn't decayed to be substantially less than excess score.
+* Excess score is measured against the mean control score.
+
+Score
+* Score should be stored as an integer. For the purpose of most analysis it should be measured as occupancy rate. In other words, the average percent of the flock that's in a score zone at any moment.
+* Flock occupancy rate, psyboid occupancy rate, non-psyboid occupancy rate, control occupancy rate are the four most useful metrics when evaluating psyboid behavior and effectiveness.
+* Flock occupancy rate may increase over time for some maps, as psyboids lock into particularly high-scoring stable configurations. Whether this is happening should be checked for. It's not bad, but it does mean that later ticks in may be more homogenous across seeds.
+* The number of ticks that psyboid movement (post physics veto) differs from boid movement should be recorded.
+
+Length
+* Decay into hyper-stable patterns is map-dependent and psyboid-activity dependent. But it may be an upper-bound on the length of useful data-gathering in any particular seed.
+
+Midstream data
+* While it's good to record most corpus data, the midstream data will start after the psyboid has had a chance to be impactful. It ends with the last canonical state.
+* This is a similar criteria to the warmup period.
+
+Psyboid algorithms
+* A psyboid algorithm that's not on the Pareto frontier of (flock occupancy rate, -impactful override ticks) is not useful.
+* There will likely be a natural exchange rate between the two that will hint at a total ordering. If not, an appropriate tunable parameter may facilitate comparison.
+* The canonical psyboid is on the theoretical frontier. Any algorithms we create are an attempt to approximate that behavior.
 
 ---
 

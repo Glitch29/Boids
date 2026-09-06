@@ -919,6 +919,42 @@ than recording — see `CORPUS.md`.
 
 Full treatment, and the four figures, in `CORPUS.md`.
 
+## 0e. The corpus scoring floor — **confirmed**
+
+**Started and finished 2026-09-05.** A corpus that scores well should score *predictably*: much
+the same rate from seed to seed, and where it is lowest it should bottom out at something with a
+name rather than trailing off. The claim under test, the user's:
+
+> the scoring rate has a clearly defined lower bound, and that bound is the score per tick of a
+> **single psyboid simulation** — one boid alone on the map, with nothing to herd.
+
+The reasoning: a psyboid in a flock can always fall back on flying the scoring loop itself, so a
+plan can be worse at herding but not worse than a lone boid. The floor is then what the psyboid
+earns on its own account, and the spread above it is herding.
+
+**Built: `SimTest.scoringFloor`**, with `SimTest.scoringLaps` for one seed at a time, writing
+`floor.tsv` beside `plans.tsv`. `PsyboidBits.search` now takes a `ScenarioParameter` rather than a
+preset, which is the whole change needed to fly the same search on a flock of one.
+
+**The claim holds, and the bound is exact rather than approximate.** A solo psyboid on dabeone
+scores **54 points every 533 ticks — 0.101313 per tick — with a standard deviation of zero across
+all 40 seeds.** Unsteered alone it scores nothing at all. In a flock the psyboid runs at 0.998x
+that, 0.980x at worst, so **the flock costs a psyboid under 2% of its own scoring**; the two
+parked plans sit on the floor and everything above it is herding. Full treatment in `CORPUS.md`.
+
+> ⚠ **The 5% seed-to-seed spread in the corpus figures is the measuring window, not the flock.**
+> The usable window is 2,739 ticks against a 533-tick lap — 5.14 laps — so it catches five passes
+> or six depending on where its edges fall. Measured that way the *solo* psyboid, whose behaviour
+> is identical in every seed, reads 0.11350 with a 4.6% cv. **Every occupancy figure recorded for
+> `PLANS_40` is windowed and about 12% high as an asymptotic rate**, which is the right number for
+> what a case is drawn from and the wrong one to quote as a rate. Whether the *others*' 0.0400
+> carries the same bias is untested.
+
+**Not chased, and worth knowing.** The comparison is exactly paired — `Boids2DEngine.init` draws
+boid 0 first and boid 0 is the psyboid, so a seed at flock size one starts the psyboid where the
+same seed with the flock does. That makes flock size a controlled variable for anything else worth
+asking about a plan, and nothing else uses it yet.
+
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
 Specified 2026-08-28, **built 2026-08-29** as `CriticalEnvelope`, driven by `SimTest.envelope`,
