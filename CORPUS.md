@@ -74,8 +74,75 @@ length in ticks. On dabeone that is **940 ticks** (158.14 + 158.62 + 100.59 + 10
 > **0.0000** — identically zero. Control is supposed to be the warm-up diagnostic, and at this
 > warm-up it carries no information at all, because there is nothing left to decay.
 >
-> Not changed. **Edge-occupancy decay is the better proxy** — how long until the distribution of
-> boids over edges stops moving — and measuring it is the thing to do before touching WARM.
+> **Edge-occupancy decay has now been measured, and it says 500.** See below. `WARM` is still
+> 5,000 — the two criteria disagree by ten-fold and the choice between them is a specification
+> question, not a measurement one.
+
+### Edge-occupancy decay, measured
+
+`EdgeOccupancy`, 2,000 psyboid-free seeds on dabeone, 50-tick windows, long run `[40,000,
+60,000)`. The quantity is the distance between the cross-seed mean occupancy over edges in each
+window and the long-run occupancy, against **sigma = 0.477**, the spread of *one* seed's window
+about that long run.
+
+The long run is the same to four decimals under every spawn rule tried — `2:0.3556 4:0.3285
+7:0.3156`, everything else at or below `0.0002` — with a half-to-half drift of `0.00005`. Two
+things follow: the chain is ergodic, and 99.9% of a warm flock's time is on the three stable
+edges. **Between-seed spread is 0.0138**, so a seed keeps nothing individual about where it
+started.
+
+| | UNIFORM (the simulation's rule) |
+| --- | --- |
+| within 1.0 sigma | tick 50 — immediately |
+| within 0.5 sigma | tick 350 |
+| within 0.1 sigma | **never** |
+| at its permanent plateau | **tick 500** |
+
+The envelope over 250-tick blocks: `0.430, 0.185, 0.120, 0.111`, and then flat — `0.117` at
+2,750, `0.109` at 19,000. **Everything a warm-up can do is done by tick 500**, and the ten-fold
+longer 5,000 buys a 6% reduction in a residual that is not going anywhere.
+
+### Why 0.1 sigma is unreachable: the flock's phase is conserved
+
+**A boid advances exactly one step per tick along a loop of fixed length, so its position along
+the route at tick `t` is its spawn position plus `t`.** The flock's distribution over phase is
+therefore carried, not mixed, and the mean occupancy at a given tick is *periodic* rather than
+convergent. Measured: the autocorrelation of edge 2's occupancy deviation is **0.99 at a lag of
+550 ticks — two stable cycles, `2 x 275.29` — still holding at tick 20,000**, which is 73 laps.
+
+A warm-up is a time shift, and a time shift cannot flatten a periodic function. What warm-up
+*does* fix is the part of the spawn that is not about phase: boids placed on the six edges a warm
+flock never occupies have to migrate onto the stable cycle, and that is the 0.430 falling to
+0.111. The residual decays on a time constant of order **2 x 10^5 ticks**, two orders of magnitude
+past any warm-up worth running.
+
+### A better spawn beats any warm-up
+
+Both alternatives place boids from stable+ rather than over the whole map. Neither needs warming.
+
+| rule | plateau | vs UNIFORM's plateau |
+| --- | --- | --- |
+| `UNIFORM` | 0.1098 | — |
+| `STABLE_PLUS` — uniform over the stable+ set | **0.1445** | **worse** |
+| `TAU_UNIFORM` — uniform by tau along the stable edges, matched into stable+ | **0.0793** | **28% better** |
+
+**`STABLE_PLUS` is worse than the rule it replaces, and permanently.** Stable+ is a *set*, not a
+measure: its states fall `2:9,284 4:3,874 7:6,819`, or `0.464 / 0.194 / 0.341`, against a long-run
+`0.356 / 0.328 / 0.316`. Edge 4 is under-sampled by 40%, and because phase is conserved that
+error is carried for the life of the run rather than washing out. Sampling a set uniformly is not
+sampling the route uniformly.
+
+**`TAU_UNIFORM` is below `UNIFORM`'s plateau from tick 0** and reaches its own within 10% by tick
+250. Its residual is not zero either: uniform-by-tau is not quite the stationary distribution,
+which sits at `0.356 / 0.328 / 0.316` against the length-proportional `0.365 / 0.341 / 0.294` —
+edge 7 carries 2 points more occupancy than its clock length asks for. **Spawning from the
+measured long-run occupancy** should beat all three, and has not been tried.
+
+**Rebasing tau across a vertex needs the edge's own zero, not `tickLo`.** An edge's observed tau
+overruns both its ends — dabeone's edge 2 runs `-16.10` to `101.70` against a length of `100.59` —
+because follow-through and arrival states sit on it before its start and after its end. Tau is
+already zero-based; `tickLo` is the fringe, and rebasing on it shifts each edge's frame by a
+different amount. That skewed `TAU_UNIFORM`'s spawn across the vertices until it was caught.
 
 ## Canonical states
 

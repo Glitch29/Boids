@@ -955,6 +955,73 @@ boid 0 first and boid 0 is the psyboid, so a seed at flock size one starts the p
 same seed with the flock does. That makes flock size a controlled variable for anything else worth
 asking about a plan, and nothing else uses it yet.
 
+## 0f. Edge-occupancy decay — **measured. `WARM` not changed; the two criteria disagree**
+
+**Started 2026-09-05.** `CORPUS.md` has flagged `PsyboidBits.WARM = 5,000` since it was written:
+it was chosen on a *settling* criterion, which the minimality argument says is the wrong question,
+and total edge length on dabeone is 940. The user's suspicion is **500 to 1,000**, and
+edge-occupancy decay is the proxy the doc already names as the one to measure.
+
+**The measurement.** Seeds flown with no psyboid; mean edge occupancy across seeds in 50-tick
+windows through tick 2,000, squared distance to the long-run occupancy, against the standard
+deviation of a single seed's window occupancy in the long-run regime. The crossing points at
+1.0σ, 0.5σ and 0.1σ are the candidate warm-ups.
+
+**And two spawn rules that may make the question go away**, both flown on the same seeds:
+
+- **`STABLE_PLUS`** — spawn uniformly from the stable+ set.
+- **`TAU_UNIFORM`** — per boid, draw `(edge, tau)` uniformly by tau along the stable edges, then
+  take a stable+ state on that edge or one adjacent to it whose tau, rebased into the chosen
+  edge's frame, matches.
+
+If a spawn rule starts the flock already at the long-run occupancy, the warm-up is there to
+correct a defect in the spawn rather than to model anything.
+
+**Built: `EdgeOccupancy`**, driven from `SimTest.main`, writing
+`<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv`. 2,000 seeds, ~25 s a rule. Full
+treatment and every figure in `CORPUS.md`.
+
+**The answer to the question as asked: 500.** The uniform spawn's bias is at its permanent
+plateau by tick 500 — envelope `0.430, 0.185, 0.120, 0.111` over the first four 250-tick blocks,
+then flat to tick 20,000. **`WARM = 5,000` buys a 6% reduction in a residual that is not going
+anywhere.** The user's 500–1,000 was right.
+
+**And a structural finding that reframes what a warm-up can do at all.** A boid advances one step
+per tick along a loop of fixed length, so its position at tick `t` is its spawn position plus `t`:
+**the flock's distribution over phase is conserved, not mixed.** The mean occupancy at a given
+tick is therefore periodic rather than convergent — autocorrelation **0.99 at a lag of two stable
+cycles, still holding after 73 laps** — and a warm-up, being a time shift, cannot flatten a
+periodic function. Warm-up fixes only the non-phase part of the spawn: getting boids off the six
+edges a warm flock never occupies.
+
+**The spawn rules.** `TAU_UNIFORM` plateaus at **0.0793**, below `UNIFORM`'s 0.1098 **from tick
+0** — a better spawn beats any warm-up. `STABLE_PLUS` plateaus at **0.1445**, *worse* than the
+rule it replaces, because stable+ is a set rather than a measure: `0.464 / 0.194 / 0.341` over the
+stable edges against a long-run `0.356 / 0.328 / 0.316`, and phase conservation makes that
+permanent.
+
+> ⚠ **`WARM` is not changed, because two criteria disagree by ten-fold and the choice between
+> them is the user's.** Edge occupancy says 500. Unsteered scoring says otherwise:
+> `PsyboidBits.WARM`'s javadoc records 18 of 40 seeds still scoring unsteered from tick 500
+> against 5 from tick 5,000, so dropping to 500 makes `occControl` non-zero for roughly half the
+> corpus — and the psyboid/others split in `CORPUS.md` rests on a control of exactly zero.
+>
+> These are not two measurements of one thing. **Warming until the flock stops scoring on its own
+> is warming until the flock stops steering itself off the stable cycle**, which is precisely the
+> homogenisation `CORPUS.md`'s minimality argument says to avoid — the slightly-unstable
+> multi-boid configurations that produce a self-steered exit are the interesting ones, and 5,000
+> ticks selects them out. That is also why control is identically `0.0000`.
+>
+> Changing `WARM` invalidates every corpus address, since it is in the `CorpusPreset`
+> fingerprint. **Three coherent options**, in preference order:
+>
+> 1. **Switch the spawn to `TAU_UNIFORM` and set `WARM` low.** Best on the occupancy metric from
+>    tick 0, and it makes the warm-up's job explicit rather than incidental.
+> 2. **Keep `UNIFORM`, set `WARM = 500`**, and accept a non-zero control — reporting excess over
+>    control rather than assuming control is zero.
+> 3. **Keep `WARM = 5,000`** and record that it is a *settling* choice made deliberately, so the
+>    minimality argument in `CORPUS.md` stops reading as an unmet obligation.
+
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
 Specified 2026-08-28, **built 2026-08-29** as `CriticalEnvelope`, driven by `SimTest.envelope`,

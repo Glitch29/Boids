@@ -340,6 +340,17 @@ What to read off it, in order:
 laps long, so it catches five passes or six and reads about 12% high with a 4.6% spread that is
 pure quantisation. `CORPUS.md` has the treatment.
 
+**The warm-up is a per-map number and wants measuring, not inheriting.**
+
+```java
+EdgeOccupancy.run(preset, facts, plus, behaviour, 2000, 50, 20_000, 5, 40_000, 60_000);
+```
+
+Flies psyboid-free seeds under each spawn rule and reports how fast the flock's distribution over
+edges forgets where it started. On dabeone the uniform spawn is done at **tick 500** and the rest
+is a permanent oscillation — a boid's phase is conserved, so a warm-up cannot mix it. `WARM` is
+still 5,000; `ROADMAP.md` §0f has the three options and why the choice is not a measurement.
+
 ## 14. Grade the solver
 
 ```java

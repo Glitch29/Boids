@@ -11,6 +11,84 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-05 (late) — edge-occupancy decay: 500 is enough, and phase is conserved
+
+Asked to sanity-check dropping `WARM` from 5,000 to 500–1,000 by measuring edge-occupancy decay,
+and to try two alternative spawn rules alongside. **500 is enough. The bigger finding is why no
+warm-up could ever do more.**
+
+**Built `EdgeOccupancy`** — a new class rather than more `SimTest` — with three `Spawn` rules,
+driven from `SimTest.main`, writing `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv`.
+2,000 psyboid-free seeds, 50-tick windows, curve to tick 20,000, long run `[40,000, 60,000)`.
+About 25 s a rule.
+
+**The long run is the same under all three rules to four decimals** — `2:0.3556 4:0.3285 7:0.3156`,
+everything else at or below `0.0002` — with a half-to-half drift of `0.00005`. That is an
+ergodicity check nothing asked for and it passed. Between-seed spread `0.0138` against a
+within-seed `0.477`, so a seed keeps nothing individual about where it started.
+
+**The answer as asked, `UNIFORM`:** within 1.0σ at tick 50, within 0.5σ at tick 350, **within 0.1σ
+never**. Envelope over 250-tick blocks `0.430, 0.185, 0.120, 0.111`, then flat — `0.117` at 2,750
+and `0.109` at 19,000. **The uniform spawn is at its permanent plateau by tick 500, and 5,000 buys
+a 6% reduction in a residual that is not going anywhere.**
+
+**Why 0.1σ is unreachable, and this is the finding.** A boid advances exactly one step per tick
+along a loop of fixed length, so its phase at tick `t` is its spawn phase plus `t` — **the flock's
+distribution over phase is carried, not mixed.** Mean occupancy at a given tick is therefore
+periodic, not convergent: autocorrelation of edge 2's deviation is **0.99 at lag 550 ticks = two
+stable cycles (2 x 275.29), still holding at tick 20,000**, which is 73 laps. A warm-up is a time
+shift and cannot flatten a periodic function. What it does fix is the non-phase part of the spawn
+— boids on the six edges a warm flock never occupies — and that is over at tick 500. The residual
+decays on a time constant of order 2 x 10^5 ticks.
+
+**The spawn rules, plateau values:** `UNIFORM` 0.1098, `STABLE_PLUS` **0.1445**, `TAU_UNIFORM`
+**0.0793**.
+
+- **`TAU_UNIFORM` is below `UNIFORM`'s plateau from tick 0** and reaches its own within 10% by
+  tick 250. A better spawn beats any warm-up.
+- **`STABLE_PLUS` is worse than the rule it replaces, permanently.** Stable+ is a set, not a
+  measure: `0.464 / 0.194 / 0.341` over the stable edges against a true `0.356 / 0.328 / 0.316`,
+  so edge 4 is under-sampled by 40% — and phase conservation makes that error permanent instead
+  of transient. Worth knowing before anything else samples a state set uniformly.
+
+**Two measurement bugs found and fixed, both of which produced plausible wrong answers.**
+
+- **Rebasing tau on `tickLo` is wrong.** An edge's observed tau overruns both ends — edge 2 runs
+  `-16.10` to `101.70` against a length of `100.59` — because follow-through and arrival states
+  sit on it outside its span. Tau is already zero-based; subtracting `tickLo` shifts each edge's
+  frame by a different amount, which skewed `TAU_UNIFORM`'s spawn across the vertices.
+- **The raw distance curve does not decay to zero and never could.** A mean of N seeds sits at
+  `bias² + σ²/N` from what it estimates, so the curve decays to the noise floor and rattles there.
+  Subtracting the pedestal is what separates "the spawn is still showing" from "the measurement
+  ran out of seeds".
+
+**`PsyboidBits.WARM` is NOT changed, and this is deliberate.** Two criteria disagree ten-fold and
+choosing between them is a specification question. Edge occupancy says 500. Unsteered scoring says
+otherwise — `WARM`'s own javadoc records 18 of 40 seeds still scoring unsteered from tick 500
+against 5 from 5,000, so dropping to 500 makes `occControl` non-zero for about half the corpus, and
+the psyboid/others split rests on a control of exactly zero. **Warming until the flock stops
+scoring on its own is warming until it stops steering itself off the stable cycle**, which is
+exactly the homogenisation `CORPUS.md`'s minimality argument says to avoid. `ROADMAP.md` §0f lists
+three coherent options. Changing `WARM` also invalidates every corpus address, since it is in the
+`CorpusPreset` fingerprint.
+
+**Also corrected:** stable+ at quorum 5 is **20,008 states** (`2:9,284 4:3,874 7:6,819 8:31`) under
+physics 3, against the **19,861** recorded in `ROADMAP.md` — that figure was taken 2026-08-30,
+before physics 3 shipped, and stable+ depends on the aggregation through `expandByQuorum`. Noted,
+not silently overwritten.
+
+**Docs.** `CORPUS.md` gains three sections and is canonical for the warm-up question.
+`ROADMAP.md` §0f goes from in-flight to measured with the three options. `HINTS.md` gains §8a on
+phase conservation — the most general fact in the file. `GLOSSARY.md` gains phase, edge occupancy
+and spawn rule, plus the analysis-table row. `EDGES.md` §9 gains warm edge occupancy.
+`PIPELINE.md` step 13a gains the invocation. `README.md` updated.
+
+**Open.** Spawning from the measured long-run occupancy should beat all three rules and has not
+been tried. Neither `STABLE_PLUS` nor `TAU_UNIFORM` is wired into anything that generates a
+corpus — they exist to answer this question.
+
+---
+
 ## 2026-09-05 (evening) — the corpus regenerated, and its scoring floor found and confirmed
 
 Asked to generate a corpus for dabeone and check that it scores well, against a stated

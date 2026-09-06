@@ -380,6 +380,7 @@ Ingest `609cffdb84be218c`, 379×407, turning radius 40, physics 2.
 | route A lap | 278 ticks |
 | exit routes | 533–536 ticks, score 54 |
 | flown scoring lap | **exactly 533 ticks, exactly 54 points**, physics 3 |
+| warm edge occupancy | `2:0.3556 4:0.3285 7:0.3156`, everything else at or below `0.0002`, physics 3 |
 | reachable pairs | 213,423,450 (1.15%), bit-identical from 5 seeds |
 | psyboid reaches | 100% of live states; the boid reaches 79.86% |
 

@@ -553,6 +553,51 @@ well enough to be useful and is **map-independent by construction**.
 
 ---
 
+## 8a. Phase is conserved, so a flock never mixes — and a warm-up cannot make it
+
+Measured 2026-09-05 on dabeone, physics 3, 2,000 psyboid-free seeds. This is the most general
+fact in the file and it constrains anything that assumes a flock "settles".
+
+**A boid moves exactly one step per tick along a route of fixed length.** So how far round its
+loop it is at tick `t` — its **phase** — is its spawn phase plus `t`, and nothing in the dynamics
+redistributes that. Flocking jostles a boid a pixel at a time; it does not move it round the loop.
+The flock's distribution over phase is therefore *carried*, not mixed.
+
+**What that does to every convergence intuition.** The mean occupancy over edges at a given tick,
+averaged over thousands of seeds, does not converge to the long-run value — it **oscillates about
+it, at the lap period, indefinitely.** The autocorrelation of one edge's occupancy deviation is
+**0.99 at a lag of two lap lengths, still holding at tick 20,000**, which is 73 laps. The residual
+decays on a time constant of order **2 x 10^5 ticks**.
+
+So a warm-up cannot do what it looks like it is doing. **A warm-up is a time shift, and a time
+shift cannot flatten a periodic function.** What it removes is the part of a spawn that is not
+about phase: boids placed on the stretches of map a warm flock never occupies have to migrate onto
+the stable cycle, and on dabeone that is finished by **tick 500**. Everything after that is a
+plateau — ten times the warm-up buys a 6% reduction in it.
+
+**Three things that follow, and transfer.**
+
+- **Fix the spawn, not the warm-up.** A rule that places boids uniformly *along the route* starts
+  below what the uniform-over-the-map rule reaches after any amount of warming.
+- **A set is not a measure.** Sampling uniformly from a set of "states a flock reaches" was
+  *worse* than sampling the whole map, because the set's density along the route is a fact about
+  how it was constructed. On dabeone stable+ falls `0.464 / 0.194 / 0.341` over the three stable
+  edges against a true `0.356 / 0.328 / 0.316` — and phase conservation means that error is
+  permanent rather than transient.
+- **Averaging over seeds does not remove it.** Seeds share the oscillation because they share
+  tick 0, not because they share a start: the between-seed spread is 0.0138 against a
+  within-seed 0.477, so seeds genuinely forget where *they* began. It is the ensemble's phase
+  distribution that persists.
+
+> **Two scales, and the small one is the useful one.** A single seed's occupancy over a 50-tick
+> window sits 0.477 from the long-run value — four boids in fifty ticks is a tiny sample — while
+> the systematic bias being chased is 0.1 to 0.4. Compare a cross-seed mean's bias against
+> `sigma / sqrt(seeds)`, and subtract that pedestal: `E||mean - truth||^2 = bias^2 +
+> sigma^2 / seeds`, so the raw curve decays to the noise floor and stops, and only the corrected
+> one shows whether anything is still moving.
+
+---
+
 ## 9a. A psyboid's own score is a map constant, not a scenario fact
 
 Measured 2026-09-05 on dabeone, physics 3, and the sharpest structural number the project has.

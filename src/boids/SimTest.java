@@ -3953,14 +3953,26 @@ picks, never in what is available to it.
 
         SolverFacts facts = SolverStore.prepare(p, gate, SCHEME, CHAIN, f);
 
-        // Generate the corpus, then ask whether it scores well: consistently across seeds, and
-        // down to a floor that is the score of one psyboid with nothing to herd.
-        CorpusPreset recipe = CorpusPreset.PLANS_40;
-        PsyboidCorpus.Corpus corpus = PsyboidCorpus.build(p, facts, recipe);
-        scoringFloor(p, facts, recipe, corpus);
-        scoringLaps(p, facts, recipe, 0);
-        scoringLaps(p, facts, recipe, 8);
+        // How long a flock takes to forget where it was spawned, and whether a better spawn rule
+        // makes the warm-up unnecessary rather than shorter.
+        Labelling lab = label(p, false, 202, 174, 191, -1);
+        MapStates states = MapStates.of(lab.map(), f, lab.live(), lab.liveCount());
+        StateSet plus = states.stablePlus(QUORUM);
+        System.out.printf("stable+ at quorum %d: %,d states, %s%n", QUORUM, plus.size(),
+                MapStates.byEdge(plus, lab.edge(), facts.edges()));
+        EdgeOccupancy.run(p, facts, plus, behaviour, Integer.getInteger("seeds", 2000),
+                50, Integer.getInteger("through", 20_000), 5,
+                Integer.getInteger("longFrom", 40_000), Integer.getInteger("longTo", 60_000));
     }
+
+    /**
+     * The definitive stable+ quorum: four ticks of influencer positions, both ends included.
+     * <p>
+     * Named outright rather than derived from a ratio — see `ROADMAP.md` and
+     * {@link MapStates#shapeQuorum}, which computes the formula that was offered for it and
+     * disagrees.
+     */
+    static final int QUORUM = 5;
 
     private static ScenarioParameter withFlockSize(ScenarioParameter base, int boids) {
         return new ScenarioParameter() {

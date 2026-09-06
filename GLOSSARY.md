@@ -101,6 +101,24 @@ altering what any influence is.
 **control** — score a run accumulates with no psyboid. A case whose control is non-zero has
 scoring that the psyboid does not explain.
 
+**phase** — how far round its loop a boid is, in ticks. **Conserved:** a boid advances exactly one
+step per tick along a route of fixed length, so its phase at tick `t` is its spawn phase plus `t`,
+and the flock's distribution over phase is carried rather than mixed. Consequences everywhere —
+the mean edge occupancy at a given tick is *periodic* rather than convergent (autocorrelation 0.99
+at two lap lengths, after 73 laps), so **a warm-up, being a time shift, cannot flatten it.** What
+warm-up removes is the non-phase part of a spawn: boids sitting on edges a warm flock never
+occupies.
+
+**edge occupancy** — the fraction of boid-ticks spent on each edge. `EdgeOccupancy`. On dabeone a
+warm flock is `2:0.3556 4:0.3285 7:0.3156` with everything else at or below `0.0002` — 99.9% on
+the three stable edges, and **not** proportional to edge length, which would be
+`0.365 / 0.341 / 0.294`.
+
+**spawn rule** — where a flock is placed at tick 0. `EdgeOccupancy.Spawn`: `UNIFORM` is the
+simulation's own (uniform over live states), `STABLE_PLUS` uniform over stable+, `TAU_UNIFORM`
+uniform by tau along the stable edges and then matched into stable+. **A better spawn beats any
+warm-up**, and one that looks better can be worse — see `CORPUS.md`.
+
 ---
 
 ## Maps and ingests
@@ -552,6 +570,7 @@ anything not listed.
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
 | psyboid corpus | `PsyboidCorpus` + `CorpusPreset` | `<behaviour>/psyboid/<preset>-<hash>/` |
+| edge-occupancy decay | `EdgeOccupancy`, with its `Spawn` rules | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` |
 | scoring floor | `SimTest.scoringFloor`, per-seed detail in `SimTest.scoringLaps` | `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` |
 | proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |

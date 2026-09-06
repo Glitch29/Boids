@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-05. **Physics 3** — see `ROADMAP.md` §0a-§0e. Verified against dabeone ingest
+**Status:** 2026-09-05. **Physics 3** — see `ROADMAP.md` §0a-§0f. Verified against dabeone ingest
 `609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
 figure without one is not reproducible and should not be trusted, and **figures taken under
 physics 2 are marked as such** rather than silently carried forward.
@@ -62,6 +62,8 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | leader windows | opening bands per arc; tightest `2→1` at leader edge 7, 0.2 ticks | `<ingest>/windows/` |
 | psyboid corpus | 40 plans, every row verified by replay, regenerates byte-identical | `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` |
 | the scoring floor | a solo psyboid scores 54 points every 533 ticks, `sd 0.00` over 40 seeds | `<preset>-<hash>/floor.tsv` |
+| phase is conserved | edge occupancy oscillates at the lap period, autocorrelation 0.99 after 73 laps | `EdgeOccupancy` |
+| warm-up needed | **500 ticks**, not 5,000 — the rest is a plateau. `WARM` unchanged, see `ROADMAP.md` §0f | `<behaviour>/occupancy/` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -121,7 +123,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 51 files.
+One package, `src/boids`, 52 files.
 
 **Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
 the single definition of what a boid perceives) · `Aggregation` (candidate ways of condensing
@@ -147,7 +149,8 @@ stored by `CriticalEnvelopeStore` · `EdgeInfluence` (`steer`, the single-neighb
 `MapStates` (that algebra bound to one map, plus `pureStable` and the straight-travel cycles).
 Behind an interface because stable+ is not yet defined and is expected to change.
 
-**Surveys** — `AggregationSurvey` (candidate aggregations scored against the simulation on
+**Surveys** — `EdgeOccupancy` (how fast a flock forgets its spawn, and three spawn rules
+beside each other) · `AggregationSurvey` (candidate aggregations scored against the simulation on
 sampled arrangements, with a fidelity check that the baseline *is* the simulation).
 
 **Exhaustive and sampled** — `TwoBoid` (all reachable two-boid arrangements) ·
@@ -169,7 +172,7 @@ settings that produced it). See `CORPUS.md`.
 `StateSetRender` (state sets projected to `(x, y)`, several to a sheet) ·
 `SceneRender` · `TwoBoidRender` · `TwoBoidRouteSheet`.
 
-**Driver** — `SimTest`, 3,974 lines. Holds every entry point below *and* the whole
+**Driver** — `SimTest`, 3,986 lines. Holds every entry point below *and* the whole
 decomposition algorithm. Splitting the algorithm out is an open item in `ROADMAP.md`.
 
 ## Entry points
@@ -196,6 +199,7 @@ ways → 6 edges.
 | `graded` | grade the solver on the plan corpus |
 | `scoringFloor` | what one psyboid scores alone, and every plan against it. Writes `floor.tsv` |
 | `scoringLaps` | one solo seed's passes lap by lap, with the route each came round on |
+| `EdgeOccupancy.run` | how fast edge occupancy forgets the spawn, under each spawn rule. Not in `SimTest` |
 | `solverInvariants` | assert what the solver must do with no windows |
 | `envelope` | build one arc's critical-envelope table and report it |
 | `chains` | how far a history walks back inside an edge, and by what |
@@ -266,6 +270,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `<behaviour>/audit/exits_*.tsv` | `ExitAudit` | every classified exit |
 | `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact; the recipe is in the path. See `CORPUS.md` |
 | `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` | `SimTest.scoringFloor` | every plan's scoring rate against what its psyboid scores alone |
+| `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` | `EdgeOccupancy` | edge occupancy per 50-tick window against the long run, one file per spawn rule |
 | `<behaviour>/psyboid/<preset>-<hash>/meta.txt` | `Derived` | which recipe, and its every setting |
 | `<behaviour>/solver/facts.bin` | `SolverStore` | everything a solver may know |
 | **loose renders** | | **gitignored, regenerable** |
