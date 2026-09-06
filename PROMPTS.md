@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-311 prompts across 9 sessions.
+315 prompts across 10 sessions.
 
 ---
 
@@ -9929,3 +9929,44 @@ One example entity, the Poltergeist, has an extremely simple task of destroying 
 * Psychic misdirection: None
 * 
 *
+
+---
+
+## Session 10 - 2026-09-05
+
+*Log `fb1779a9-355d-40b7-aac5-a6b0774f3894`, 4 prompts.*
+
+### 1
+
+Go ahead and familiarize yourself with the project.
+
+Current focus is on generating a corpus for dabeone and checking that it scores well. If there are no issues, scoring rate should be fairly consistent across all seeds, with a clearly defined lower bound that's consistent with the score per tick of a single psyboid simulation.
+
+### 2
+
+I suspect we should ditch the 5000 tick warmup in favor of a 500 to 1000 tick one. But to sanity-check that, let's do an edge-occupancy test.
+
+Let's run a bunch of seeds without psyboids, and look at the squared distance between average edge occupancy across all seeds over 50 tick windows through tick 2000 and long-run edge occupancy. Also measure what the standard deviation is for the long-run value. That should give us a good indication of when the expected edge occupancy for a single seed falls with 1.0/0.5/0.1 standard deviations of the long term probability distribution.
+
+I'd also like to run the same seeds using two other spawning rules:
+
+* Spawn locations are chosen randomly from the stable+ set
+* For each spawn location, a random (edge, tau) value along the stable edges is chosen. Uniform by tau. Then an discrete spawn location within stable+ and within [the chosen edge or an adjacent edge] is chosen that closely matches the tau value when rebased to the proper edge.
+
+### 3
+
+I think that javadoc might be stale. The correct result should be inferable from the most recent test results. Non-scoring is equivalent to 100% of edge occupancy being on edges 2, 4, and 7. Do we have what % of seeds had boids outside those 3 edges in any given period?
+
+### 4
+
+Alright. I'm ready to close the books on this issue. There are scoring events afterward. But that's fine. They're caused by some small windows (perhaps just one) that allows a boid on a stable orbit to induce another boid to exit.
+
+The fact that they continue to go down over is due to exits adding entropy to phase offsets, while non-exits do not. Despite the fact that any of the configurations having equal probability of being arrived at from a random state, non-exiting configurations lock in while exiting configurations rerandomize themselves.
+
+Our goal isn't to be in total long-term equilibrium, it's just to have a sufficiently obfuscated history.
+
+Mostly, I think it's just time to move on to other elements of the project. TAU_UNIFORM and (total edge length) / speed are good defaults.
+
+Let's focus next on end-to-end wiring. Let's bring plait up to speed with these choices. See how far you can get with a function that generates a corpus starting with just the map.
+
+I don't think we have selected a generic psyboid override-generating algorithm yet, so we won't be able to go all the way. Let me know if there's anything else that is preventing the automated pipeline.

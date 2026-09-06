@@ -9,3 +9,4 @@
 # hash             radius nav    trim phys  width height    oob scoring   open   dead
 535b1128f5368981     40 both   yes  p2      497    480 203103    2488  32969   1317
 46f880d41d2c1e4e     40 both   yes  p2      497    480 204812    2488  31260   3021
+46f880d41d2c1e4e     40 both   yes  p3      497    480 204812    2488  31260   3021

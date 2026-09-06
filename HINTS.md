@@ -625,9 +625,11 @@ Two things follow, and both are about where the information is.
 
 - **What the psyboid scores says almost nothing about a scenario.** It is nearly the same number
   in every seed, by construction. **What the *others* score says everything** — that quantity has
-  a 49.5% coefficient of variation where the psyboid's has 0.8%, and its control is exactly zero,
-  so all of it is psyboid-caused. Any measure that sums the flock's score buries a 50%-varying
-  signal under a constant four times its size.
+  a 49.5% coefficient of variation where the psyboid's has 0.8%, and its control is near zero, so
+  nearly all of it is psyboid-caused. Any measure that sums the flock's score buries a 50%-varying
+  signal under a constant four times its size. (**Near zero, not zero** — a flock steers itself
+  off the stable cycle occasionally, and the exactly-zero control that made "scored, therefore
+  steered" look like a rule was an artifact of a warm-up long enough to have stopped it.)
 - **A floor exists and can be computed rather than observed.** A psyboid can always ignore the
   flock and fly the loop, so no plan should score below the solo rate. That makes "is this corpus
   healthy" a question with a numeric answer instead of a judgement, and it is cheap: the same

@@ -3647,14 +3647,15 @@ picks, never in what is available to it.
      * boid in the region longer or knock it out early — and the rate alone cannot tell them
      * apart.
      */
-    public static void scoringFloor(PresetScenarioParameter preset, SolverFacts f,
+    public static void scoringFloor(PresetScenarioParameter preset, SolverFacts f, StateSet plus,
                                     CorpusPreset recipe, PsyboidCorpus.Corpus corpus)
             throws IOException {
         NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
                 Math.round(preset.turningRadius()));
         PsyboidBits.Branches b = PsyboidBits.branches(map, f);
-        PsyboidBits.Config config = recipe.config();
-        ScenarioParameter alone = withFlockSize(preset, 1);
+        PsyboidBits.Config config = recipe.config(f, b);
+        Spawn whole = Spawn.of(preset, f, plus, recipe.spawn());
+        Spawn alone = whole.resized(1);
 
         System.out.printf("%n=== %s @%s: the scoring floor, %s (%s) ===%n", preset.name(),
                 preset.ingest().hash(), recipe.name(), recipe.describes());
@@ -3670,8 +3671,8 @@ picks, never in what is available to it.
         double control = 0;
         for (PsyboidBits.Plan plan : corpus.plans()) {
             PsyboidBits.Plan solo = PsyboidBits.search(alone, map, f, b, config, plan.seed());
-            Passes sp = passes(alone, solo, solo.psyboid());
-            Passes pp = passes(preset, plan, plan.psyboid());
+            Passes sp = passes(alone, solo, solo.psyboid(), config.warm());
+            Passes pp = passes(whole, plan, plan.psyboid(), config.warm());
             double rate = solo.perTick(), psy = plan.steered().psyOccupancy();
             control += solo.control();
             System.out.printf("%4d  %9.5f %6d %5.1f %7.1f %9.5f  %9.5f %6d %5.1f %7.1f  %8.3f  "
@@ -3812,22 +3813,21 @@ picks, never in what is available to it.
      * dabeone has two scoring loops and the interesting answer is that they are not the same
      * length in ticks.
      */
-    public static void scoringLaps(PresetScenarioParameter preset, SolverFacts f,
+    public static void scoringLaps(PresetScenarioParameter preset, SolverFacts f, StateSet plus,
                                    CorpusPreset recipe, long seed) throws IOException {
         NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
                 Math.round(preset.turningRadius()));
         PsyboidBits.Branches b = PsyboidBits.branches(map, f);
-        ScenarioParameter alone = withFlockSize(preset, 1);
-        PsyboidBits.Plan plan = PsyboidBits.search(alone, map, f, b, recipe.config(), seed);
+        Spawn alone = Spawn.of(preset, f, plus, recipe.spawn()).resized(1);
+        PsyboidBits.Plan plan = PsyboidBits.search(alone, map, f, b, recipe.config(f, b), seed);
 
         System.out.printf("%n=== %s @%s: solo laps, seed %d ===%n", preset.name(),
                 preset.ingest().hash(), seed);
         System.out.printf("%s per tick over %d usable ticks%n", String.format("%.5f",
                 plan.perTick()), plan.usable());
 
-        Boids2DEngine engine = new Boids2DEngine(alone);
-        Sim.State s = engine.init(seed);
-        for (int t = 0; t < recipe.config().warm(); t++) s = engine.tick(s);
+        Boids2DEngine engine = alone.engine();
+        Sim.State s = alone.warmed(seed, recipe.config(f, b).warm());
         s = withOverrides(s, plan.overrides());
         while (s.tick < plan.usableFrom()) s = engine.tick(s);
 
@@ -3866,11 +3866,10 @@ picks, never in what is available to it.
      * rate this implies is the one the corpus row reports rather than a differently-measured
      * neighbour of it.
      */
-    private static Passes passes(ScenarioParameter sp, PsyboidBits.Plan plan, int psyboid)
+    private static Passes passes(Spawn spawn, PsyboidBits.Plan plan, int psyboid, int warm)
             throws IOException {
-        Boids2DEngine engine = new Boids2DEngine(sp);
-        Sim.State s = engine.init(plan.seed());
-        for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+        Boids2DEngine engine = spawn.engine();
+        Sim.State s = spawn.warmed(plan.seed(), warm);
         s = withOverrides(s, plan.overrides());
         while (s.tick < plan.usableFrom()) s = engine.tick(s);
 
@@ -3934,47 +3933,30 @@ picks, never in what is available to it.
     }
 
     public static void main(String[] args) throws IOException {
-        // A smoke test of the tiered layout: ingest the map, build the structure tier, build the
-        // behaviour tier on top of it, and check that what the simulation flies is what the
-        // closed form thinks it flies. Everything else is entered from here by hand.
-        PresetScenarioParameter p = PresetScenarioParameter.DABEONE;
-        Flocking f = Flocking.of(p.turningRadius());
-        SolverFacts.Gate gate = new SolverFacts.Gate(false, 202, 174, 191, -1);
+        // End-to-end wiring: a map plus a gate produces a corpus, with every tier derived on the
+        // way. Plait first, because it has a source PNG and no ingest at all, so it exercises
+        // every step rather than reading a cache.
         CriticalEnvelope.pruneOutOfRangeLeaders = true;
+        CorpusPreset recipe = CorpusPreset.valueOf(
+                System.getProperty("recipe", CorpusPreset.SMOKE.name()));
 
-        System.out.printf("physics %d, simulation flies %s (%s), separation falloff at one: %s%n",
-                Params.PHYSICS, Aggregation.SIMULATION.id(), Aggregation.SIMULATION.describes(),
-                f.sepFalloff());
+        System.out.printf("physics %d, simulation flies %s (%s)%n", Params.PHYSICS,
+                Aggregation.SIMULATION.id(), Aggregation.SIMULATION.describes());
+        System.out.printf("recipe %s: %s%n", recipe, recipe.fingerprint());
 
-        Derived.Structure structure = structure(p, gate);
-        Derived.Behaviour behaviour = structure.behaviour(f, Aggregation.SIMULATION);
-        System.out.printf("ingest    %s%nstructure %s%nbehaviour %s%n", p.ingest().dir(),
-                structure.dir(), behaviour.dir());
-
-        SolverFacts facts = SolverStore.prepare(p, gate, SCHEME, CHAIN, f);
-
-        // How long a flock takes to forget where it was spawned, and whether a better spawn rule
-        // makes the warm-up unnecessary rather than shorter.
-        Labelling lab = label(p, false, 202, 174, 191, -1);
-        MapStates states = MapStates.of(lab.map(), f, lab.live(), lab.liveCount());
-        StateSet plus = states.stablePlus(QUORUM);
-        System.out.printf("stable+ at quorum %d: %,d states, %s%n", QUORUM, plus.size(),
-                MapStates.byEdge(plus, lab.edge(), facts.edges()));
-        EdgeOccupancy.run(p, facts, plus, behaviour, Integer.getInteger("seeds", 2000),
-                50, Integer.getInteger("through", 20_000), 5,
-                Integer.getInteger("longFrom", 40_000), Integer.getInteger("longTo", 60_000));
-
-        // The criterion WARM was originally chosen on, re-measured. The javadoc's figures are
-        // physics 2 and 40 seeds; these are physics 3 and two thousand.
-        int run = Integer.getInteger("run", 4000);
-        System.out.printf("%n=== unsteered scoring over a %,d-tick run, by start tick ===%n", run);
-        System.out.printf("%8s %10s %10s %12s %12s%n", "start", "score", "leave", "off-edge occ",
-                "points/tick");
-        for (EdgeOccupancy.Warmup w : EdgeOccupancy.warmupScoring(p, facts,
-                Integer.getInteger("warmSeeds", 2000), run,
-                new int[]{0, 500, 1000, 2000, 5000, 10_000})) {
-            System.out.printf("%8d %9.1f%% %9.1f%% %12.6f %12.6f%n", w.start(),
-                    100 * w.scoredRate(), 100 * w.wentOffRate(), w.occOff(), w.perTick());
+        record Map(PresetScenarioParameter preset, SolverFacts.Gate gate) {}
+        Map[] maps = {
+                new Map(PresetScenarioParameter.PLAIT,
+                        new SolverFacts.Gate(true, 360, 335, 350, 0)),
+                new Map(PresetScenarioParameter.DABEONE,
+                        new SolverFacts.Gate(false, 202, 174, 191, -1)),
+        };
+        for (Map m : maps) {
+            try {
+                Pipeline.corpus(m.preset(), m.gate(), recipe);
+            } catch (RuntimeException e) {
+                System.out.printf("%n** %s stopped: %s%n", m.preset().name(), e.getMessage());
+            }
         }
     }
 

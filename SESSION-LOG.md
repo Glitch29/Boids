@@ -11,6 +11,79 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-06 (later) — end-to-end wiring, plait from its PNG, and the spread that failed silently
+
+The user closed §0f: **`TAU_UNIFORM` and total edge length over speed are the defaults**, the goal
+is a sufficiently obfuscated history rather than equilibrium, and the mechanism behind the endless
+decline is that **exits add entropy to phase offsets while non-exits do not** — non-exiting
+configurations lock in, exiting ones re-randomise. That is an absorbing dynamic, which is why
+there is no floor. Recorded in `ROADMAP.md` §0g.
+
+Then: bring plait up to those choices, and get as far as a function that makes a corpus from a map.
+
+**Built.**
+
+- **`Spawn`** — the rules promoted out of `EdgeOccupancy` and threaded through every replay path,
+  because a replay that spawns differently does not reproduce the timeline whatever the label
+  says. Carries a bound engine, so nothing rebuilds a navmap per seed.
+- **`CorpusPreset.Warmup`** — a policy, not a number, since the value is a function of the map.
+  `TOTAL_EDGE_LENGTH` is the sum of the clock's lengths: **941 on dabeone, 1,814 on plait**.
+- **`CorpusPreset` gains the spawn rule**, so both are in the recipe and so in the address.
+  `SMOKE` and `PLANS_40` take the new defaults; **`LEGACY_40`** is the old recipe, kept so every
+  pre-2026-09-06 figure stays reproducible.
+- **`Pipeline`** — a map and a gate in, a verified corpus out, every tier derived on the way.
+- **plait ingested from its PNG**, `46f880d41d2c1e4e`, 6 edges, stable `{1,4}`, scoring
+  `{0,2,3,5}`, total edge length 1,813.57.
+
+**Both maps now run end to end from map + gate.** Dabeone under the new defaults: 40 plans, 40
+score, 40 beat control, 252/252 fidelity, flock occupancy 0.0502, control 0.0004. Plait: 40 plans,
+9 score, 8 beat control, 8/8 fidelity, 2.0 impactful ticks per plan.
+
+**The finding: the spread was a dabeone constant and it failed silently.** Plait's first corpus had
+*zero turns asked* despite having a searchable branch. The search forks when the psyboid arrives on
+a branching edge and the override fires a further *coast* ticks later; plait's branch edge is 756
+ticks long so the coast runs to 775, and a walk that stops 640 ticks after its root never sees the
+branch taken. Both children of the fork tie, and **the tie goes to declining** — so the plan
+records a decision it never really had. Measured over eight plait seeds: **0 turns at 640, 960 and
+1,280; 2 at 1,600; 9 at 2,400.**
+
+`PsyboidBits.minimumSpread` now derives it as one stable lap + the furthest a branch edge's
+critical state can be + the longest hold: **1,597 on plait, 398 on dabeone.** The recipe takes the
+larger of that and its named 640, so the dabeone measurement stands where it was measured. This is
+a change to a measured constant and is flagged as one: 640 remains correct *for dabeone*, and what
+was wrong was treating it as a property of the search rather than of the map.
+
+**The blockers, now named rather than suspected.**
+
+1. **The gate.** Human judgement, silent when wrong.
+2. **`PsyboidBits` only tries holding right**, and drops everything else without a word. Added
+   `PsyboidBits.reaches`, which tries both: **plait `0->3` needs a left hold of 8 ticks** — half of
+   plait's psyboid is invisible — and **dabeone `5->6` needs a left hold of 14**. The latter makes
+   `PsyboidBits`' javadoc claim that no hold reaches it **wrong**; the cold-start argument for
+   dropping `5->6` is separate and may still stand. Reported, not fixed: searching both holds is a
+   change to the psyboid algorithm, which has not been chosen.
+3. **No generic psyboid override-generating algorithm**, as the user already had it.
+4. **Run length is a dabeone number too.** `SMOKE`'s 600 ticks is shorter than plait's 811-tick
+   lap, so it yields three replayable plans and zero turns. Noted, not given a floor.
+
+Nothing else blocks it: ingest, navmap, decomposition, clock, per-edge navigation, solver facts,
+stable+, warm-up, spawn and corpus all derive from the map.
+
+**Javadocs corrected where they relied on scoring implying psyboid.** That was always a
+correlation and it looked like a rule only because the 5,000-tick warm-up had settled the flock
+out of steering itself: control was identically 0.0000, and at a map-derived warm-up it is 0.0004.
+`GLOSSARY.md`'s *control* entry, `PsyboidCorpus`'s `Corpus` and `occupancy` javadocs, `CORPUS.md`
+and `HINTS.md` §9a now say to read excess over control, and to prefer `lifted` over `scoring`.
+
+**A latent bug fixed on the way.** `PsyboidCorpus.fidelity` flew `PsyboidBits.WARM` rather than the
+recipe's warm-up. Harmless while every recipe used 5,000; wrong the moment one did not.
+
+**Open.** Six `SimTest` audit entry points still replay corpus plans at `PsyboidBits.WARM` instead
+of at the corpus's own warm-up — fine for `LEGACY_40`, wrong for anything else, and they should
+take the warm from the corpus they read.
+
+---
+
 ## 2026-09-06 — the warm-up's own criterion, re-measured: it has no floor and never terminates
 
 The user pointed out that non-scoring is equivalent to all edge occupancy sitting on `{2, 4, 7}`,

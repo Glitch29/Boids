@@ -57,7 +57,12 @@ public final class PsyboidCorpus {
      * @param plans   one per seed, in seed order
      * @param scoring how many plans scored at all. A psyboid that never reaches a scoring
      *                region left no evidence of itself and is a case nobody can solve
-     * @param lifted  how many beat the same seed flown with no psyboid
+     * @param lifted  how many beat the same seed flown with no psyboid. <b>This, not
+     *                {@code scoring}, is the one to read.</b> A flock steers itself off the
+     *                stable cycle occasionally, so a plan can score without the psyboid having
+     *                caused it — "it scored, therefore it was steered" was only ever a
+     *                correlation, and it looked like a rule because the old 5,000-tick warm-up
+     *                had settled the flock out of steering itself at all
      */
     public record Corpus(List<PsyboidBits.Plan> plans, int scoring, int lifted, Path file) {
 
@@ -80,12 +85,13 @@ public final class PsyboidCorpus {
      * @param measure ticks past the warmup the plan is scored over, and the window a scene
      *                should be sampled from
      */
-    public static Corpus build(PresetScenarioParameter preset, SolverFacts f,
+    public static Corpus build(PresetScenarioParameter preset, SolverFacts f, StateSet plus,
                                CorpusPreset recipe) throws IOException {
         NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
                 Math.round(preset.turningRadius()));
         PsyboidBits.Branches b = PsyboidBits.branches(map, f);
-        PsyboidBits.Config config = recipe.config();
+        PsyboidBits.Config config = recipe.config(f, b);
+        Spawn spawn = Spawn.of(preset, f, plus, recipe.spawn());
         int seeds = recipe.seeds();
         Derived.Corpus where = SimTest.behaviour(preset, f, SimTest.flockingOf(preset))
                 .corpus(recipe);
@@ -93,8 +99,10 @@ public final class PsyboidCorpus {
         System.out.printf("%n=== %s @%s: psyboid corpus %s (%s), %d seeds ===%n%s%n%s%n",
                 preset.name(), preset.ingest().hash(), recipe.name(), recipe.describes(), seeds,
                 recipe.fingerprint(), where);
+        System.out.printf("resolved: warm %,d, spread %,d (floor %,d from the map)%n",
+                config.warm(), config.spread(), PsyboidBits.minimumSpread(f, b));
         for (int i = 0; i < b.branch().length; i++) {
-            System.out.printf("  branch: edge %d -> %d, right held %d ticks%n", b.branch()[i],
+            System.out.printf("  branch: edge %d -> %d, held %d ticks%n", b.branch()[i],
                     b.exit()[i], b.hold()[i]);
         }
 
@@ -102,8 +110,8 @@ public final class PsyboidCorpus {
         List<PsyboidBits.Plan> plans = new ArrayList<>();
         int scoring = 0, lifted = 0, unverified = 0;
         for (long seed = 0; seed < seeds; seed++) {
-            PsyboidBits.Plan plan = PsyboidBits.search(preset, map, f, b, config, seed);
-            if (!verify(preset, plan, config)) {
+            PsyboidBits.Plan plan = PsyboidBits.search(spawn, map, f, b, config, seed);
+            if (!verify(spawn, plan, config)) {
                 unverified++;
                 continue;
             }
@@ -128,7 +136,7 @@ public final class PsyboidCorpus {
         int asked = 0, took = 0, unbid = 0, exactPlans = 0, reported = 0;
         long usable = 0;
         for (PsyboidBits.Plan p : plans) {
-            Fidelity fit = fidelity(preset, f, map, p);
+            Fidelity fit = fidelity(spawn, f, map, p, config.warm());
             asked += fit.asked();
             took += fit.took();
             unbid += fit.unbid();
@@ -190,11 +198,10 @@ public final class PsyboidCorpus {
      * is the flock steering the psyboid, which is legal physics but means the plan has stopped
      * describing the flight.
      */
-    public static Fidelity fidelity(PresetScenarioParameter preset, SolverFacts f, NavMap map,
-                                    PsyboidBits.Plan plan) throws IOException {
-                Boids2DEngine engine = new Boids2DEngine(preset);
-        Sim.State s = engine.init(plan.seed());
-        for (int t = 0; t < PsyboidBits.WARM; t++) s = engine.tick(s);
+    public static Fidelity fidelity(Spawn spawn, SolverFacts f, NavMap map,
+                                    PsyboidBits.Plan plan, int warm) throws IOException {
+        Boids2DEngine engine = spawn.engine();
+        Sim.State s = spawn.warmed(plan.seed(), warm);
         s = SimTest.withOverrides(s, plan.overrides());
 
         int who = plan.psyboid();
@@ -242,13 +249,12 @@ public final class PsyboidCorpus {
      * Position and heading of every boid, at the end of the measured window. Anything less
      * would pass a label that reproduces the score by coincidence.
      */
-    private static boolean verify(PresetScenarioParameter preset, PsyboidBits.Plan plan,
+    private static boolean verify(Spawn spawn, PsyboidBits.Plan plan,
                                   PsyboidBits.Config config) throws IOException {
         long at = plan.usableTo();
-        Sim.State replayed = PsyboidBits.replay(preset, plan.label(), config.warm(), at);
-        Boids2DEngine engine = new Boids2DEngine(preset);
-        Sim.State direct = engine.init(plan.seed());
-        for (int t = 0; t < config.warm(); t++) direct = engine.tick(direct);
+        Sim.State replayed = PsyboidBits.replay(spawn, plan.label(), config.warm(), at);
+        Boids2DEngine engine = spawn.engine();
+        Sim.State direct = spawn.warmed(plan.seed(), config.warm());
         direct = SimTest.withOverrides(direct, plan.overrides());
         while (direct.tick < at) direct = engine.tick(direct);
         for (int i = 0; i < direct.n; i++) {
@@ -327,6 +333,12 @@ public final class PsyboidCorpus {
      * itself. Total score cannot tell those apart. Splitting the psyboid's own occupancy from
      * everyone else's can, and a corpus where {@code others} sits near zero is a corpus of plans
      * that score by parking — which is a fact about what the search optimises, not about the map.
+     * <p>
+     * <b>Read every rate as excess over control.</b> Control is not zero and is not meant to be: a
+     * flock steers itself off the stable cycle now and then, so some scoring is nobody's doing. It
+     * was identically zero under the old 5,000-tick warm-up because that warm-up had settled the
+     * flock out of doing it, which is the homogenisation `CORPUS.md`'s minimality argument warns
+     * against. Under a map-derived warm-up dabeone's control occupancy is 0.0004.
      */
     private static void occupancy(List<PsyboidBits.Plan> plans) {
         if (plans.isEmpty()) return;

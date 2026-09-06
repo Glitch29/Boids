@@ -195,9 +195,14 @@ public final class PsyboidBits {
 
     /** Ticks of holding right before the branch exit is reached; 0 if it never is. */
     private static int rightHold(NavMap map, SolverFacts f, int s, int from, int keep) {
+        return hold(map, f, s, from, keep, 1);
+    }
+
+    /** Ticks of holding {@code turn} before the branch exit is reached; 0 if it never is. */
+    private static int hold(NavMap map, SolverFacts f, int s, int from, int keep, int turn) {
         int at = s;
         for (int k = 1; k <= Params.TURNS; k++) {
-            int u = map.successor(at, 1);
+            int u = map.successor(at, turn);
             if (u < 0) return 0;
             int e = f.edgeOf()[u];
             if (e == keep) return k;
@@ -205,6 +210,73 @@ public final class PsyboidBits {
             at = u;
         }
         return 0;
+    }
+
+    /**
+     * Whether <em>any</em> single held turn takes the branch, and which. A diagnostic, not a
+     * search: {@link #branches} only ever tries the right.
+     * <p>
+     * <b>This is the one place the psyboid search is not generic, and it does not announce
+     * itself.</b> An arc no right hold reaches is dropped from the tree silently, and on dabeone
+     * that was right for the reason recorded above — {@code 5->6} is a cold-start artifact that
+     * no critical state can reach. On another map the same silence can mean the map's only branch
+     * turns the other way, and the corpus then comes out empty rather than wrong, which is worse
+     * to diagnose. Run this before concluding a map is unsteerable.
+     *
+     * @return {@code +1} or {@code -1} for the turn that reaches it and the ticks it must be
+     *         held, or {@code turn 0} when nothing does
+     */
+    public record Reach(int turn, int ticks) {
+        public boolean reached() { return ticks > 0; }
+    }
+
+    /**
+     * The smallest spread at which a decision on this map can be <em>seen</em> to matter.
+     * <p>
+     * <b>640 is a dabeone number, and a search below this floor declines every bit in silence.</b>
+     * A fork is taken when the psyboid arrives on a branching edge; the override it writes fires
+     * a further {@code coast} ticks later, at the last state from which the turn still commits.
+     * So the walk has to run from the root, through the arrival — up to one lap — and then
+     * through the coast and the hold, or both children of the fork end at the same place, tie,
+     * and the tie goes to declining. The plan then records a decision it never really had.
+     * <p>
+     * Measured on plait, whose branch edge is 756 ticks long: at spreads 640, 960 and 1,280 the
+     * search asks for <b>no turns at all</b> across eight seeds; at 1,600 it asks for two and at
+     * 2,400 for nine. This formula gives 1,596. On dabeone it gives 395, comfortably under the
+     * 640 that was measured there, so that measurement stands and this only ever raises it.
+     *
+     * @return one stable lap, plus the furthest any branch edge's critical state can be, plus the
+     *         longest hold
+     */
+    public static int minimumSpread(SolverFacts f, Branches b) {
+        double lap = 0;
+        for (int e = 0; e < f.edges(); e++) if (f.stable(e)) lap += f.length()[e];
+        int reach = 0;
+        for (int i = 0; i < b.branch().length; i++) {
+            int coast = 0;
+            for (int s = 0; s < b.coast().length; s++) {
+                if (f.edgeOf()[s] == b.branch()[i]) coast = Math.max(coast, b.coast()[s]);
+            }
+            reach = Math.max(reach, coast + b.hold()[i]);
+        }
+        return (int) Math.ceil(lap) + reach;
+    }
+
+    public static Reach reaches(NavMap map, SolverFacts f, int from, int keep) {
+        int turns = Params.TURNS, w = map.width();
+        int bestRight = 0, bestLeft = 0;
+        for (int s = 0; s < f.edgeOf().length; s++) {
+            if (f.edgeOf()[s] != from) continue;
+            int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+            if (!map.alive(x, y, d)) continue;
+            // Critical states only — the ones a decision is actually taken from.
+            if (ticksToCritical(map, f, s, from, keep) != 0) continue;
+            bestRight = Math.max(bestRight, hold(map, f, s, from, keep, 1));
+            bestLeft = Math.max(bestLeft, hold(map, f, s, from, keep, -1));
+        }
+        if (bestRight > 0) return new Reach(1, bestRight);
+        if (bestLeft > 0) return new Reach(-1, bestLeft);
+        return new Reach(0, 0);
     }
 
     /** One decision: the psyboid has just arrived on a branching edge. */
@@ -216,18 +288,18 @@ public final class PsyboidBits {
      * Sequential rather than concurrent, and deliberately so: the whole point of searching bits
      * instead of override parameters is that the tree is now small enough not to need it.
      * <p>
-     * <b>Takes a {@link ScenarioParameter} rather than a preset</b> so the same search can be run
-     * on a flock of one. That is the only sensible way to ask what a psyboid is worth by itself —
-     * the same algorithm, the same map, the same seed, and nothing to herd — and the answer is
-     * the floor a corpus's scoring rate should sit on. See {@code SimTest.scoringFloor}.
+     * <b>Takes a {@link Spawn} rather than a scenario</b>, because where the flock starts is part
+     * of what a plan is: a replay that spawns differently does not reproduce the timeline, whatever
+     * the label says. It is also what lets the same search run on a flock of one — the same
+     * algorithm, the same map, the same seed, and nothing to herd, which is the floor a corpus's
+     * scoring rate should sit on. See {@code SimTest.scoringFloor}.
      */
-    public static Plan search(ScenarioParameter preset, NavMap map, SolverFacts f,
+    public static Plan search(Spawn spawn, NavMap map, SolverFacts f,
                               Branches b, Config config, long seed) throws java.io.IOException {
-        Boids2DEngine engine = new Boids2DEngine(preset);
-        MovementLogic rules = new MovementLogic(preset.turningRadius());
+        Boids2DEngine engine = spawn.engine();
+        MovementLogic rules = new MovementLogic(spawn.scenario().turningRadius());
 
-        Sim.State root = engine.init(seed);
-        for (int t = 0; t < config.warm(); t++) root = engine.tick(root);
+        Sim.State root = spawn.warmed(seed, config.warm());
         long began = root.tick;
         long baseScore = root.score;
 
@@ -282,9 +354,9 @@ public final class PsyboidBits {
         // The plan is only worth what it scores when flown straight through, so the number
         // reported is a replay rather than anything the search believed along the way, and it
         // is measured over exactly the window a case may be drawn from.
-        Scored steered = replay(engine, map, rules, seed, config.warm(), usableFrom, usableTo,
+        Scored steered = replay(spawn, map, rules, seed, config.warm(), usableFrom, usableTo,
                 plan, config.psyboid());
-        Scored unsteered = replay(engine, map, rules, seed, config.warm(), usableFrom, usableTo,
+        Scored unsteered = replay(spawn, map, rules, seed, config.warm(), usableFrom, usableTo,
                 new PsyboidOverride[0], config.psyboid());
 
         StringBuilder label = new StringBuilder("seed" + seed);
@@ -385,12 +457,11 @@ public final class PsyboidBits {
      * warmup is ordinary flight, and the overrides are absolute-tick, so this reproduces the
      * timeline exactly however it was originally found.
      */
-    public static Sim.State replay(PresetScenarioParameter preset, String label, int warm,
+    public static Sim.State replay(Spawn spawn, String label, int warm,
                                    long atTick) throws java.io.IOException {
         Replay plan = parse(label);
-        Boids2DEngine engine = new Boids2DEngine(preset);
-        Sim.State s = engine.init(plan.seed());
-        for (int t = 0; t < warm; t++) s = engine.tick(s);
+        Boids2DEngine engine = spawn.engine();
+        Sim.State s = spawn.warmed(plan.seed(), warm);
         s = SimTest.withOverrides(s, plan.overrides());
         while (s.tick < atTick) s = engine.tick(s);
         return s;
@@ -430,11 +501,11 @@ public final class PsyboidBits {
      * worth what it scores when flown as written, over exactly the window a case may be drawn
      * from.
      */
-    private static Scored replay(Boids2DEngine engine, NavMap map, MovementLogic rules, long seed,
+    private static Scored replay(Spawn spawn, NavMap map, MovementLogic rules, long seed,
                                  int warm, long from, long to, PsyboidOverride[] plan,
                                  int psyboid) {
-        Sim.State s = engine.init(seed);
-        for (int t = 0; t < warm; t++) s = engine.tick(s);
+        Boids2DEngine engine = spawn.engine();
+        Sim.State s = spawn.warmed(seed, warm);
         s = SimTest.withOverrides(s, plan);
         while (s.tick < from) s = engine.tick(s);
         long base = s.score, basePsy = s.boidScore[psyboid];

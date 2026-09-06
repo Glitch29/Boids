@@ -98,8 +98,13 @@ biases, since that is the only scale on which a signal change can change a turn.
 The knob of choice for widening a window: it scales how decisive an influence must be without
 altering what any influence is.
 
-**control** — score a run accumulates with no psyboid. A case whose control is non-zero has
-scoring that the psyboid does not explain.
+**control** — score a run accumulates with no psyboid. **Not expected to be zero, and a non-zero
+control is not a defect.** A flock steers itself off the stable cycle from time to time, so a run
+with no psyboid in it scores occasionally; under the pre-2026-09-06 5,000-tick warm-up it had been
+warmed until it stopped, which is what made "scoring implies psyboid" look like a rule. It was
+never more than a strong correlation, and at a map-derived warm-up it is weaker: dabeone's
+control occupancy is 0.0004 rather than 0.0000. Read a plan as **excess over control**, not as
+evidence that anything which scored was steered.
 
 **phase** — how far round its loop a boid is, in ticks. **Conserved:** a boid advances exactly one
 step per tick along a route of fixed length, so its phase at tick `t` is its spawn phase plus `t`,
@@ -117,10 +122,11 @@ warm flock is `2:0.3556 4:0.3285 7:0.3156` with everything else at or below `0.0
 the three stable edges, and **not** proportional to edge length, which would be
 `0.365 / 0.341 / 0.294`.
 
-**spawn rule** — where a flock is placed at tick 0. `EdgeOccupancy.Spawn`: `UNIFORM` is the
-simulation's own (uniform over live states), `STABLE_PLUS` uniform over stable+, `TAU_UNIFORM`
-uniform by tau along the stable edges and then matched into stable+. **A better spawn beats any
-warm-up**, and one that looks better can be worse — see `CORPUS.md`.
+**spawn rule** — where a flock is placed at tick 0. `Spawn.Rule`, carried by `CorpusPreset` and
+so part of a corpus's address: `UNIFORM` is the simulation's own (uniform over live states),
+`STABLE_PLUS` uniform over stable+, `TAU_UNIFORM` uniform by tau along the stable edges and then
+matched into stable+. **`TAU_UNIFORM` is the default.** A better spawn beats any warm-up, and one
+that looks better can be worse — see `CORPUS.md`.
 
 ---
 
@@ -573,7 +579,7 @@ anything not listed.
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
 | psyboid corpus | `PsyboidCorpus` + `CorpusPreset` | `<behaviour>/psyboid/<preset>-<hash>/` |
-| edge-occupancy decay | `EdgeOccupancy`, with its `Spawn` rules and `warmupScoring` | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` |
+| edge-occupancy decay | `EdgeOccupancy` + `Spawn.Rule`, with `warmupScoring` | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` |
 | scoring floor | `SimTest.scoringFloor`, per-seed detail in `SimTest.scoringLaps` | `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` |
 | proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
@@ -581,6 +587,8 @@ anything not listed.
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |
 | psyboid search | `PsyboidBits` | — |
+| the pipeline | `Pipeline`: map + gate in, corpus out | every tier under `ingests/<map>/` |
+| spawn | `Spawn` + `Spawn.Rule` | in a corpus's address |
 
 > **Two different two-boid analyses. Do not conflate them.**
 > **`EdgeInfluence`** is the single-neighbour *closed form*, and it is what the critical

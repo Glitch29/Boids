@@ -32,47 +32,11 @@ import java.util.Random;
  * <h2>Spawn rules</h2>
  * The warm-up is a correction for the spawn rule, so the other half of the question is whether a
  * better rule needs less correcting. {@link Spawn} holds three, and the comparison is what says
- * whether 5,000 ticks is buying anything a spawn could give for free.
+ * whether 5,000 ticks is buying anything a spawn could give for free. This class measured them;
+ * {@link Spawn} owns them, because the corpus now depends on the answer.
  */
 public final class EdgeOccupancy {
     private EdgeOccupancy() {}
-
-    /** Where the flock starts. */
-    public enum Spawn {
-        /**
-         * What the simulation does: uniform over the play area by rejection, redrawing until the
-         * state is live. Every dead end and every stretch of map a flock never visits is as
-         * likely as the route it spends its life on, which is exactly what a warm-up is paying
-         * to undo.
-         */
-        UNIFORM("uniform over live states, the simulation's own rule"),
-
-        /**
-         * Uniform over <b>stable+</b>: the states ordinary multi-boid traffic reaches. Not the
-         * same as uniform along the route — stable+ is denser where the straight-travel loop and
-         * its jostling happen to put more states, and that density is a fact about the expansion
-         * rather than about where boids are found.
-         */
-        STABLE_PLUS("uniform over the stable+ set"),
-
-        /**
-         * Uniform <b>by tau</b> along the stable edges, then matched into stable+.
-         * <p>
-         * Per boid: an edge is drawn in proportion to its length and a tau uniformly along it,
-         * which puts the target uniformly along the route by distance rather than by state count.
-         * The spawn is then a stable+ state on that edge <em>or one adjacent to it</em> whose own
-         * tau, rebased into the chosen edge's frame, is nearest the target. The adjacency is what
-         * makes the coordinate continuous across a vertex, so a target near an edge's end is not
-         * forced back inside it.
-         */
-        TAU_UNIFORM("uniform by tau along the stable edges, matched into stable+");
-
-        private final String describes;
-
-        Spawn(String describes) { this.describes = describes; }
-
-        public String describes() { return describes; }
-    }
 
     /**
      * One rule's decay curve and the scales it should be read against.
@@ -95,7 +59,7 @@ public final class EdgeOccupancy {
      *                 this is the fraction of seeds that could have scored in that window
      * @param offLate  the same over the long-run windows, which is the rate it settles to
      */
-    public record Decay(Spawn rule, int seeds, int window, int flock, double[][] early,
+    public record Decay(Spawn.Rule rule, int seeds, int window, int flock, double[][] early,
                         double[] longrun, double sigma, double between, double drift,
                         int[] spawned, int[] offEarly, double offLate) {
 
@@ -213,13 +177,10 @@ public final class EdgeOccupancy {
      *                 survives, which is the assumption {@link Decay#drift} checks
      */
     public static Decay measure(PresetScenarioParameter preset, SolverFacts f, StateSet plus,
-                                Spawn rule, int seeds, int window, int through, int longFrom,
+                                Spawn.Rule rule, int seeds, int window, int through, int longFrom,
                                 int longTo) throws IOException {
-        Boids2DEngine engine = new Boids2DEngine(preset);
-        NavMap map = NavMapBuilder.buildFromPng(preset.mapPath(),
-                Math.round(preset.turningRadius()));
-        Targets targets = rule == Spawn.TAU_UNIFORM ? Targets.of(f, plus) : null;
-        int[] pool = rule == Spawn.STABLE_PLUS ? plus.toArray() : null;
+        Spawn spawn = Spawn.of(preset, f, plus, rule);
+        Boids2DEngine engine = spawn.engine();
 
         int buckets = f.edges() + 1;
         int earlyWindows = through / window;
@@ -233,7 +194,7 @@ public final class EdgeOccupancy {
         long offLate = 0;
 
         for (int s = 0; s < seeds; s++) {
-            Sim.State state = start(engine, map, preset.flockSize(), pool, targets, rule, s);
+            Sim.State state = spawn.at(s);
             for (int i = 0; i < state.n; i++) spawned[bucket(f, state, i)]++;
 
             boolean[] offHere = new boolean[earlyWindows];
@@ -316,157 +277,6 @@ public final class EdgeOccupancy {
     private static int bucket(SolverFacts f, Sim.State s, int i) {
         int e = f.edgeAt(s.x[i], s.y[i], s.h[i]);
         return e < 0 ? f.edges() : e;
-    }
-
-    /**
-     * A flock at tick 0 under one spawn rule.
-     * <p>
-     * {@code UNIFORM} defers to {@link Boids2DEngine#init} rather than reproducing it, so the
-     * baseline in this comparison is the simulation's own rule and not a second implementation of
-     * it that might differ.
-     */
-    private static Sim.State start(Boids2DEngine engine, NavMap map, int n, int[] pool,
-                                   Targets targets, Spawn rule, long seed) throws IOException {
-        if (rule == Spawn.UNIFORM) return engine.init(seed);
-
-        int[] x = new int[n], y = new int[n], h = new int[n];
-        Random rng = new Random(seed);
-        for (int i = 0; i < n; i++) {
-            int state = rule == Spawn.STABLE_PLUS ? pool[rng.nextInt(pool.length)]
-                    : targets.draw(rng);
-            int d = state % Params.TURNS, cell = state / Params.TURNS;
-            x[i] = cell % map.width();
-            y[i] = cell / map.width();
-            h[i] = d;
-            if (!map.alive(x[i], y[i], h[i])) {
-                throw new IllegalStateException(rule + " placed boid " + i + " at a dead state "
-                        + x[i] + "," + y[i] + " heading " + h[i] + " — the spawn set is not a "
-                        + "subset of the viability kernel, which every set here is built from");
-            }
-        }
-        return new Sim.State(n, x, y, h, 0L, 0L, new long[n], "seed" + seed);
-    }
-
-    /**
-     * Stable+ indexed by position along the stable edges, so a tau can be turned into a state.
-     * <p>
-     * <b>One coordinate per stable edge, running past both its ends.</b> A state's position in
-     * edge {@code e}'s frame is the clock distance from the start of {@code e}, which
-     * {@link EdgeDistance} defines for a state on {@code e} and extends by one edge length in
-     * either direction for a state on an edge adjacent to it. That is what lets a target near a
-     * vertex be matched by a state on the other side of it, rather than being dragged back inside
-     * an edge that has no stable+ states left at that end.
-     */
-    private record Targets(int[] edge, double[] length, double total, int[][] states,
-                           double[][] position) {
-
-        static Targets of(SolverFacts f, StateSet plus) {
-            List<Integer> stable = new ArrayList<>();
-            for (int e = 0; e < f.edges(); e++) if (f.stable(e)) stable.add(e);
-
-            int[] edges = new int[stable.size()];
-            double[] len = new double[stable.size()];
-            int[][] states = new int[stable.size()][];
-            double[][] pos = new double[stable.size()][];
-            double total = 0;
-            int[] all = plus.toArray();
-            short[] edgeOf = f.edgeOf();
-            double[] tickOf = f.tickOf();
-            long[] arcs = f.arcs();
-
-            for (int i = 0; i < edges.length; i++) {
-                int e = stable.get(i);
-                edges[i] = e;
-                len[i] = f.length()[e];
-                total += len[i];
-
-                List<int[]> keep = new ArrayList<>();
-                List<Double> where = new ArrayList<>();
-                for (int s : all) {
-                    int g = edgeOf[s];
-                    if (g < 0 || Double.isNaN(tickOf[s])) continue;
-                    double p = position(f, arcs, e, g, tickOf[s]);
-                    if (Double.isNaN(p)) continue;
-                    keep.add(new int[]{s});
-                    where.add(p);
-                }
-                states[i] = new int[keep.size()];
-                pos[i] = new double[keep.size()];
-                Integer[] order = new Integer[keep.size()];
-                for (int k = 0; k < order.length; k++) order[k] = k;
-                Arrays.sort(order, (a, b) -> Double.compare(where.get(a), where.get(b)));
-                for (int k = 0; k < order.length; k++) {
-                    states[i][k] = keep.get(order[k])[0];
-                    pos[i][k] = where.get(order[k]);
-                }
-            }
-            Targets t = new Targets(edges, len, total, states, pos);
-            System.out.printf("  tau targets over %d stable edges, total length %.1f%n",
-                    edges.length, total);
-            for (int i = 0; i < edges.length; i++) {
-                System.out.printf("    edge %d: length %6.2f, tau %6.2f..%-6.2f, %,6d stable+ "
-                                + "states in frame, positions %7.2f..%-7.2f%n", edges[i], len[i],
-                        f.tickLo()[edges[i]], f.tickHi()[edges[i]], states[i].length,
-                        pos[i][0], pos[i][pos[i].length - 1]);
-            }
-            return t;
-        }
-
-        /**
-         * Where a state on edge {@code g} sits in edge {@code e}'s frame, or NaN if {@code g} is
-         * neither {@code e} nor adjacent to it.
-         * <p>
-         * Signed clock distance from the start of {@code e}, by {@link EdgeDistance}'s rule that
-         * a route contributes the length of every edge it leaves: on {@code e} itself that is tau
-         * outright, one step downstream it is tau plus {@code e}'s length, and one step upstream
-         * tau less the upstream edge's.
-         * <p>
-         * <b>Tau is already zero-based and {@code tickLo} is not its zero.</b> An edge's observed
-         * tau overruns both ends — dabeone's edge 2 runs -16.10 to 101.70 against a length of
-         * 100.59 — because follow-through and arrival states sit on an edge before its start and
-         * after its end. Rebasing on {@code tickLo} therefore shifts each edge's frame by a
-         * different amount, which silently skewed this rule's spawn distribution across the
-         * vertices before it was caught.
-         */
-        private static double position(SolverFacts f, long[] arcs, int e, int g, double tau) {
-            if (g == e) return tau;
-            if ((arcs[e] & (1L << g)) != 0) return tau + f.length()[e];
-            if ((arcs[g] & (1L << e)) != 0) return tau - f.length()[g];
-            return Double.NaN;
-        }
-
-        /**
-         * One spawn: an edge in proportion to its length, a tau uniform along it, and the nearest
-         * stable+ state to that target in the edge's own frame.
-         * <p>
-         * <b>Nearest, then uniform among ties within half a tick.</b> Many states share a tau —
-         * an edge is a bundle of trajectories, not a line — so taking the single nearest would
-         * spawn from a fixed thread through the bundle. Half a tick is well inside the clock's own
-         * 1.65% error, so everything inside it is the same position as far as anything here can
-         * tell.
-         */
-        int draw(Random rng) {
-            double u = rng.nextDouble() * total;
-            int i = 0;
-            while (i < length.length - 1 && u > length[i]) { u -= length[i]; i++; }
-            double target = u;
-
-            double[] where = position[i];
-            int lo = Arrays.binarySearch(where, target);
-            if (lo < 0) lo = -lo - 1;
-            // Nearest first, then everything within half a tick of it, so a target with no state
-            // at all nearby still lands on the closest thing rather than failing.
-            int best = lo;
-            if (lo >= where.length || (lo > 0
-                    && Math.abs(where[lo - 1] - target) < Math.abs(where[lo] - target))) {
-                best = lo - 1;
-            }
-            double near = Math.abs(where[best] - target);
-            int from = best, to = best;
-            while (from > 0 && Math.abs(where[from - 1] - target) <= near + 0.5) from--;
-            while (to < where.length - 1 && Math.abs(where[to + 1] - target) <= near + 0.5) to++;
-            return states[i][from + rng.nextInt(to - from + 1)];
-        }
     }
 
     /**
@@ -563,7 +373,7 @@ public final class EdgeOccupancy {
                 + "stays on the stable cycle cannot score%n", stable, scoring);
 
         List<Decay> all = new ArrayList<>();
-        for (Spawn rule : Spawn.values()) {
+        for (Spawn.Rule rule : Spawn.Rule.values()) {
             System.out.printf("%n-- %s: %s --%n", rule, rule.describes());
             long began = System.nanoTime();
             Decay d = measure(preset, f, plus, rule, seeds, window, through, longFrom, longTo);

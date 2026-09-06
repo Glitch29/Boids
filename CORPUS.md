@@ -64,24 +64,22 @@ A prima facie reasonable figure is **the total length of all edges**, since the 
 length in ticks. On dabeone that is **940 ticks** (158.14 + 158.62 + 100.59 + 100.97 + 93.73 +
 102.59 + 71.84 + 80.97 + 72.76).
 
-> ⚠ **`PsyboidBits.WARM` is 5,000 and answers a different question than the one above.** It was
-> chosen by asking when unsteered scoring stops depending on when you started watching — a
-> *settling* criterion, exactly the thing the minimality argument says not to optimise for.
->
-> **Evidence that 5,000 over-warms:** across all 40 plans of `PLANS_40` the control occupancy is
-> **0.0000** — identically zero. Control is supposed to be the warm-up diagnostic, and at this
-> warm-up it carries no information at all.
->
-> **Both criteria have now been measured, and they do not both terminate.** Edge-occupancy decay
-> stops at **tick 500**. Unsteered scoring never stops — it is still falling at tick 20,000 — so
-> it cannot pick a number at all, and 5,000 is a place someone stopped rather than a value it
-> implies. Two sections below. **`WARM` is unchanged**: it sits in the `CorpusPreset` fingerprint,
-> so moving it re-addresses every corpus, and the choice is a specification one. `ROADMAP.md` §0f
-> has the options.
->
-> ⚠ **The figures `WARM`'s javadoc was chosen on were re-measured 2026-09-06 and were wrong** —
-> every level about 2.7x high, and the floor they asserted does not exist. Corrected table below;
-> the constant's own javadoc now carries it.
+**Settled 2026-09-06: the warm-up is `Warmup.TOTAL_EDGE_LENGTH`** — the time to traverse every
+edge once, which is the sum of the clock's lengths, 940 ticks on dabeone and 1,814 on plait. It
+is a policy on {@code CorpusPreset} rather than a constant, because the right value is a property
+of the map.
+
+**Why a formula and not the measured minimum.** Dabeone's measured minimum is 500, and this is
+nearly twice it. The goal was never long-term equilibrium, only a **sufficiently obfuscated
+history**, and a formula that transfers to a new map beats a constant fitted to one. Every boid
+has had time to cross everything, whatever the map's shape.
+
+> ⚠ **The superseded constant was `PsyboidBits.WARM = 5,000`,** chosen by asking when unsteered
+> scoring stops depending on when you started watching. That criterion **never terminates** —
+> longer is always better on it — so it could not pick a number, and 5,000 was a place someone
+> stopped. Its javadoc's figures were re-measured 2026-09-06 and were wrong: every level about
+> 2.7x high, and the floor they asserted does not exist. `Warmup.FIXED_5000` reproduces it, and
+> `CorpusPreset.LEGACY_40` is the recipe every pre-2026-09-06 figure was taken under.
 
 ### Edge-occupancy decay, measured
 
@@ -212,8 +210,12 @@ mean control over time is a useful probe of warm-up behaviour; it need not have 
 steady state, but it should be **flagged if it has not decayed to substantially below the excess
 score**. Excess score is measured against the *mean* control, not the per-seed one.
 
-On dabeone at WARM 5,000 the flock never scores unsteered, so every point of occupancy in a plan
-is psyboid-caused. That is convenient and, per the section above, also a warning.
+⚠ **"Scoring implies psyboid" is a correlation, not a rule, and it was never more than that.** At
+the old 5,000-tick warm-up dabeone's flock never scored unsteered, so every point of occupancy in a
+plan was psyboid-caused — which was convenient, and, per the section above, a warning: the flock
+had been warmed until it stopped steering itself off the stable cycle. Under the map-derived
+warm-up control occupancy is **0.0004**, not zero. **Read a plan as excess over control**, and
+treat `lifted` rather than `scoring` as the count that means something.
 
 ## Score
 
@@ -356,10 +358,17 @@ and should be described as an approximation rather than as a policy in its own r
 
 ## Presets
 
-| preset | seeds | warm | run | what for |
-| --- | --- | --- | --- | --- |
-| `SMOKE` | 3 | 5,000 | 600 | checking the pipeline is intact after a change. **Not a sample** |
-| `PLANS_40` | 40 | 5,000 | 3,000 | the standard corpus |
+| preset | seeds | warm-up | spawn | run | what for |
+| --- | --- | --- | --- | --- | --- |
+| `SMOKE` | 3 | `TOTAL_EDGE_LENGTH` | `TAU_UNIFORM` | 600 | checking the pipeline is intact after a change. **Not a sample** |
+| `PLANS_40` | 40 | `TOTAL_EDGE_LENGTH` | `TAU_UNIFORM` | 3,000 | the standard corpus |
+| `LEGACY_40` | 40 | `FIXED_5000` | `UNIFORM` | 3,000 | the pre-2026-09-06 recipe, so its figures stay reproducible |
+
+> ⚠ **The run length is a dabeone number too, and `SMOKE` is too short for plait.** A run shorter
+> than one lap cannot contain a decision: plait's stable lap is 811 ticks against `SMOKE`'s 600, so
+> it produces three replayable plans and **zero turns**. It still shows the pipeline is intact,
+> which is all it claims, but it smoke-tests less on a big map than on a small one. Unlike the
+> spread, this has not been given a derived floor.
 
 Search settings are `PsyboidBits.standard`'s: spread 640, lookahead 320, alpha 0.95. Those are
 measured rather than chosen — 640 is a floor at which the answers stop moving, not a free
@@ -375,3 +384,74 @@ for, 40 of 40 plans matching branch for branch.** Usable window 2,739 ticks per 
 comment, which is the reproducibility check the addressing exists to make possible. Against the
 scoring floor: every psyboid within 2% of what it scores alone, and the two parked plans sitting
 on the floor itself.
+
+---
+
+## Generating one from a map
+
+`Pipeline.corpus(preset, gate, recipe)` takes a map and a gate and returns a verified corpus,
+deriving every tier on the way: ingest, navmap, decomposition, clock, per-edge navigation, solver
+facts, stable+, warm-up, spawn, search. It is idempotent — everything below the corpus is
+content-addressed and cached — so a second call is seconds.
+
+**The gate is the only argument that is not the map or a named recipe**, and it is a bootstrap
+rather than an analysis input. See `EDGES.md` §2.
+
+### What the recipe resolves against the map
+
+| | dabeone | plait |
+| --- | --- | --- |
+| edges | 9 | 6 |
+| total edge length | 940.21 | 1,813.57 |
+| **warm-up** (`TOTAL_EDGE_LENGTH`) | **941** | **1,814** |
+| stable edges | `{2, 4, 7}` | `{1, 4}` |
+| stable lap | 275.29 | 811.44 |
+| **spread floor** | 398 → keeps 640 | **1,597** |
+| searchable branches | 2 of 3 arcs | 1 of 2 arcs |
+
+**The spread is a floor, not a constant.** 640 was measured on dabeone as the point where the
+answers stop moving, and it is still used there. On plait it is far too small: the branch edge is
+756 ticks long, so the critical state is up to 775 ticks past the arrival, and a walk that stops
+640 ticks after its root never sees the branch taken. Both children of the fork then end in the
+same place, tie, and **the tie goes to declining — so the search asks for no turns at all and says
+nothing about it.** Measured over eight plait seeds: 0 turns at spreads 640, 960 and 1,280; 2 at
+1,600; 9 at 2,400.
+
+`PsyboidBits.minimumSpread` derives it as **one stable lap + the furthest a branch edge's critical
+state can be + the longest hold** — 1,597 on plait, 398 on dabeone. Whichever of that and the
+recipe's named spread is larger wins, so dabeone is untouched.
+
+### What the two maps produce
+
+`PLANS_40`, `TAU_UNIFORM`, warm-up from the map:
+
+| | dabeone | plait |
+| --- | --- | --- |
+| plans that score | 40 / 40 | 9 / 40 |
+| plans beating their own control | 40 / 40 | 8 / 40 |
+| turns asked / crossed | 252 / 252 | 8 / 8 |
+| impactful ticks per plan | 129.6 | 2.0 |
+| flock occupancy | 0.0502 | 0.0016 |
+| control occupancy | 0.0004 | 0.0002 |
+
+**Plait works and is weak**, and the reason is structural rather than a tuning failure: it has two
+steered arcs and `PsyboidBits` can search one. See the blockers below.
+
+## What still stops this running unattended
+
+1. **The gate.** A line across a corridor that every cycle must cross. It does not fail loudly
+   when it is wrong, and choosing one is a human judgement. A gate-finder is possible in
+   principle — a cut every cycle crosses is a graph property — and does not exist.
+2. **`PsyboidBits` only ever tries holding right.** It reads a branch as *an arc some critical
+   state reaches by holding right*, and drops anything else **silently**. Measured by
+   `PsyboidBits.reaches`, which tries both:
+   - plait `0 -> 3`: **a left hold of 8 ticks reaches it.** Half of plait's psyboid is invisible.
+   - dabeone `5 -> 6`: **a left hold of 14 ticks reaches it.** The javadoc's claim that no hold
+     reaches it is wrong; the cold-start argument for dropping it may still stand, but it is a
+     different argument.
+3. **No generic psyboid override-generating algorithm.** `PsyboidBits` is one — bits at branch
+   edges — and it is the only one, so "the psyboid algorithm" and "this implementation" are not
+   yet separable. Judging one needs the Pareto frontier of (flock occupancy, −impactful ticks).
+
+Nothing else does. Ingest, navmap, decomposition, clock, per-edge navigation, solver facts,
+stable+, warm-up, spawn and corpus all derive from the map without a further decision.

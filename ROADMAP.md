@@ -1066,6 +1066,70 @@ up, 0.4-0.5% in the first block rising to 1.0-1.5% by tick 1,000-2,000 before fa
 flock spawned tidily gets untidier before it settles**, which is worth knowing before reading a
 low excursion rate at tick 0 as a spawn being good.
 
+## 0g. End-to-end wiring, and plait — **built**
+
+**2026-09-06**, on the user's decision closing §0f: **`TAU_UNIFORM` is the spawn rule and the
+warm-up is total edge length over speed** — the time to traverse every edge once, 940 ticks on
+dabeone. Long-term equilibrium was never the goal; a sufficiently obfuscated history is.
+
+> **The user's mechanism for §0f's endless decline, recorded because it is better than the one
+> measured.** Scoring events after the warm-up come from a small number of windows — perhaps one —
+> in which a boid on a stable orbit induces another to exit. The rate keeps falling because
+> **exits add entropy to phase offsets and non-exits do not**: any configuration is equally likely
+> to be arrived at from a random state, but a non-exiting configuration locks in while an exiting
+> one re-randomises itself. That is an absorbing dynamic rather than a mixing one, which is why
+> there is no floor.
+
+**Built.**
+
+- **`Spawn`** — the rules promoted out of `EdgeOccupancy`, which was a survey and should not own
+  something the simulation depends on. Binds a rule to a map, hands out a flock, and is threaded
+  through every replay path, because a replay that spawns differently does not reproduce the
+  timeline whatever the label says.
+- **`CorpusPreset.Warmup`** — a policy, since the value is a function of the map. `PLANS_40` and
+  `SMOKE` take the new defaults; **`LEGACY_40`** carries the pre-2026-09-06 recipe so every figure
+  recorded under it stays reproducible.
+- **`Pipeline`** — a map and a gate in, a verified corpus out, every tier derived on the way.
+- **plait, from its PNG.** It had a source map and no ingest; it now has both, at
+  `46f880d41d2c1e4e`.
+
+**Both maps run end to end.** Figures and the resolved-parameter table in `CORPUS.md`.
+
+### The spread was a dabeone constant, and failed silently
+
+**Found on plait, and it is the more useful half of this section.** The search forks when the
+psyboid arrives on a branching edge; the override fires a further *coast* ticks later. Plait's
+branch edge is 756 ticks long, so the coast runs to 775 — and a walk that stops 640 ticks after
+its root never sees the branch taken. Both children of the fork end in the same place, tie, and
+**the tie goes to declining**, so the search asks for no turns at all and reports nothing wrong.
+Measured over eight plait seeds: **0 turns at spreads 640, 960 and 1,280; 2 at 1,600; 9 at 2,400.**
+
+`PsyboidBits.minimumSpread` now derives it — one stable lap, plus the furthest a branch edge's
+critical state can be, plus the longest hold. **1,597 on plait, 398 on dabeone**, and the recipe
+takes whichever of that and its named spread is larger, so the measured 640 stands where it was
+measured.
+
+### The blockers, named
+
+1. **The gate.** Human judgement, and silent when wrong.
+2. **`PsyboidBits` only tries holding right**, and drops anything else without saying so.
+   `PsyboidBits.reaches` now tries both and reports: **plait `0->3` needs a left hold of 8 ticks**,
+   so half of plait's psyboid is invisible, and **dabeone `5->6` needs a left hold of 14** — which
+   makes the javadoc's "no hold reaches it" wrong, though the cold-start argument for dropping it
+   is a separate one that may still stand.
+3. **No generic psyboid override-generating algorithm**, as the user already had it.
+
+Nothing else. Every other tier derives from the map without a decision.
+
+### Not done
+
+- **Fixing (2).** Searching both holds is a change to the psyboid algorithm, and the algorithm has
+  not been chosen. Reported, not replaced.
+- **`PsyboidBits.WARM` and the `SimTest` entry points that read it.** Six audit entry points
+  replay corpus plans at the constant rather than at the corpus's own warm-up. Harmless while
+  everything they read is `LEGACY_40`, wrong the moment they read anything else, and they should
+  take the warm from the corpus they are reading.
+
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
 Specified 2026-08-28, **built 2026-08-29** as `CriticalEnvelope`, driven by `SimTest.envelope`,

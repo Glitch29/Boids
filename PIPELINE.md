@@ -5,12 +5,21 @@ has. Written as the sequence actually runs, with the real invocations and the re
 a new map can be taken through it and so the parts that still need a human can be seen.
 
 Worked throughout on **dabeone**: 379×407 px, turning radius 40, ingest hash
-`609cffdb84be218c`, 9 edges, 136,276 live states.
+`609cffdb84be218c`, 9 edges, 136,276 live states. **plait** has since been taken through the same
+sequence from its PNG — ingest `46f880d41d2c1e4e`, 6 edges — which is what checked that it is a
+sequence and not a description of one map.
 
-Nothing here is wired into a single entry point — steps are invoked from a driver class in the
-package. Making that unnecessary is one of this era's landmark goals.
+**As of 2026-09-06 there is a single entry point**, and the steps below are what it does:
 
-**Status:** 2026-09-05, physics 3. **Every path below moved**: derived output is addressed by
+```java
+PsyboidCorpus.Corpus c = Pipeline.corpus(preset, gate, CorpusPreset.PLANS_40);
+```
+
+A map and a gate in, a verified corpus out. Read on for what each tier is and how to inspect it;
+read `CORPUS.md` for what the recipe resolves per map and what still blocks running unattended.
+The gate is the only argument that is neither the map nor a named recipe.
+
+**Status:** 2026-09-06, physics 3. **Every path below moved**: derived output is addressed by
 the inputs it depends on, in a structure tier and a behaviour tier under the ingest — see
 `README.md`'s artifact index and `ROADMAP.md` §0c. Entry points take a `Derived.Structure` or
 `Derived.Behaviour`, which `SimTest.structure` and `SimTest.behaviour` build from the gate and the

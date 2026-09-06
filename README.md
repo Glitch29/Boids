@@ -1,6 +1,7 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-06. **Physics 3** — see `ROADMAP.md` §0a-§0f. Verified against dabeone ingest
+**Status:** 2026-09-06. **Physics 3** — see `ROADMAP.md` §0a-§0g. **Two maps:** dabeone
+`609cffdb84be218c` and plait `46f880d41d2c1e4e`. Verified against dabeone ingest
 `609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
 figure without one is not reproducible and should not be trusted, and **figures taken under
 physics 2 are marked as such** rather than silently carried forward.
@@ -63,7 +64,9 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | psyboid corpus | 40 plans, every row verified by replay, regenerates byte-identical | `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` |
 | the scoring floor | a solo psyboid scores 54 points every 533 ticks, `sd 0.00` over 40 seeds | `<preset>-<hash>/floor.tsv` |
 | phase is conserved | edge occupancy oscillates at the lap period, autocorrelation 0.99 after 73 laps | `EdgeOccupancy` |
-| warm-up needed | **500 ticks** on edge occupancy; the scoring criterion never terminates. `WARM` unchanged, see `ROADMAP.md` §0f | `<behaviour>/occupancy/` |
+| warm-up needed | **500 ticks** on edge occupancy; the scoring criterion never terminates. Settled as total edge length: 941 on dabeone, 1,814 on plait | `CorpusPreset.Warmup` |
+| pipeline from a map | plait taken from its PNG to a corpus; both maps run end to end | `Pipeline` |
+| spread is a floor, not a constant | 640 is a dabeone number; plait needs 1,597 or the search silently declines every bit | `PsyboidBits.minimumSpread` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -123,9 +126,10 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 52 files.
+One package, `src/boids`, 54 files.
 
-**Simulation** — `Params` (constants; never edited) · `MovementLogic` (the flocking rules and
+**Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
+by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
 the single definition of what a boid perceives) · `Aggregation` (candidate ways of condensing
 several neighbours into one direction; `CURRENT` is what the simulation does and is the default
 everywhere) · `Boids2DEngine` (one tick in index order,
@@ -161,6 +165,9 @@ that map, drawn at envelope entry).
 **Solving** — `SolverFacts` (what a solver may know) · `SolverStore` (builds and stores it) ·
 `Solver` · `Clue` · `UnstableEdgeClue` · `SolverScore` (how an answer is graded).
 
+**Pipeline** — `Pipeline` (a map and a gate in, a verified corpus out, every tier derived on the
+way). See `CORPUS.md` for what it resolves per map and what still blocks it.
+
 **Psyboid** — `PsyboidBits` (bit-string search over branch decisions) · `PsyboidCorpus`
 (plans, verified by replay) · `CorpusPreset` (named recipes, so a corpus is addressed by the
 settings that produced it). See `CORPUS.md`.
@@ -172,7 +179,7 @@ settings that produced it). See `CORPUS.md`.
 `StateSetRender` (state sets projected to `(x, y)`, several to a sheet) ·
 `SceneRender` · `TwoBoidRender` · `TwoBoidRouteSheet`.
 
-**Driver** — `SimTest`, 3,986 lines. Holds every entry point below *and* the whole
+**Driver** — `SimTest`, 3,981 lines. Holds every entry point below *and* the whole
 decomposition algorithm. Splitting the algorithm out is an open item in `ROADMAP.md`.
 
 ## Entry points
