@@ -325,11 +325,34 @@ public final class PsyboidBits {
      * How long a flock has to fly before its own scoring stops depending on when you started
      * watching.
      * <p>
-     * Measured on dabeone over a 4,000-tick window: 40 seeds in 40 still score unsteered from
-     * tick 0, 18 from tick 500, 10 from tick 2,000, and 5 from both 5,000 and 10,000. So the
-     * old 500-tick convention leaves nearly half the seeds unsettled, and the 10,000 the case
-     * batches used buys nothing over 5,000. The residual five are seeds that score unsteered
-     * however long you wait, which is a property of the map rather than of the warmup.
+     * <b>Re-measured 2026-09-06 under physics 3 over 2,000 seeds, and the figures this constant
+     * was chosen on were wrong in the one way that mattered.</b> Percentage of seeds accruing any
+     * score with no psyboid, over a 4,000-tick run beginning at each tick:
+     * <pre>
+     *   start        0     500   1,000   2,000   5,000  10,000
+     *   scoring   98.8%   16.4%   8.5%    7.0%    4.8%    2.7%
+     * </pre>
+     * The superseded figures — 40 seeds under physics 2, quoted as 40/40, 18/40 at tick 500,
+     * 10/40 at 2,000 and 5/40 at both 5,000 and 10,000 — read every level about 2.7x high, and
+     * asserted a <em>floor</em> at 5/40: "seeds that score unsteered however long you wait, a
+     * property of the map rather than of the warmup". <b>There is no floor.</b> The rate is still
+     * falling at 10,000 and reaches 0.2% of 250-tick windows by tick 20,000. Five of forty was a
+     * sample too small to see it still moving.
+     * <p>
+     * <b>So this criterion never terminates, and cannot choose a warm-up.</b> Longer is always
+     * better on it, which is how the number reached 5,000; and what it is improving is the flock
+     * settling into a formation whose members no longer push each other off the stable cycle,
+     * which is exactly the homogenisation {@code CORPUS.md}'s minimality argument says not to
+     * optimise for. <b>Edge-occupancy decay does terminate</b>, at tick 500 — see
+     * {@link EdgeOccupancy} and {@code ROADMAP.md} §0f. This constant is unchanged pending that
+     * decision, because it sits in the {@link CorpusPreset} fingerprint and moving it re-addresses
+     * every corpus.
+     * <p>
+     * <b>Scoring and leaving the stable cycle are the same event.</b> Dabeone's stable edges
+     * {2, 4, 7} hold no scoring state and its scoring edges {0, 1, 3, 5, 6, 8} are exactly the
+     * rest, so a flock that stays on the cycle cannot score. The two counts differ by under a
+     * point at every start above — excursions that left and returned without reaching a scoring
+     * region — which is why edge occupancy can answer a question about score at all.
      */
     public static final int WARM = 5000;
 

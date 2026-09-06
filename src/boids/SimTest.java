@@ -3963,6 +3963,19 @@ picks, never in what is available to it.
         EdgeOccupancy.run(p, facts, plus, behaviour, Integer.getInteger("seeds", 2000),
                 50, Integer.getInteger("through", 20_000), 5,
                 Integer.getInteger("longFrom", 40_000), Integer.getInteger("longTo", 60_000));
+
+        // The criterion WARM was originally chosen on, re-measured. The javadoc's figures are
+        // physics 2 and 40 seeds; these are physics 3 and two thousand.
+        int run = Integer.getInteger("run", 4000);
+        System.out.printf("%n=== unsteered scoring over a %,d-tick run, by start tick ===%n", run);
+        System.out.printf("%8s %10s %10s %12s %12s%n", "start", "score", "leave", "off-edge occ",
+                "points/tick");
+        for (EdgeOccupancy.Warmup w : EdgeOccupancy.warmupScoring(p, facts,
+                Integer.getInteger("warmSeeds", 2000), run,
+                new int[]{0, 500, 1000, 2000, 5000, 10_000})) {
+            System.out.printf("%8d %9.1f%% %9.1f%% %12.6f %12.6f%n", w.start(),
+                    100 * w.scoredRate(), 100 * w.wentOffRate(), w.occOff(), w.perTick());
+        }
     }
 
     /**

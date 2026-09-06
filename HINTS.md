@@ -589,6 +589,15 @@ plateau — ten times the warm-up buys a 6% reduction in it.
   within-seed 0.477, so seeds genuinely forget where *they* began. It is the ensemble's phase
   distribution that persists.
 
+**A criterion that never terminates cannot choose a parameter, and it is easy not to notice.**
+This project's warm-up was set by asking when a flock stops scoring on its own. That number falls
+monotonically forever — 16.4% of seeds at tick 500, 4.8% at 5,000, 2.7% at 10,000, still going —
+so *longer is always better* and the criterion names no value. The original measurement, at 40
+seeds, saw 5/40 at both 5,000 and 10,000 and concluded it had found a floor that was "a property
+of the map"; it had found the resolution limit of forty samples. **When a settling curve appears
+to flatten, check it at ten times the sample before believing the plateau**, and prefer a
+criterion whose answer stops moving for a reason you can name.
+
 > **Two scales, and the small one is the useful one.** A single seed's occupancy over a 50-tick
 > window sits 0.477 from the long-run value — four boids in fifty ticks is a tiny sample — while
 > the systematic bias being chased is 0.1 to 0.4. Compare a cross-seed mean's bias against

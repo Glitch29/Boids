@@ -11,6 +11,71 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-06 — the warm-up's own criterion, re-measured: it has no floor and never terminates
+
+The user pointed out that non-scoring is equivalent to all edge occupancy sitting on `{2, 4, 7}`,
+so `PsyboidBits.WARM`'s criterion should be inferable from yesterday's data, and that the javadoc
+carrying it looked stale. **Both right, and the second more so than expected.**
+
+**The equivalence, confirmed from the decomposition rather than assumed.** Dabeone's stable edges
+are `{2, 4, 7}` and its scoring edges `{0, 1, 3, 5, 6, 8}` — disjoint and exhaustive, so a flock
+that stays on the stable cycle cannot score. `EdgeOccupancy.run` now prints both sets, since
+everything downstream reads "off the stable edges" as "could have scored".
+
+**What was missing and is now measured.** Yesterday's run stored cross-seed *mean* occupancy, not
+a per-seed indicator, so it could not answer "what % of seeds had a boid off those edges". Added:
+`Decay.offEarly` / `offRate` per window and `offLate` for the long run, plus
+`EdgeOccupancy.warmupScoring`, which flies each seed once and reports, per candidate warm-up,
+the fraction of seeds that score and the fraction that leave the cycle.
+
+**2,000 seeds, physics 3, 4,000-tick run from each start:**
+
+| start | 0 | 500 | 1,000 | 2,000 | 5,000 | 10,000 |
+| --- | --- | --- | --- | --- | --- | --- |
+| scores unsteered | 98.8% | **16.4%** | 8.5% | 7.0% | **4.8%** | **2.7%** |
+| leaves the stable cycle | 99.0% | 17.3% | 8.9% | 7.8% | 5.1% | 2.8% |
+| *javadoc, physics 2, 40 seeds* | *100%* | *45%* | — | *25%* | *12.5%* | *12.5%* |
+
+**Every level was about 2.7x high, and the claimed floor does not exist.** The javadoc read 5/40
+at both 5,000 and 10,000 and concluded those were seeds that score "however long you wait, a
+property of the map rather than of the warmup". The rate is still falling at 10,000 and reaches
+**0.2% of 250-tick windows by tick 20,000**. Five of forty was the resolution limit of forty
+samples, not a floor.
+
+**The consequence is the finding.** This criterion never terminates — longer is always better on
+it — so it cannot pick a warm-up, and 5,000 is a place someone stopped rather than a value it
+implies. What it is buying is the flock tightening into a formation whose members stop pushing
+each other off the cycle, which is the homogenisation `CORPUS.md`'s minimality argument says not
+to optimise for, and the reason control is identically zero. **Edge-occupancy decay does
+terminate, at 500.** That asymmetry, rather than either level, is the argument for using it.
+
+**A correction to yesterday's own entry.** `ROADMAP.md` §0f said dropping to 500 would make
+`occControl` non-zero for "roughly half the corpus". That came from the stale 18/40 and is wrong:
+the real figure is 16.4% over 4,000 ticks and lower over the corpus's 2,739, so about **five plans
+in forty**, not eighteen. The two measurements also reconcile — at `WARM = 5,000` some 3-5% of
+seeds score unsteered, so 0 of 40 plans doing so is ordinary luck rather than evidence of a hard
+floor.
+
+**Two timescales, and they are different relaxations.** Occupancy bias plateaus at tick 500 and
+then oscillates forever (phase is conserved). The excursion rate falls right through: 95% of seeds
+per 250-tick window at the start, 5.9% by 750, 1.3% at 2,000, 0.7% at 4,000, 0.3% at 10,000, 0.2%
+at 20,000. The second governs `occControl`. Also visible: **a tidily-spawned flock gets untidier
+before it settles** — both stable+ rules start at 0.4-0.5% and rise to 1.0-1.5% by tick
+1,000-2,000 before falling back, so a low excursion rate at tick 0 is not by itself a good spawn.
+
+**Changed on disk.** `PsyboidBits.WARM`'s javadoc carries the re-measurement and names the
+superseded figures as superseded; the constant is **unchanged**. `EdgeOccupancy` gains
+`warmupScoring`, the off-stable-edge seed counts, and a printed statement of the stable/scoring
+edge sets. `CORPUS.md` gains two sections and its warm-up warning is rewritten. `ROADMAP.md` §0f
+gains the re-measurement and corrects its own claim. `HINTS.md` §8a gains the non-terminating
+criterion. `GLOSSARY.md` and `README.md` updated.
+
+**Open, unchanged.** `WARM` still needs a decision — `ROADMAP.md` §0f has three options, and
+option 3 (keep 5,000 deliberately) is harder to defend now that the scoring criterion has no
+natural stopping point either.
+
+---
+
 ## 2026-09-05 (late) — edge-occupancy decay: 500 is enough, and phase is conserved
 
 Asked to sanity-check dropping `WARM` from 5,000 to 500–1,000 by measuring edge-occupancy decay,

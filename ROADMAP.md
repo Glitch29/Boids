@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-09-05. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-06. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it.
 
 ---
@@ -1000,27 +1000,71 @@ rule it replaces, because stable+ is a set rather than a measure: `0.464 / 0.194
 stable edges against a long-run `0.356 / 0.328 / 0.316`, and phase conservation makes that
 permanent.
 
-> ⚠ **`WARM` is not changed, because two criteria disagree by ten-fold and the choice between
-> them is the user's.** Edge occupancy says 500. Unsteered scoring says otherwise:
-> `PsyboidBits.WARM`'s javadoc records 18 of 40 seeds still scoring unsteered from tick 500
-> against 5 from tick 5,000, so dropping to 500 makes `occControl` non-zero for roughly half the
-> corpus — and the psyboid/others split in `CORPUS.md` rests on a control of exactly zero.
->
-> These are not two measurements of one thing. **Warming until the flock stops scoring on its own
-> is warming until the flock stops steering itself off the stable cycle**, which is precisely the
-> homogenisation `CORPUS.md`'s minimality argument says to avoid — the slightly-unstable
-> multi-boid configurations that produce a self-steered exit are the interesting ones, and 5,000
-> ticks selects them out. That is also why control is identically `0.0000`.
->
-> Changing `WARM` invalidates every corpus address, since it is in the `CorpusPreset`
-> fingerprint. **Three coherent options**, in preference order:
+### The competing criterion, re-measured — and it does not terminate
+
+**Corrected 2026-09-06, and it corrects this section's own first draft.** The user observed that
+non-scoring is equivalent to all edge occupancy sitting on edges `{2, 4, 7}`, so the warm-up's
+original criterion should be inferable from this data — and that `PsyboidBits.WARM`'s javadoc
+looked stale. **Both were right.**
+
+The equivalence holds exactly on dabeone: stable edges `{2, 4, 7}` hold no scoring state, scoring
+edges `{0, 1, 3, 5, 6, 8}` are exactly the rest. `EdgeOccupancy.warmupScoring` re-measures the
+criterion directly, 2,000 seeds, physics 3, over a 4,000-tick run from each start:
+
+| start | 0 | 500 | 1,000 | 2,000 | 5,000 | 10,000 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **scores unsteered** | 98.8% | **16.4%** | 8.5% | 7.0% | **4.8%** | **2.7%** |
+| leaves the stable cycle | 99.0% | 17.3% | 8.9% | 7.8% | 5.1% | 2.8% |
+| javadoc, physics 2, 40 seeds | 100% | **45%** | — | **25%** | **12.5%** | **12.5%** |
+
+**Every level was about 2.7x too high, and the claimed floor does not exist.** The javadoc read
+5/40 at both 5,000 and 10,000 and concluded those were "seeds that score unsteered however long
+you wait, a property of the map rather than of the warmup". The rate is still falling at 10,000
+(4.8% → 2.7%) and reaches **0.2% of 250-tick windows by tick 20,000**. Five of forty was a sample
+too small to see it still moving.
+
+> **So this criterion never terminates, and cannot choose a warm-up.** Longer is always better on
+> it — which is exactly how the constant reached 5,000. And what it improves is the flock settling
+> into a formation whose members stop pushing each other off the cycle: the homogenisation the
+> minimality argument says not to optimise for, and the reason `occControl` is identically
+> `0.0000`. **Edge-occupancy decay does terminate, at 500.** That asymmetry is the argument.
+
+**The cost of 500 is a fifth of what this section first claimed.** Written against the stale
+javadoc, it said dropping to 500 would make `occControl` non-zero for "roughly half the corpus".
+The real figure is **16.4% over 4,000 ticks**, and lower over the corpus's own 2,739 — so of 40
+plans, five or so rather than eighteen. The two measurements also reconcile: at `WARM = 5,000`
+about 3-5% of seeds score unsteered, so 0 of 40 plans doing so is ordinary luck, not evidence of a
+hard floor.
+
+> ⚠ **`WARM` is still not changed, because the decision is a specification one.** It sits in the
+> `CorpusPreset` fingerprint, so moving it re-addresses every corpus. **Three coherent options**,
+> in preference order:
 >
 > 1. **Switch the spawn to `TAU_UNIFORM` and set `WARM` low.** Best on the occupancy metric from
 >    tick 0, and it makes the warm-up's job explicit rather than incidental.
-> 2. **Keep `UNIFORM`, set `WARM = 500`**, and accept a non-zero control — reporting excess over
->    control rather than assuming control is zero.
+> 2. **Keep `UNIFORM`, set `WARM = 500`**, and report excess over control rather than assuming
+>    control is zero — about five plans in forty would have a non-zero one.
 > 3. **Keep `WARM = 5,000`** and record that it is a *settling* choice made deliberately, so the
 >    minimality argument in `CORPUS.md` stops reading as an unmet obligation.
+>
+> Option 3 is now harder to defend than it was: with no floor in the scoring criterion, 5,000 is
+> not a natural stopping point on it either — just a place someone stopped.
+
+### Two timescales, and they are not the same relaxation
+
+Worth keeping straight, because the two curves disagree about when the flock is "settled".
+
+- **Occupancy bias** — how far the mean distribution over edges sits from its long-run value.
+  Plateaus at **tick 500** and then oscillates forever, because phase is conserved.
+- **Excursion rate** — how often a flock puts a boid off the stable cycle at all. Falls right
+  through: 95% of seeds per 250-tick window at the start, 5.9% by 750, 1.3% at 2,000, 0.7% at
+  4,000, 0.3% at 10,000, **0.2% at 20,000**, still going.
+
+The second is the flock tightening, and it is what governs `occControl`. Both spawn-from-stable+
+rules show the same slow decline, and something they do not: they start *cleaner* than they end
+up, 0.4-0.5% in the first block rising to 1.0-1.5% by tick 1,000-2,000 before falling back. **A
+flock spawned tidily gets untidier before it settles**, which is worth knowing before reading a
+low excursion rate at tick 0 as a spawn being good.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 

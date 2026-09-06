@@ -3,7 +3,7 @@
 Canonical for psyboid corpora: what one is, how it is generated, how it is addressed, and which
 numbers are worth reading off it.
 
-**Status:** 2026-09-05, physics 3. Figures measured on dabeone ingest `609cffdb84be218c`,
+**Status:** 2026-09-06, physics 3. Figures measured on dabeone ingest `609cffdb84be218c`,
 structure `b65011999ad52a55`, behaviour `cc1ab3e9a4831bfd`.
 
 ---
@@ -64,19 +64,24 @@ A prima facie reasonable figure is **the total length of all edges**, since the 
 length in ticks. On dabeone that is **940 ticks** (158.14 + 158.62 + 100.59 + 100.97 + 93.73 +
 102.59 + 71.84 + 80.97 + 72.76).
 
-> ⚠ **The current `PsyboidBits.WARM` is 5,000, and the two rationales disagree by 5×.** WARM was
-> chosen by asking when unsteered scoring stops depending on when you started watching — which is
-> a *settling* criterion, exactly the thing the minimality argument says not to optimise for. Its
-> javadoc records the measurement honestly (40 of 40 seeds score unsteered from tick 0, 5 from
-> tick 5,000), so the number is not arbitrary; it is answering a different question.
+> ⚠ **`PsyboidBits.WARM` is 5,000 and answers a different question than the one above.** It was
+> chosen by asking when unsteered scoring stops depending on when you started watching — a
+> *settling* criterion, exactly the thing the minimality argument says not to optimise for.
 >
 > **Evidence that 5,000 over-warms:** across all 40 plans of `PLANS_40` the control occupancy is
 > **0.0000** — identically zero. Control is supposed to be the warm-up diagnostic, and at this
-> warm-up it carries no information at all, because there is nothing left to decay.
+> warm-up it carries no information at all.
 >
-> **Edge-occupancy decay has now been measured, and it says 500.** See below. `WARM` is still
-> 5,000 — the two criteria disagree by ten-fold and the choice between them is a specification
-> question, not a measurement one.
+> **Both criteria have now been measured, and they do not both terminate.** Edge-occupancy decay
+> stops at **tick 500**. Unsteered scoring never stops — it is still falling at tick 20,000 — so
+> it cannot pick a number at all, and 5,000 is a place someone stopped rather than a value it
+> implies. Two sections below. **`WARM` is unchanged**: it sits in the `CorpusPreset` fingerprint,
+> so moving it re-addresses every corpus, and the choice is a specification one. `ROADMAP.md` §0f
+> has the options.
+>
+> ⚠ **The figures `WARM`'s javadoc was chosen on were re-measured 2026-09-06 and were wrong** —
+> every level about 2.7x high, and the floor they asserted does not exist. Corrected table below;
+> the constant's own javadoc now carries it.
 
 ### Edge-occupancy decay, measured
 
@@ -137,6 +142,56 @@ sampling the route uniformly.
 which sits at `0.356 / 0.328 / 0.316` against the length-proportional `0.365 / 0.341 / 0.294` —
 edge 7 carries 2 points more occupancy than its clock length asks for. **Spawning from the
 measured long-run occupancy** should beat all three, and has not been tried.
+
+### Scoring is leaving the stable cycle, so the other criterion is measurable here too
+
+**Dabeone's stable edges `{2, 4, 7}` hold no scoring state, and its scoring edges
+`{0, 1, 3, 5, 6, 8}` are exactly the rest.** A flock that stays on the stable cycle therefore
+cannot score, whatever else it does, and "did this seed score with no psyboid" is the same event
+as "did any boid leave the cycle" — the two counts differ by under a point at every warm-up
+tried, those being excursions that left and came back without reaching a scoring region.
+
+That makes the criterion `WARM` was originally chosen on measurable from the same flights.
+`EdgeOccupancy.warmupScoring`, 2,000 seeds, physics 3, over a 4,000-tick run from each start:
+
+| start | 0 | 500 | 1,000 | 2,000 | 5,000 | 10,000 |
+| --- | --- | --- | --- | --- | --- | --- |
+| **scores unsteered** | 98.8% | **16.4%** | 8.5% | 7.0% | **4.8%** | **2.7%** |
+| leaves the stable cycle | 99.0% | 17.3% | 8.9% | 7.8% | 5.1% | 2.8% |
+| off-cycle occupancy | 0.0448 | 0.0033 | 0.0022 | 0.0019 | 0.0014 | 0.0008 |
+| *superseded: physics 2, 40 seeds* | *100%* | *45%* | — | *25%* | *12.5%* | *12.5%* |
+
+**The old figures read every level about 2.7x high, and the floor they asserted is not there.**
+`PsyboidBits.WARM`'s javadoc had 5 of 40 seeds scoring at both 5,000 and 10,000 and concluded
+those were seeds that score "however long you wait, a property of the map rather than of the
+warmup". The rate is still falling at 10,000, and reaches **0.2% of 250-tick windows by tick
+20,000**. Forty seeds could not see it still moving.
+
+**So this criterion never terminates and cannot pick a number.** Longer is always better on it,
+which is how 5,000 was arrived at, and what it is buying is the flock tightening into a formation
+whose members stop pushing each other off the cycle — the homogenisation the minimality argument
+above says not to optimise for, and the reason control is identically zero. Edge-occupancy decay
+does terminate. That asymmetry, not the levels, is the argument.
+
+The two measurements reconcile rather than conflict: at `WARM = 5,000` about 3-5% of seeds score
+unsteered over a corpus-length window, so **0 of 40 plans doing so is ordinary luck**, not
+evidence of a hard floor. At 500 it would be about five plans in forty — which is a cost worth
+naming and nothing like the "half the corpus" a first reading of the stale javadoc suggested.
+
+### Two timescales, and they are different relaxations
+
+The two curves disagree about when a flock is settled, and both are right about their own
+quantity.
+
+| | what it does |
+| --- | --- |
+| **occupancy bias** | plateaus at **tick 500**, then oscillates forever — phase is conserved |
+| **excursion rate** | falls right through: 95% of seeds per 250-tick window at the start, 5.9% by 750, 1.3% at 2,000, 0.7% at 4,000, 0.3% at 10,000, **0.2% at 20,000**, still going |
+
+The second is the flock tightening, and it is what governs `occControl`. **A tidily-spawned flock
+gets untidier before it settles**: both stable+ rules start at 0.4-0.5% and rise to 1.0-1.5% by
+tick 1,000-2,000 before falling back, so a low excursion rate at tick 0 is not by itself a good
+spawn.
 
 **Rebasing tau across a vertex needs the edge's own zero, not `tickLo`.** An edge's observed tau
 overruns both its ends — dabeone's edge 2 runs `-16.10` to `101.70` against a length of `100.59` —

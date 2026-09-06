@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-05. **Physics 3** — see `ROADMAP.md` §0a-§0f. Verified against dabeone ingest
+**Status:** 2026-09-06. **Physics 3** — see `ROADMAP.md` §0a-§0f. Verified against dabeone ingest
 `609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
 figure without one is not reproducible and should not be trusted, and **figures taken under
 physics 2 are marked as such** rather than silently carried forward.
@@ -63,7 +63,7 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | psyboid corpus | 40 plans, every row verified by replay, regenerates byte-identical | `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` |
 | the scoring floor | a solo psyboid scores 54 points every 533 ticks, `sd 0.00` over 40 seeds | `<preset>-<hash>/floor.tsv` |
 | phase is conserved | edge occupancy oscillates at the lap period, autocorrelation 0.99 after 73 laps | `EdgeOccupancy` |
-| warm-up needed | **500 ticks**, not 5,000 — the rest is a plateau. `WARM` unchanged, see `ROADMAP.md` §0f | `<behaviour>/occupancy/` |
+| warm-up needed | **500 ticks** on edge occupancy; the scoring criterion never terminates. `WARM` unchanged, see `ROADMAP.md` §0f | `<behaviour>/occupancy/` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -200,6 +200,7 @@ ways → 6 edges.
 | `scoringFloor` | what one psyboid scores alone, and every plan against it. Writes `floor.tsv` |
 | `scoringLaps` | one solo seed's passes lap by lap, with the route each came round on |
 | `EdgeOccupancy.run` | how fast edge occupancy forgets the spawn, under each spawn rule. Not in `SimTest` |
+| `EdgeOccupancy.warmupScoring` | % of seeds that score with no psyboid, per candidate warm-up. Not in `SimTest` |
 | `solverInvariants` | assert what the solver must do with no windows |
 | `envelope` | build one arc's critical-envelope table and report it |
 | `chains` | how far a history walks back inside an edge, and by what |

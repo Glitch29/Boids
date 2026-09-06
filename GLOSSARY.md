@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-05, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-06, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -109,7 +109,10 @@ at two lap lengths, after 73 laps), so **a warm-up, being a time shift, cannot f
 warm-up removes is the non-phase part of a spawn: boids sitting on edges a warm flock never
 occupies.
 
-**edge occupancy** — the fraction of boid-ticks spent on each edge. `EdgeOccupancy`. On dabeone a
+**edge occupancy** — the fraction of boid-ticks spent on each edge. **Scoring is leaving the
+stable cycle:** dabeone's stable edges `{2,4,7}` hold no scoring state and its scoring edges
+`{0,1,3,5,6,8}` are exactly the rest, so a flock that stays on the cycle cannot score and a
+question about score can be answered with occupancy. `EdgeOccupancy`. On dabeone a
 warm flock is `2:0.3556 4:0.3285 7:0.3156` with everything else at or below `0.0002` — 99.9% on
 the three stable edges, and **not** proportional to edge length, which would be
 `0.365 / 0.341 / 0.294`.
@@ -570,7 +573,7 @@ anything not listed.
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
 | psyboid corpus | `PsyboidCorpus` + `CorpusPreset` | `<behaviour>/psyboid/<preset>-<hash>/` |
-| edge-occupancy decay | `EdgeOccupancy`, with its `Spawn` rules | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` |
+| edge-occupancy decay | `EdgeOccupancy`, with its `Spawn` rules and `warmupScoring` | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` |
 | scoring floor | `SimTest.scoringFloor`, per-seed detail in `SimTest.scoringLaps` | `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` |
 | proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |

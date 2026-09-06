@@ -89,10 +89,18 @@ public final class EdgeOccupancy {
      * @param drift    distance between the two halves of the long window. The stationarity check:
      *                 a long run still moving is not a long run
      * @param spawned  how many boids each rule placed on each edge, for the console
+     * @param offEarly per early window, how many seeds had <b>any</b> boid off the stable edges
+     *                 during it. <b>Not the same question as the mean occupancy off them</b>, and
+     *                 the one that matters: a flock confined to the stable edges cannot score, so
+     *                 this is the fraction of seeds that could have scored in that window
+     * @param offLate  the same over the long-run windows, which is the rate it settles to
      */
     public record Decay(Spawn rule, int seeds, int window, int flock, double[][] early,
                         double[] longrun, double sigma, double between, double drift,
-                        int[] spawned) {
+                        int[] spawned, int[] offEarly, double offLate) {
+
+        /** Fraction of seeds with a boid off the stable edges during window {@code w}. */
+        public double offRate(int w) { return offEarly[w] / (double) seeds; }
 
         /** Distance from the long-run occupancy at window {@code w}. */
         public double bias(int w) { return distance(early[w], longrun); }
@@ -221,24 +229,43 @@ public final class EdgeOccupancy {
         // none of them knows yet. Ten buckets a window is nothing next to the flight itself.
         double[][][] late = new double[seeds][longWindows][buckets];
         int[] spawned = new int[buckets];
+        int[] offEarly = new int[earlyWindows];
+        long offLate = 0;
 
         for (int s = 0; s < seeds; s++) {
             Sim.State state = start(engine, map, preset.flockSize(), pool, targets, rule, s);
             for (int i = 0; i < state.n; i++) spawned[bucket(f, state, i)]++;
 
+            boolean[] offHere = new boolean[earlyWindows];
+            boolean[] offThere = new boolean[longWindows];
             while (state.tick < longTo) {
                 int t = (int) state.tick;
                 double[] into = null;
+                boolean[] flag = null;
+                int at = -1;
                 if (t < through) {
-                    into = early[t / window];
+                    at = t / window;
+                    into = early[at];
+                    flag = offHere;
                 } else if (t >= longFrom && t < longTo) {
-                    into = late[s][(t - longFrom) / window];
+                    at = (t - longFrom) / window;
+                    into = late[s][at];
+                    flag = offThere;
                 }
                 if (into != null) {
-                    for (int i = 0; i < state.n; i++) into[bucket(f, state, i)]++;
+                    for (int i = 0; i < state.n; i++) {
+                        int b = bucket(f, state, i);
+                        into[b]++;
+                        // Off the stable edges is the whole of what "could have scored" means:
+                        // the stable cycle holds no scoring state, so a flock that stays on it
+                        // scores nothing whatever else it does.
+                        if (b == f.edges() || !f.stable(b)) flag[at] = true;
+                    }
                 }
                 state = engine.tick(state);
             }
+            for (int w = 0; w < earlyWindows; w++) if (offHere[w]) offEarly[w]++;
+            for (boolean b : offThere) if (b) offLate++;
         }
 
         int flock = preset.flockSize();
@@ -273,7 +300,8 @@ public final class EdgeOccupancy {
         double sigma = Math.sqrt(varWindow / (seeds * (double) longWindows));
         double between = Math.sqrt(varBetween / seeds);
         return new Decay(rule, seeds, window, flock, early, longrun, sigma, between,
-                distance(firstHalf, secondHalf), spawned);
+                distance(firstHalf, secondHalf), spawned, offEarly,
+                offLate / (double) (seeds * (long) longWindows));
     }
 
     private static void normalise(double[][] rows, double by) {
@@ -442,6 +470,75 @@ public final class EdgeOccupancy {
     }
 
     /**
+     * How many seeds score with no psyboid at all, over a run of a given length starting at a
+     * given tick — the measurement {@link PsyboidBits#WARM} was chosen on.
+     *
+     * @param scored   seeds accruing any score at all in the window
+     * @param wentOff  seeds putting any boid off the stable edges in it. <b>The same event seen
+     *                 one step earlier</b>: a flock on the stable cycle cannot score, so leaving
+     *                 it is what scoring is downstream of, and the gap between the two counts is
+     *                 excursions that left and came back without reaching a scoring region
+     * @param occOff   mean fraction of boid-ticks spent off the stable edges
+     */
+    public record Warmup(int start, int run, int seeds, int scored, int wentOff, double occOff,
+                         double perTick) {
+
+        public double scoredRate() { return scored / (double) seeds; }
+
+        public double wentOffRate() { return wentOff / (double) seeds; }
+    }
+
+    /**
+     * Re-measures the warm-up's original criterion at several candidate warm-ups at once.
+     * <p>
+     * <b>One flight per seed, not one per candidate.</b> Every window is a stretch of the same
+     * timeline, so they are all accumulated in a single pass; the cost is the longest candidate
+     * plus the run, whatever the number of candidates.
+     */
+    public static List<Warmup> warmupScoring(PresetScenarioParameter preset, SolverFacts f,
+                                             int seeds, int run, int[] starts) throws IOException {
+        Boids2DEngine engine = new Boids2DEngine(preset);
+        int[] scored = new int[starts.length], wentOff = new int[starts.length];
+        long[] off = new long[starts.length], points = new long[starts.length];
+        int last = 0;
+        for (int s : starts) last = Math.max(last, s + run);
+
+        for (long seed = 0; seed < seeds; seed++) {
+            Sim.State state = engine.init(seed);
+            long[] base = new long[starts.length], end = new long[starts.length];
+            boolean[] anyOff = new boolean[starts.length];
+            while (state.tick < last) {
+                int t = (int) state.tick;
+                for (int i = 0; i < starts.length; i++) {
+                    if (t < starts[i] || t >= starts[i] + run) continue;
+                    if (t == starts[i]) base[i] = state.score;
+                    for (int b = 0; b < state.n; b++) {
+                        int e = f.edgeAt(state.x[b], state.y[b], state.h[b]);
+                        if (e < 0 || !f.stable(e)) { off[i]++; anyOff[i] = true; }
+                    }
+                }
+                state = engine.tick(state);
+                for (int i = 0; i < starts.length; i++) {
+                    if (t == starts[i] + run - 1) end[i] = state.score;
+                }
+            }
+            for (int i = 0; i < starts.length; i++) {
+                if (end[i] > base[i]) scored[i]++;
+                if (anyOff[i]) wentOff[i]++;
+                points[i] += end[i] - base[i];
+            }
+        }
+
+        List<Warmup> out = new ArrayList<>();
+        double boidTicks = (double) run * preset.flockSize();
+        for (int i = 0; i < starts.length; i++) {
+            out.add(new Warmup(starts[i], run, seeds, scored[i], wentOff[i],
+                    off[i] / (boidTicks * seeds), points[i] / ((double) run * seeds)));
+        }
+        return out;
+    }
+
+    /**
      * Every rule, measured and reported side by side.
      * <p>
      * Side by side and not one at a time, because the number that matters is not any one curve
@@ -454,6 +551,16 @@ public final class EdgeOccupancy {
                 preset.name(), preset.ingest().hash(), seeds, window);
         System.out.printf("curve over [0, %,d); long run [%,d, %,d); stable+ %,d states%n",
                 through, longFrom, longTo, plus.size());
+
+        // Stated rather than assumed, because everything below reads "off the stable edges" as
+        // "could have scored", and that equivalence is a property of this map's decomposition.
+        StringBuilder stable = new StringBuilder(), scoring = new StringBuilder();
+        for (int e = 0; e < f.edges(); e++) {
+            if (f.stable(e)) stable.append(stable.isEmpty() ? "" : ",").append(e);
+            if (f.scoring(e)) scoring.append(scoring.isEmpty() ? "" : ",").append(e);
+        }
+        System.out.printf("stable edges %s; scoring edges %s — no edge is both, so a flock that "
+                + "stays on the stable cycle cannot score%n", stable, scoring);
 
         List<Decay> all = new ArrayList<>();
         for (Spawn rule : Spawn.values()) {
@@ -477,6 +584,10 @@ public final class EdgeOccupancy {
             }
             System.out.printf("  plateau %.5f (%.2f sigma) — the residual no warm-up removes%n",
                     d.plateau(), d.plateau() / d.sigma());
+            System.out.printf("  seeds with a boid off the stable edges: %.1f%% in the first "
+                            + "window, %.1f%% at tick %,d, %.1f%% in the long run%n",
+                    100 * d.offRate(0), 100 * d.offRate(d.early().length - 1),
+                    d.at(d.early().length - 1), 100 * d.offLate());
             for (double factor : new double[]{1.5, 1.1}) {
                 int b = d.reaches(factor, block);
                 System.out.printf("  reaches %.0f%% of the plateau at tick %s%n", factor * 100,
@@ -503,15 +614,20 @@ public final class EdgeOccupancy {
             System.out.println();
         }
 
-        System.out.printf("%n-- the envelope: RMS bias over each %,d ticks, which is what decays "
-                + "--%n%16s", block * window, "ticks");
-        for (Decay d : all) System.out.printf("  %16s", d.rule());
+        System.out.printf("%n-- the envelope over each %,d ticks, and the %% of seeds with a boid "
+                + "off the stable edges in it --%n%16s", block * window, "ticks");
+        for (Decay d : all) System.out.printf("  %22s", d.rule());
+        System.out.printf("%n%16s", "");
+        for (int i = 0; i < all.size(); i++) System.out.printf("  %8s %5s %6s", "rms", "/sig", "off%");
         System.out.println();
         for (int b = 0; (b + 1) * block <= all.get(0).early().length; b++) {
             System.out.printf("%7d-%-8d", b * block * window, (b + 1) * block * window);
             for (Decay d : all) {
                 double e = d.envelope(b * block, block);
-                System.out.printf("  %8.5f %5.2f", e, e / d.sigma());
+                int offAny = 0;
+                for (int w = b * block; w < (b + 1) * block; w++) offAny += d.offEarly()[w];
+                System.out.printf("  %8.5f %5.2f %5.1f%%", e, e / d.sigma(),
+                        100.0 * offAny / (d.seeds() * (double) block));
             }
             System.out.println();
         }
