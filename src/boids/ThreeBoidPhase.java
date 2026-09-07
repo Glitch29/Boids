@@ -254,7 +254,7 @@ public final class ThreeBoidPhase {
 
             simulated++;
             PsyboidOverride[] overrides = override
-                    ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                    ? new PsyboidOverride[]{PsyboidOverride.held(0, FOREVER, +1, PSYBOID)}
                     : new PsyboidOverride[0];
             Outcome o = trial(engine, f, tables, from, keep, psy, other, suspect, overrides);
             if (o == null) { inconclusive++; continue; }

@@ -11,6 +11,81 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-06 (evening) — the price function, and a psyboid that flies a route
+
+The user set the project for the next several turns: **maximum corpus score on plait, under one
+second per thousand ticks**, with no training on full plait simulations. And named plait's failure
+correctly — it is a **success of map design**, built to obfuscate the score implied by edge
+occupancy and so the value of a pathing decision.
+
+**Diagnosed, and it is deeper than §0g's spread.** A turn at the end of plait's edge 1 does not
+reach a scoring pixel for ~890 ticks. At `alpha` 0.95 per eight ticks that is worth 0.006 of face
+value, so the search compares two identical futures, ties, and declines. **The spread floor let it
+see the turn happen; it still could not see the turn pay.**
+
+**Built `EdgePrice`.** Per edge, coasted traversal ticks and how many of them score; every simple
+cycle; then the average-reward gain and bias. No simulation anywhere in it.
+
+| | plait | dabeone |
+| --- | --- | --- |
+| best cycle | `[0,2,1,5]` 1,738.4t, 80.8 score | `[1,5,8,4,2]` 505.7t, 53.9 |
+| **gain** | **0.046471** | **0.106634** |
+| bypasses | `[0,3]` 821.6t, `[1,4]` 806.1t, both scoring nothing | `[2,7,4]`, `[3,5,6]` |
+
+> **Value iteration does not converge here and fails quietly.** The transition graph is
+> deterministic, so the recurrent class is a bare cycle and perfectly periodic; synchronous sweeps
+> oscillate with that period forever. The first run had the *policy* right and the *values* four
+> sweeps out of phase, so `exit[1]` pointed at the bypass when the exit was worth 75 more. Fixed
+> by charging the gain into each arc's weight and taking longest paths — every cycle then weighs
+> at most zero, and Bellman-Ford settles in `n` rounds. In `HINTS.md` §10d.
+
+**Abstracted the override.** `PsyboidOverride` is now an interface with `from`/`to`/`asks`/
+`actsAt` — every question any of the twelve call sites actually asked. `HeldTurn` is the old
+concrete kind. A latent design limit is now explicit: a held turn is a *schedule*, so a plan must
+know in advance when the boid arrives somewhere, and on 750-tick edges the slip exceeds the
+window.
+
+**Built `EdgePilot`** — an override carrying a **route**. Each tick it reads where the boid is,
+looks up `EdgeNavigation.steerCostTo`, and asks for nothing when coasting already takes the exit.
+Self-correcting, and **inert on 99.65% of ticks** (138 steers in 40,000). Cost tables are built
+only where the route differs from `straightTo`, which on both maps is one edge.
+
+**The price function describes the physics.** One boid, no flocking, flying the route:
+
+| | flown | gain | |
+| --- | --- | --- | --- |
+| plait | **0.046575** | 0.046471 | **100.2%** |
+| dabeone | 0.100440 | 0.106634 | 94.2% |
+
+Coasting scores exactly zero on both. Dabeone's shortfall is the estimate, not the physics: a lap
+flies in 533 ticks against the 505.7 a coasting traversal predicts, and 0.100440 sits on the
+independently measured solo floor of 0.101313. **A price function built on coasting runs about 5%
+optimistic.**
+
+**In a flock (4 boids, 20 seeds, 5,000 ticks, `TAU_UNIFORM`, pilot on boid 0):**
+
+| | control | piloted | psyboid | each other | previous corpus |
+| --- | --- | --- | --- | --- | --- |
+| plait | 0.000810 | **0.044500** | 0.040440 | 0.001353 | 0.00630 |
+| dabeone | 0.000550 | 0.170510 | 0.078680 | 0.030610 | 0.20100 |
+
+**Plait is 7x the corpus it replaces, and it is entirely selfishness** — each other boid gets
+0.001353 against a control share of 0.000203. The flock ceiling if all four flew the route is
+0.185886, so this reaches 24% of it. On dabeone the naive pilot is *worse* than `PsyboidBits`
+(0.171 against 0.201), which is the same fact seen from the other side: a search that watches the
+flock finds herding; a pilot that only reads the map does not.
+
+**Compute: 0.001 s per 1,000 ticks — a thousandfold under budget.** Everything left is a question
+of what to search for, not of how much searching is affordable.
+
+**Open, and the next move.** Herding. `SolverFacts.Window` already gives plait leader bands for
+both arcs (`0->3` opening at tau 756, `1->5` at 748), and the bias gives the exchange rate:
+`h(5) - h(4) = 37.46` says moving one boid off the bypass onto the scoring cycle is worth 37 ticks
+of gain, so a psyboid should trade most of a lap for it. That is now a number rather than a guess.
+
+---
+
+EOF
 ## 2026-09-06 (later) — end-to-end wiring, plait from its PNG, and the spread that failed silently
 
 The user closed §0f: **`TAU_UNIFORM` and total edge length over speed are the defaults**, the goal

@@ -311,7 +311,7 @@ public final class ThreeBoidSamples {
         }
 
         PsyboidOverride[] overrides = pick.overridden()
-                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                ? new PsyboidOverride[]{PsyboidOverride.held(0, FOREVER, +1, PSYBOID)}
                 : new PsyboidOverride[0];
         NavMap map = tables.map();
         int[] xs = {x(map, pick.psy()), x(map, pick.other()), x(map, pick.suspect())};
@@ -603,7 +603,7 @@ public final class ThreeBoidSamples {
                                      int from, Shot s, Flocking normal, Flocking alt) {
         Row row = s.row();
         PsyboidOverride[] overrides = row.overridden()
-                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                ? new PsyboidOverride[]{PsyboidOverride.held(0, FOREVER, +1, PSYBOID)}
                 : new PsyboidOverride[0];
         int[] xs = {x(map, row.psy()), x(map, row.other()), x(map, row.suspect())};
         int[] ys = {y(map, row.psy()), y(map, row.other()), y(map, row.suspect())};
@@ -876,7 +876,7 @@ public final class ThreeBoidSamples {
                                          int otherStart, int suspectStart, boolean overridden) {
         NavMap map = tables.map();
         PsyboidOverride[] overrides = overridden
-                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                ? new PsyboidOverride[]{PsyboidOverride.held(0, FOREVER, +1, PSYBOID)}
                 : new PsyboidOverride[0];
         int[] xs = {x(map, psyStart), x(map, otherStart), x(map, suspectStart)};
         int[] ys = {y(map, psyStart), y(map, otherStart), y(map, suspectStart)};
@@ -919,7 +919,7 @@ public final class ThreeBoidSamples {
         if (row == null) return new int[0];
         NavMap map = tables.map();
         PsyboidOverride[] overrides = row.overridden()
-                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                ? new PsyboidOverride[]{PsyboidOverride.held(0, FOREVER, +1, PSYBOID)}
                 : new PsyboidOverride[0];
         int[] xs = {x(map, row.psy()), x(map, row.other()), x(map, row.suspect())};
         int[] ys = {y(map, row.psy()), y(map, row.other()), y(map, row.suspect())};
@@ -995,7 +995,7 @@ public final class ThreeBoidSamples {
                 row.overridden());
 
         PsyboidOverride[] overrides = row.overridden()
-                ? new PsyboidOverride[]{new PsyboidOverride(0, FOREVER, +1, PSYBOID)}
+                ? new PsyboidOverride[]{PsyboidOverride.held(0, FOREVER, +1, PSYBOID)}
                 : new PsyboidOverride[0];
         int[] xs = {x(map, row.psy()), x(map, row.other()), x(map, row.suspect())};
         int[] ys = {y(map, row.psy()), y(map, row.other()), y(map, row.suspect())};

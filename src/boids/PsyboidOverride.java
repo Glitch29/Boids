@@ -1,65 +1,81 @@
 package boids;
 
 /**
- * A movement override installed on a timeline: one boid, one turn, held for a stretch.
+ * Anything that steers the psyboid: one of the three {@link MovementControl}s a tick runs through,
+ * between the flocking rules and the collision veto.
  * <p>
- * One of the three {@link MovementControl}s a tick runs through — the flocking rules, this,
- * and the collision veto — so a steering override is not a special case in the engine but
- * another voice choosing from the same three turns. It runs after flocking and before the
- * veto, which is what makes an override a request rather than a guarantee: it can ask for a
- * turn the map will not allow, and {@link NavMap#constrainTurn} still has the last word.
- * <p>
- * Anything else wanting to steer implements {@link MovementControl} the same way, and
- * anything wanting to watch registers with {@link Sim#register} as a {@link SimObserver}.
- * Neither needs a change here.
+ * Being in that chain rather than beside it is what makes a steered boid ordinary. An override
+ * chooses from the same three turns as everything else and runs before the veto, so it is a
+ * <b>request</b> — {@link NavMap#constrainTurn} still has the last word, and a boid cannot turn
+ * faster by being overridden.
+ *
+ * <h2>Why this is an interface</h2>
+ * It was a class, and the class was one thing: a fixed turn held over a fixed span of ticks. That
+ * is enough to express any plan, but only as a list of absolute-tick instructions worked out in
+ * advance — which means the plan cannot react, and a search producing it has to know at planning
+ * time exactly when the boid will arrive somewhere. On a map whose edges run 750 ticks, it will
+ * not. {@link HeldTurn} is still that class and still what a bit-search emits; {@link EdgePilot}
+ * is the other kind, carrying a route rather than a schedule and steering only on the ticks where
+ * coasting would leave it.
+ *
+ * <h2>The window, generically</h2>
+ * Everything that reads an override reads one of three things — when it can act, whether it asks
+ * for anything, and whether it acts at a given tick. Those are on the interface so that nothing
+ * downstream has to know which kind it holds. <b>{@link #to()} is exclusive.</b>
+ *
+ * <h2>Labels</h2>
+ * A plan's label is its artifact, so every implementation round-trips through one. The first
+ * character says which kind, because a corpus row has to be readable back without being told what
+ * wrote it. <b>A pilot's label names a route, and a route means nothing without the map it runs
+ * on</b>, so reading one back takes the two-argument {@link #parse(String, NavMap, SolverFacts)}.
  */
-public class PsyboidOverride implements MovementControl {
-    private final int onset;
-    private final int duration;
-    private final int direction;
-    private final int psyboid;
+public interface PsyboidOverride extends MovementControl {
 
-    public PsyboidOverride(int onset, int duration, int direction, int psyboid) {
-        this.onset = onset;
-        this.duration = duration;
-        this.direction = direction;
-        this.psyboid = psyboid;
-    }
+    /** Which boid this steers. */
+    int psyboid();
 
-    public int onset() { return onset; }
-    public int duration() { return duration; }
-    public int direction() { return direction; }
-    public int psyboid() { return psyboid; }
+    /** Compact identifier, holding no comma or pipe: both separate fields elsewhere. */
+    String label();
+
+    /** First tick this may act on. */
+    long from();
+
+    /** One past the last tick this may act on. */
+    long to();
 
     /**
-     * Compact identifier, so a score can be traced back to the override that produced
-     * it. Contains no commas or pipes, both of which separate fields elsewhere.
+     * Whether this asks the boid for anything at all.
+     * <p>
+     * A decision recorded as <em>not</em> taken is still recorded — that is what makes a plan a
+     * complete account of what was chosen rather than only of what was done — so an override that
+     * asks for nothing is normal and is not the same as an absent one.
      */
-    public String label() {
-        char turn = direction < 0 ? 'L' : direction > 0 ? 'R' : 'S';
-        return "p" + psyboid + turn + "d" + duration + "t" + onset;
+    boolean asks();
+
+    /** Whether this is in force at {@code tick}. */
+    default boolean actsAt(long tick) { return tick >= from() && tick < to(); }
+
+    /** A fixed turn held over a fixed span. The original kind, and what a bit-search emits. */
+    static PsyboidOverride held(int onset, int duration, int direction, int psyboid) {
+        return new HeldTurn(onset, duration, direction, psyboid);
     }
 
-    /** Inverse of {@link #label()}. */
-    public static PsyboidOverride parse(String label) {
-        int turnAt = 1;
-        while ("LSR".indexOf(label.charAt(turnAt)) < 0) turnAt++;
-        int dAt = label.indexOf('d', turnAt);
-        int tAt = label.indexOf('t', dAt);
-
-        int psyboid = Integer.parseInt(label, 1, turnAt, 10);
-        char turn = label.charAt(turnAt);
-        int duration = Integer.parseInt(label, dAt + 1, tAt, 10);
-        int onset = Integer.parseInt(label, tAt + 1, label.length(), 10);
-
-        return new PsyboidOverride(onset, duration, turn == 'L' ? -1 : turn == 'R' ? 1 : 0, psyboid);
+    /**
+     * Reads a label back. Handles every kind that does not need the map.
+     *
+     * @throws IllegalArgumentException for a kind that does, naming the overload that can
+     */
+    static PsyboidOverride parse(String label) {
+        if (label.startsWith("p")) return HeldTurn.parseHeld(label);
+        throw new IllegalArgumentException("'" + label + "' names an override that is a function "
+                + "of the map, so reading it back needs parse(label, map, facts)");
     }
 
-    @java.lang.Override
-    public void calculate(Movement movement, int i) {
-        if (i != psyboid) return;
-        if (movement.boids.tick() >= onset && movement.boids.tick() < onset + duration) {
-            movement.movement[i] = direction;
-        }
+    /** The same, for a context where the map is available. Handles every kind. */
+    static PsyboidOverride parse(String label, NavMap map, SolverFacts f) {
+        if (label.startsWith("p")) return HeldTurn.parseHeld(label);
+        if (label.startsWith("q")) return EdgePilot.parsePilot(label, map, f);
+        throw new IllegalArgumentException("no override kind is written '" + label.charAt(0)
+                + "': " + label);
     }
 }

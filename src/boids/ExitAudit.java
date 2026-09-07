@@ -348,7 +348,7 @@ public final class ExitAudit implements Boids2DEngine.Trace {
     private boolean overriddenAt(int boid, long when) {
         for (PsyboidOverride o : flying) {
             if (o.psyboid() != boid) continue;
-            if (when >= o.onset() && when < (long) o.onset() + o.duration()) return true;
+            if (o.actsAt(when)) return true;
         }
         return false;
     }

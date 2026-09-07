@@ -6,7 +6,7 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-05, physics 3. Figures taken under physics 2 are marked as such. This file is
+**Status:** 2026-09-06, physics 3. Figures taken under physics 2 are marked as such. This file is
 also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
@@ -821,6 +821,52 @@ of its individual cells. **Ask structural questions of neighbourhoods and arrang
 questions of cells** — on one comparison the two answers were 38.8% of cells moved against 94.7%
 of blocks keeping their dominant class, and only the second is an answer to "does it look the
 same".
+
+## 10d. Value a decision by where it leads, not by what it scores next
+
+Established 2026-09-06 on plait, and it is the most transferable thing in this file about search.
+
+**A map can be built to defeat a discounted lookahead, and plait was.** Its two long edges are
+both ~756 ticks, each with a ~55-tick bypass, so the flock's distribution over edges says almost
+nothing about who is about to score. A turn taken at the end of one long edge does not reach a
+scoring pixel for another ~890 ticks. Under a per-second discount of 0.95 that payoff is worth
+0.006 of its face value, so a search comparing "turn" against "do not turn" sees **two identical
+futures**, ties, and declines — and records a decision it never really had.
+
+**The fix is not a longer lookahead. It is to stop looking.** Between decisions a boid coasts and
+its whole future is fixed by which edge it is on, so the map collapses to a directed graph of six
+or nine nodes with a traversal time and a scoring yield on each arc. That is a graph problem:
+
+- **gain** `lambda*` = the largest score-per-tick any cycle sustains. The ceiling for one boid.
+- **bias** `h(e) = max over exits g of [ score(e) - lambda* * length(e) + h(g) ]`. Greedy on `h`
+  is optimal, and differences in `h` are the exchange rate between a detour and its payoff.
+
+**Average reward, never discounted.** A discount reintroduces the horizon the map was built to
+exploit; the gain has no horizon at all.
+
+> **Do not solve it by value iteration.** The transition graph is *deterministic*, so its
+> recurrent class is a bare cycle and therefore perfectly periodic — and relative value iteration
+> does not converge on a periodic chain. It fails in the worst way available: the policy comes out
+> right while the values sit a few sweeps out of phase, which looks converged. Charge the gain
+> into each arc (`w = score - lambda* * ticks`) and take **longest paths**. Every cycle then
+> weighs at most zero by construction, so longest paths exist and Bellman-Ford settles in `n`
+> rounds.
+
+**Then fly the route, not a schedule.** An override that is a fixed turn at an absolute tick has
+to know in advance when the boid will arrive somewhere; under flocking it will not, and on a
+750-tick edge the accumulated slip exceeds the window the turn must land in. An override that
+carries the *route* asks, each tick, what it would take to leave this edge by the target exit and
+says nothing when coasting already does — self-correcting, and silent on **99.65%** of ticks,
+which is also what makes the steered boid indistinguishable from an ordinary one for most of its
+life.
+
+**What it is worth checking against.** A lone boid has no flocking and therefore no excuse: if the
+route is right, its rate is the gain. Measured 100.2% of gain on plait and 94.2% on dabeone — and
+dabeone's shortfall is the estimate rather than the physics, since a lap costs 533 flown ticks
+against the 505.7 a coasting traversal predicts. **A price function built on coasting is about 5%
+optimistic**, which is worth knowing before treating the gain as a target.
+
+---
 
 ## 11. Things that look like findings and are not
 

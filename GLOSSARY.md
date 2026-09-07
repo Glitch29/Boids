@@ -106,6 +106,31 @@ never more than a strong correlation, and at a map-derived warm-up it is weaker:
 control occupancy is 0.0004 rather than 0.0000. Read a plan as **excess over control**, not as
 evidence that anything which scored was steered.
 
+**price function** — what a position is worth in `(edge, tau)` space, from the map alone.
+`EdgePrice`. Per edge the ticks a coasting traversal takes and how many of them score; then the
+**gain** `lambda*`, the best score per tick any cycle sustains, and the **bias** `h(e)`, how much
+better than average it is to stand at the start of edge `e`. Greedy on `h` is single-boid optimal.
+**Average reward, never discounted** — a discount reintroduces exactly the horizon plait was built
+to exploit. Gain 0.046471 on plait, 0.106634 on dabeone; both about 5% optimistic, because a
+coasting traversal is slightly quicker than a flown one.
+
+> **Value iteration does not solve it.** The transition graph is deterministic, so its recurrent
+> class is a bare cycle and therefore perfectly periodic, and synchronous sweeps oscillate with
+> that period forever — quietly, with the policy right and the values out of phase. Charge the
+> gain into each arc's weight and take longest paths instead: every cycle then weighs at most
+> zero, and Bellman-Ford settles in `n` rounds.
+
+**gain / bias** — the two halves of the price function. The gain is a rate and fixes the ceiling
+for one boid; the bias is measured in ticks-of-gain and only its differences mean anything.
+`h(5) - h(4) = 37.46` on plait says moving a boid off the bypass onto the scoring cycle is worth
+37 ticks of gain.
+
+**pilot** — an override carrying a **route** rather than a schedule: one target exit per edge, and
+a turn asked for only on the ticks where coasting would leave it. `EdgePilot`. Self-correcting,
+because it reads where the boid is rather than where a plan expected it to be, and **inert on
+99.65% of ticks**. Contrast `HeldTurn`, a fixed turn at an absolute tick — what a bit-search emits,
+and what cannot survive the slip a boid accumulates over a 750-tick edge.
+
 **phase** — how far round its loop a boid is, in ticks. **Conserved:** a boid advances exactly one
 step per tick along a route of fixed length, so its phase at tick `t` is its spawn phase plus `t`,
 and the flock's distribution over phase is carried rather than mixed. Consequences everywhere —
@@ -588,6 +613,8 @@ anything not listed.
 | the solver | `Solver` + `UnstableEdgeClue` | — |
 | psyboid search | `PsyboidBits` | — |
 | the pipeline | `Pipeline`: map + gate in, corpus out | every tier under `ingests/<map>/` |
+| the price function | `EdgePrice` | in memory; reported by hand |
+| route-following override | `EdgePilot`, against `HeldTurn` | in a plan's label, prefix `q` |
 | spawn | `Spawn` + `Spawn.Rule` | in a corpus's address |
 
 > **Two different two-boid analyses. Do not conflate them.**

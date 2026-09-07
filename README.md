@@ -67,6 +67,7 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | warm-up needed | **500 ticks** on edge occupancy; the scoring criterion never terminates. Settled as total edge length: 941 on dabeone, 1,814 on plait | `CorpusPreset.Warmup` |
 | pipeline from a map | plait taken from its PNG to a corpus; both maps run end to end | `Pipeline` |
 | spread is a floor, not a constant | 640 is a dabeone number; plait needs 1,597 or the search silently declines every bit | `PsyboidBits.minimumSpread` |
+| the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them | `EdgePrice` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -126,7 +127,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 54 files.
+One package, `src/boids`, 57 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -168,7 +169,10 @@ that map, drawn at envelope entry).
 **Pipeline** — `Pipeline` (a map and a gate in, a verified corpus out, every tier derived on the
 way). See `CORPUS.md` for what it resolves per map and what still blocks it.
 
-**Psyboid** — `PsyboidBits` (bit-string search over branch decisions) · `PsyboidCorpus`
+**Psyboid** — `PsyboidOverride` (the interface: anything that steers, in the same chain as the
+flocking rules) · `HeldTurn` (a fixed turn at an absolute tick) · `EdgePilot` (a route, steered
+only where coasting would leave it) · `EdgePrice` (the price function: gain and bias over
+`(edge, tau)`) · `PsyboidBits` (bit-string search over branch decisions) · `PsyboidCorpus`
 (plans, verified by replay) · `CorpusPreset` (named recipes, so a corpus is addressed by the
 settings that produced it). See `CORPUS.md`.
 

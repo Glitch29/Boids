@@ -1130,6 +1130,95 @@ Nothing else. Every other tier derives from the map without a decision.
   everything they read is `LEGACY_40`, wrong the moment they read anything else, and they should
   take the warm from the corpus they are reading.
 
+## 0h. In flight — a psyboid that can read plait
+
+**Started 2026-09-06.** Plait's failure under `PsyboidBits` is a **success of map design**, and the
+user says so: plait was built to *obfuscate the implied score associated with edge occupancy*, and
+by extension the value of a pathing decision. Both long edges are ~756 ticks, both sides have a
+~55-tick bypass, and a turn taken at the end of edge 1 does not reach a scoring pixel until most
+of edge 0 and then edge 2 have gone by — some 890 ticks later. At `alpha` 0.95 per eight ticks
+that payoff is worth 0.006 of its face value. **§0g's spread floor let the search see the turn
+happen; it still could not see the turn pay.**
+
+**The goal:** maximum corpus score on plait, at under **one second per thousand ticks**.
+**The restriction:** no training on full plait simulations — deterministic map properties, things
+computed from them, and short 1-, 2- and 3-boid measurements under real physics.
+
+### Built: `EdgePrice`, the price function
+
+Per edge, the ticks a coasting traversal takes and how many of them score; then every simple
+cycle; then the **gain** `lambda*`, the best score per tick any cycle sustains, and a **bias**
+`h(e)` whose greedy policy is single-boid optimal. Average reward, not discounted — **a discount
+would reintroduce the horizon the map was built to exploit.**
+
+| | plait | dabeone |
+| --- | --- | --- |
+| scoring edge | 2, 80.8 of 142.7 ticks | 8, 53.9 of 79.1 |
+| best cycle | `[0, 2, 1, 5]`, 1,738.4t | `[1, 5, 8, 4, 2]`, 505.7t |
+| **gain** | **0.046471** | **0.106634** |
+| bypasses, scoring nothing | `[0,3]` 821.6t, `[1,4]` 806.1t | `[2,7,4]` 254.0t, `[3,5,6]` 263.4t |
+
+> ⚠ **Value iteration does not converge here, and it fails quietly.** The transition graph is
+> deterministic, so its recurrent class is a bare cycle and therefore perfectly periodic;
+> synchronous sweeps oscillate with the cycle's own period forever. The first run had the policy
+> right and the values four sweeps out of phase — `exit[1]` pointed at the bypass when the exit
+> was worth 75 more. **Fixed by charging the gain into each arc's weight and taking longest
+> paths**: every cycle then has weight at most zero, so Bellman-Ford settles in `n` rounds.
+
+### Built: `PsyboidOverride` as an interface, and `EdgePilot`
+
+An override was one thing — a fixed turn at an absolute tick — so a plan was a schedule worked out
+in advance, and on 750-tick edges the boid's accumulated slip is larger than the window a turn has
+to land in. The interface now carries `from`/`to`/`asks`/`actsAt`, which is every question any
+caller actually asked; `HeldTurn` is the old kind, `EdgePilot` the new one.
+
+**A pilot carries a route, not a schedule.** Each tick it reads where the boid *is*, looks up
+`EdgeNavigation.steerCostTo` for the fewest non-straight ticks to leave by the target exit, and
+asks for nothing when coasting already does it. It is therefore self-correcting, and **inert on
+99.65% of ticks** — 138 steers in 40,000. A cost table is built only where the route differs from
+`straightTo`, which on both maps is one edge.
+
+### Measured: the price function describes the physics
+
+One boid, no flocking, flying the price route:
+
+| | flown | gain | |
+| --- | --- | --- | --- |
+| plait | **0.046575** | 0.046471 | **100.2%** |
+| dabeone | 0.100440 | 0.106634 | 94.2% |
+
+Coasting scores **exactly zero** on both. Dabeone's 5.8% shortfall is the price function's own
+optimism — it costs a lap at the coasted 505.7 ticks where a boid flies 533 — and 0.100440 sits
+right on the independently measured solo floor of 0.101313, so the two agree about the physics and
+disagree only about the estimate.
+
+### Where that leaves the goal
+
+Four boids, 20 seeds, 5,000 ticks, `TAU_UNIFORM`, the pilot on boid 0:
+
+| | control | piloted | psyboid | each other boid | previous corpus |
+| --- | --- | --- | --- | --- | --- |
+| plait | 0.000810 | **0.044500** | 0.040440 | 0.001353 | 0.00630 |
+| dabeone | 0.000550 | 0.170510 | 0.078680 | 0.030610 | 0.20100 |
+
+**Plait is 7x better than the corpus it replaces, and it is all selfishness.** Each other boid
+contributes 0.001353 against a control share of 0.000203 — a lift, but next to nothing. The flock
+ceiling if all four flew the route is 0.185886, so this reaches **24% of it**. On dabeone the
+naive pilot is *worse* than `PsyboidBits` (0.171 against 0.201), which is the same fact from the
+other side: a search that looks at the flock finds herding, and a pilot that only reads the map
+does not.
+
+**Compute: 0.001 s per 1,000 ticks — a thousandfold under the budget.** Every remaining problem is
+one of what to search for, not of how much searching is affordable.
+
+### Next
+
+Herding. The psyboid has to be in a leader window when another boid reaches the critical tau, and
+`SolverFacts.Window` already says where that is — plait has bands for both arcs (`0->3` opening at
+tau 756, `1->5` at 748). The bias `h` gives what converting a boid is worth: on plait, moving one
+boid from the bypass cycle to the scoring cycle is worth `h(5) - h(4) = 37.46` ticks of gain, so a
+psyboid should give up most of a lap to do it. That trade is now a number rather than a guess.
+
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
 Specified 2026-08-28, **built 2026-08-29** as `CriticalEnvelope`, driven by `SimTest.envelope`,

@@ -1094,7 +1094,7 @@ public final class SimTest {
                     for (int turn : new int[]{-1, 1}) {
                         int run = runs++;
                         Sim.State a = withOverrides(walk,
-                                new PsyboidOverride((int) walk.tick, DURATION, turn, who));
+                                PsyboidOverride.held((int) walk.tick, DURATION, turn, who));
                         int was = f.edgeAt(a.x[who], a.y[who], a.h[who]);
                         boolean mark = false, took = false;
                         for (int t = 0; t < HORIZON; t++) {
@@ -1435,7 +1435,7 @@ public final class SimTest {
 
             long last = 0;
             for (PsyboidOverride o : plan.overrides()) {
-                last = Math.max(last, o.onset() + o.duration());
+                last = Math.max(last, o.to());
             }
             int planTP = 0, planFN = 0, planTN = 0, planFP = 0;
             int taken = 0;
@@ -2802,7 +2802,7 @@ picks, never in what is available to it.
             s = withOverrides(s, plan.overrides());
             long last = 0;
             for (PsyboidOverride o : plan.overrides()) {
-                last = Math.max(last, (long) o.onset() + o.duration());
+                last = Math.max(last, o.to());
             }
             audit.reset(s.n, plan.overrides());
             engine.trace(audit);
@@ -2877,7 +2877,7 @@ picks, never in what is available to it.
             s = withOverrides(s, plan.overrides());
             long last = 0;
             for (PsyboidOverride o : plan.overrides()) {
-                last = Math.max(last, (long) o.onset() + o.duration());
+                last = Math.max(last, o.to());
             }
             audit.reset(s.n, plan.overrides());
             engine.trace(audit);
@@ -2970,7 +2970,7 @@ picks, never in what is available to it.
             PsyboidBits.Replay plan = PsyboidBits.parse(label);
             long last = 0;
             for (PsyboidOverride o : plan.overrides()) {
-                last = Math.max(last, (long) o.onset() + o.duration());
+                last = Math.max(last, o.to());
             }
             int before = audit.exits().size();
             engine.trace(null);
@@ -3124,7 +3124,7 @@ picks, never in what is available to it.
             PsyboidBits.Replay plan = PsyboidBits.parse(label);
             long last = 0;
             for (PsyboidOverride o : plan.overrides()) {
-                last = Math.max(last, (long) o.onset() + o.duration());
+                last = Math.max(last, o.to());
             }
             if (crossing > last) continue;
             Sim.State s = engine.init(plan.seed());

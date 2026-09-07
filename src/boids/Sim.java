@@ -51,7 +51,7 @@ public final class Sim {
         int from = 0;
         for (int i = 0; i < segments; i++) {
             int to = i < cuts.length ? cuts[i] : duration;
-            out[i] = new PsyboidOverride(start + from, to - from, rng.nextInt(3) - 1, psyboid);
+            out[i] = PsyboidOverride.held(start + from, to - from, rng.nextInt(3) - 1, psyboid);
             from = to;
         }
         return out;

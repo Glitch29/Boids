@@ -334,7 +334,7 @@ public final class PsyboidBits {
                     append(best.before().psyboidOverrides, best.taken()));
             // Commit means run past the decision so the next search starts after it, otherwise
             // the same fork is found again and the horizon never recedes.
-            long until = best.taken().onset() + best.taken().duration() + 1;
+            long until = best.taken().to() + 1;
             while (root.tick < until) root = engine.tick(root);
         }
 
@@ -347,7 +347,7 @@ public final class PsyboidBits {
         long usableFrom = began + config.settle();
         long usableTo = began;
         for (PsyboidOverride o : plan) {
-            usableTo = Math.max(usableTo, o.onset() + Math.max(1, o.duration()));
+            usableTo = Math.max(usableTo, Math.max(o.to(), o.from() + 1));
         }
         usableTo = Math.min(usableTo, root.tick);
 
@@ -579,8 +579,8 @@ public final class PsyboidBits {
                 // bits tie constantly. Ordered the other way the plan fills with requests the
                 // search already knew were inert, and stops being a record of what it decided.
                 PsyboidOverride[] bits = {
-                        new PsyboidOverride((int) next.tick, 0, 0, p),
-                        new PsyboidOverride((int) next.tick + lead - MARGIN,
+                        PsyboidOverride.held((int) next.tick, 0, 0, p),
+                        PsyboidOverride.held((int) next.tick + lead - MARGIN,
                                 b.hold()[i] + 2 * MARGIN, 1, p),
                 };
                 Best best = null;

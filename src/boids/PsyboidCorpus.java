@@ -157,7 +157,7 @@ public final class PsyboidCorpus {
     /** How many bits in a plan asked for the turn rather than declining it. */
     private static int turns(PsyboidBits.Plan plan) {
         int n = 0;
-        for (PsyboidOverride o : plan.overrides()) if (o.duration() > 0) n++;
+        for (PsyboidOverride o : plan.overrides()) if (o.asks()) n++;
         return n;
     }
 
@@ -218,13 +218,13 @@ public final class PsyboidCorpus {
                 int asked = 0, took = 0;
         boolean[] claimed = new boolean[crossings.size()];
         for (PsyboidOverride o : plan.overrides()) {
-            if (o.duration() <= 0) continue;
+            if (!o.asks()) continue;
             asked++;
             for (int i = 0; i < crossings.size(); i++) {
                 // A crossing belongs to an override when it lands inside the window that
                 // override was holding the turn for, plus the ticks the turn itself takes.
-                if (claimed[i] || crossings.get(i) < o.onset()
-                        || crossings.get(i) > o.onset() + o.duration()) {
+                if (claimed[i] || crossings.get(i) < o.from()
+                        || crossings.get(i) > o.to()) {
                     continue;
                 }
                 claimed[i] = true;
