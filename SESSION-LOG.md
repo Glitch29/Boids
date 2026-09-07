@@ -11,6 +11,36 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-07 — why the searches lose to `route` on plait: found, and not worth fixing here
+
+The user's framing: `route` is a policy the search could pick, so either it is never considered or
+it is wrongly pruned, and either is a bug. **Never considered.**
+
+`PsyboidBits.walk` forks on a **change of edge**, with `was` seeded to the edge the root is already
+on. After committing, `search` advances the root past the override — and on plait, whose branch
+edge is 756 ticks against a 1,597-tick spread, that routinely lands mid-edge-1. The decision the
+psyboid is in the middle of is invisible; the boid coasts through the branch and the plan records a
+decline it never considered. Dabeone's ~100-tick edges mean the root seldom occupies one branch
+edge for a whole advance, which is why the gap does not bite there.
+
+**Tried the obvious fix and reverted it.** Seeding `was = -1` at the top level (recursive calls
+keep the forked edge, or the same visit re-forks every tick and the tree explodes):
+
+| | before | after |
+| --- | --- | --- |
+| plait-4 `bits` | 0.003970 | 0.004818, +21% and still under half of `route`'s 0.010095 |
+| dabnt-4 `bits` | 0.025068 | 0.022223, **−11%** |
+| plait-4 compute | 0.0057 s/1000t | **3.55, over the budget of 1** |
+
+A root fork fires on most calls, so the outer loop commits far more often and each commit pays for
+a whole tree. Reverted; the gap is documented at the line that causes it and in `ROADMAP.md` §0h.
+The branch structure wants respecifying rather than patching, which the user is doing.
+
+**Baseline confirmed unchanged** after the revert — plait-4 reproduces 0.003970 / 0.004172 /
+0.003832 / 0.007983 exactly. Also added a `-Donly=<scenario>` filter to the benchmark driver.
+
+---
+
 ## 2026-09-06 (latest) — "bad aim" was a bug, and one step of lookahead is all of navigation
 
 The user rejected the previous session's finding 3. The claim: the edge axiom makes a missed exit

@@ -562,7 +562,7 @@ public final class PsyboidBits {
      */
     private static Fork choose(Boids2DEngine engine, SolverFacts f, Branches b, Config config,
                                Sim.State root) {
-        Best best = walk(engine, f, b, config, root, root.tick + config.spread(), null);
+        Best best = walk(engine, f, b, config, root, root.tick + config.spread(), null, -1);
         return best == null ? null : best.fork();
     }
 
@@ -579,10 +579,22 @@ public final class PsyboidBits {
      * and not just a deep lookahead.
      */
     private static Best walk(Boids2DEngine engine, SolverFacts f, Branches b, Config config,
-                             Sim.State at, long until, Fork first) {
+                             Sim.State at, long until, Fork first, int wasEdge) {
         int p = config.psyboid();
         Sim.State s = at;
-        int was = f.edgeAt(s.x[p], s.y[p], s.h[p]);
+        // KNOWN GAP, measured 2026-09-07 and deliberately left in place. A fork is looked for on a
+        // change of edge, so seeding this with the edge the root is already on makes the decision
+        // the psyboid is <em>in the middle of</em> invisible — and after committing, the root is
+        // advanced past the override, which on plait's 756-tick edge under a 1,597-tick spread
+        // routinely lands mid-edge. That visit is skipped and the boid coasts through the branch,
+        // declining by default and recording nothing.
+        //
+        // Seeding -1 at the top level closes the gap and is not worth it: plait gains 21%
+        // (0.00482 against 0.00397) and stays less than half of what the route pilot scores,
+        // dabnt loses 11%, and compute goes to 3.55 s per thousand ticks against a budget of 1 —
+        // because a root fork fires on most calls, so the outer loop commits far more often and
+        // each commit pays for a whole tree. The gap is real; closing it this way is not the fix.
+        int was = wasEdge < 0 ? f.edgeAt(s.x[p], s.y[p], s.h[p]) : wasEdge;
         while (s.tick < until) {
             Sim.State next = engine.tick(s);
             int now = f.edgeAt(next.x[p], next.y[p], next.h[p]);
@@ -607,7 +619,7 @@ public final class PsyboidBits {
                     Sim.State forked = SimTest.withOverrides(next,
                             append(next.psyboidOverrides, bit));
                     Best under = walk(engine, f, b, config, forked, until,
-                            first == null ? new Fork(next, bit) : first);
+                            first == null ? new Fork(next, bit) : first, now);
                     if (under != null && (best == null || under.value() > best.value())) {
                         best = under;
                     }

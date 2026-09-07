@@ -3939,13 +3939,16 @@ picks, never in what is available to it.
         int ticks = Integer.getInteger("ticks", 5000);
 
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        List<Bench.Scenario> scenarios = List.of(
+        String only = System.getProperty("only", "");
+        List<Bench.Scenario> all = List.of(
                 new Bench.Scenario(PresetScenarioParameter.DABNT, dab, 4),
                 new Bench.Scenario(PresetScenarioParameter.DABEONE, dab, 4),
                 new Bench.Scenario(PresetScenarioParameter.PLAIT,
                         new SolverFacts.Gate(true, 360, 335, 350, 0), 4),
                 new Bench.Scenario(PresetScenarioParameter.PLAIT,
                         new SolverFacts.Gate(true, 360, 335, 350, 0), 10));
+        List<Bench.Scenario> scenarios = all.stream()
+                .filter(s -> only.isEmpty() || s.name().contains(only)).toList();
 
         List<Bench.Entrant> entrants = List.of(
                 Bench.none(),

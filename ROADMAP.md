@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-09-06. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-07. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it.
 
 ---
@@ -1442,6 +1442,32 @@ compute fell 14x with the BFS gone. It changes the standings: `route` now matche
 the psyboid's own score everywhere, wins outright on dabnt and both plaits, and is beaten only on
 dabeone — where the searches earn it in `occOthers`, 0.0447 against 0.0310, which is real herding.
 
+
+### Why the searches lose to `route` on plait: a real gap, and a fix that is not worth it
+
+Asked 2026-09-07: `route` is a policy the search could choose, so either it is never considered or
+it is wrongly pruned. **Never considered**, and the mechanism is exact.
+
+`PsyboidBits.walk` looks for a fork on a **change of edge** — `now != was`, with `was` seeded to the
+edge the root is already on. After committing a decision, `search` advances the root past the
+override's end. On plait, edge 1 is 756 ticks and the spread is 1,597, so the root routinely lands
+**mid-edge-1**. The decision the psyboid is in the middle of is then invisible, the boid coasts
+through the branch, and the plan records a decline it never actually considered. Dabeone's edges
+are ~100 ticks, so the root rarely occupies one branch edge across a whole advance and the gap
+almost never bites there.
+
+**Seeding `was = -1` at the top level closes it, and the cure is worse.** Measured:
+
+| | before | after |
+| --- | --- | --- |
+| plait-4 `bits` occFlock | 0.003970 | 0.004818 (+21%, still less than half `route`'s 0.010095) |
+| dabnt-4 `bits` occFlock | 0.025068 | 0.022223 (**−11%**) |
+| plait-4 `bits` compute | 0.0057 s/1000t | **3.55 — over the budget of 1** |
+
+The compute goes because a root fork now fires on most calls, so the outer loop commits far more
+often and every commit pays for a whole tree. **Reverted**, with the gap documented at the line
+that causes it. It is not the shape of the fix — the branch structure wants respecifying rather
+than patching, and the user is doing that.
 ### Nothing dominates, and the frontier is the honest answer
 
 | | best occupancy | best per override tick |
