@@ -11,6 +11,53 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-06 (latest) — "bad aim" was a bug, and one step of lookahead is all of navigation
+
+The user rejected the previous session's finding 3. The claim: the edge axiom makes a missed exit
+impossible for anything that simply avoids stepping onto a wrong edge, so **bad aim is not an
+available explanation** — if an exit is missed, either the decomposition is broken or the code is.
+Both halves were checked and the user was right on both.
+
+**The decomposition is fine.** Added `Pipeline.checkNavigable`: from every live state of every
+edge, does some single turn stay on the edge or reach the chosen exit? **It holds on dabnt,
+dabeone and plait — every arc, every state, under 0.05 s a map.** It now runs on every build and
+throws on violation.
+
+**The pilot was wrong.** `EdgePilot` carried a 0-1 BFS per edge for the fewest non-straight ticks
+to the exit and steered only when that number said to. Two faults, one fatal: it guarded against
+*failing to reach the target* and **not** against being pushed onto some third edge, and its "no
+route from here" case **returned silently**. Replaced by the rule itself — leave the flock's
+request alone if its successor stays on the edge or reaches the target, else take the first turn
+that does, else throw.
+
+| | occPsy before | after | of the price gain |
+| --- | --- | --- | --- |
+| dabnt-4 `route` | 0.059910 | **0.096660** | 54% → **88%** |
+| dabeone-4 `route` | 0.082070 | **0.097140** | 77% → **91%** |
+| plait-4 `route` | 0.032300 | 0.032290 | 69%, unchanged |
+
+**A third of the psyboid's score on the dab-like maps was going to that bug**, and compute fell 14x
+with the BFS gone — `route` now runs at 0.0004 s per thousand ticks, two and a half thousand times
+under budget.
+
+**Standings changed.** `route` now matches the searches on the psyboid's own score everywhere,
+wins dabnt and both plaits outright, and is beaten only on dabeone — where the searches earn it in
+`occOthers`, 0.0447 against 0.0310, which is real herding rather than better flying. Full table in
+`ROADMAP.md` §0h. `piloted` is the most efficient entrant on all four scenarios and the
+highest-scoring on none.
+
+**Recorded.** `EDGES.md` §7 gains the invariant with its proof and the verification;
+`HINTS.md` §10h gains the general form — a held turn is not navigation, because the axiom promises
+nothing about always-left, always-right or always-straight, and all three constant policies can
+lead to the same wrong edge.
+
+**Open.** The searches' remaining advantage on dabeone is bought with 1.7x the override ticks, and
+`piloted` still declines decisions that `route` takes — once execution was equalised, the search's
+declines look like mistakes. Whether that is the value function or the branch set is the next
+question.
+
+---
+
 ## 2026-09-06 (very late) — the benchmark, and three findings that point different ways
 
 The user asked for metrics on the best psyboid alongside named controls. Built `Bench` and ran it:
@@ -49,6 +96,11 @@ derived lookahead fixed the search's judgement there; nothing had fixed its aim.
 alone flies 94-100%. **Being inert on 99.65% of ticks was sold as a virtue and is partly a defect**
 — it waits until steering is strictly necessary, and arrives at "strictly necessary" already
 displaced.
+
+> ⚠ **Finding 3 is wrong and was superseded the same day.** The cause was a bug in the pilot, not a
+> property of piloting: it guarded against failing to reach its target and not against being
+> pushed onto a third edge, and gave up silently. Fixed, `route` flies 88-91% of gain. See the next
+> entry up and `EDGES.md` §7.
 
 **Built in response: `piloted`** — the search decides, a pilot executes, each committed decision
 becoming an `EdgePilot` over its own stretch of timeline carrying the route rather than the tick.

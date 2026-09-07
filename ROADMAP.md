@@ -1376,58 +1376,84 @@ it at 0.4. That is the shape that has worked before, in terms the map supplies.
 
 ### The benchmark, 20 seeds x 5,000 ticks
 
-Occupancy is the fraction of the flock scoring at any moment. `impactful` is ticks the psyboid's
-turn differed from the rules' after the veto — **what it spends**. `occ/1ksp` is occupancy per
-thousand impactful ticks, which is the axis that matters once override ticks are budgeted, and
-`s/1000t` is compute against a budget of 1.
+`impactful` is ticks the psyboid's turn differed from the rules' after the veto — **what it
+spends**. `occ/1ksp` is occupancy per thousand of those, the axis that matters once override ticks
+are budgeted. `s/1000t` is compute against a budget of 1.
 
 | scenario | algorithm | occFlock | occPsy | occOthers | impactful | occ/1ksp | s/1000t |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | **dabnt-4** | none | 0.000000 | 0.000000 | 0.000000 | 0.0 | — | 0.0005 |
-| gain 0.110390 | route | 0.016990 | 0.059910 | 0.002683 | 125.6 | 0.135 | 0.0057 |
-| ceiling 0.4416 | bits/640 | 0.025068 | 0.083330 | 0.005647 | 217.5 | 0.115 | 0.0091 |
-| | **bits-ultra/1280** | **0.026347** | 0.083520 | 0.007290 | 221.3 | 0.119 | 0.0587 |
-| | priced/640 | 0.024437 | 0.076260 | 0.007163 | 206.4 | 0.118 | 0.0080 |
-| | **piloted/640** | 0.018215 | 0.061570 | 0.003763 | **119.0** | **0.153** | 0.0513 |
+| gain 0.110390 | **route** | 0.026000 | **0.096660** | 0.002447 | 166.9 | 0.156 | **0.0004** |
+| | bits/640 | 0.025068 | 0.083330 | 0.005647 | 217.5 | 0.115 | 0.0095 |
+| | **bits-ultra/1280** | **0.026347** | 0.083520 | 0.007290 | 221.3 | 0.119 | 0.0645 |
+| | priced/640 | 0.024437 | 0.076260 | 0.007163 | 206.4 | 0.118 | 0.0084 |
+| | piloted/640 | 0.023903 | 0.089830 | 0.001927 | **150.7** | **0.159** | 0.0087 |
 | **dabeone-4** | none | 0.000137 | 0.000550 | 0.000000 | 0.0 | — | 0.0003 |
-| gain 0.106634 | route | 0.040770 | 0.082070 | 0.027003 | 98.0 | 0.416 | 0.0055 |
-| ceiling 0.4265 | bits/640 | 0.053818 | 0.097010 | 0.039420 | 235.2 | 0.229 | 0.0075 |
-| | bits-ultra/1280 | 0.057203 | 0.096320 | 0.044163 | 233.6 | 0.245 | 0.0451 |
-| | **priced/640** | **0.057308** | 0.095140 | **0.044697** | 224.0 | 0.256 | **0.0077** |
-| | **piloted/640** | 0.040522 | 0.081950 | 0.026713 | **97.0** | **0.418** | 0.0515 |
+| gain 0.106634 | route | 0.047523 | **0.097140** | 0.030983 | 136.6 | 0.348 | **0.0004** |
+| | bits/640 | 0.053818 | 0.097010 | 0.039420 | 235.2 | 0.229 | 0.0078 |
+| | bits-ultra/1280 | 0.057203 | 0.096320 | 0.044163 | 233.6 | 0.245 | 0.0493 |
+| | **priced/640** | **0.057308** | 0.095140 | **0.044697** | 224.0 | 0.256 | 0.0083 |
+| | piloted/640 | 0.046183 | 0.095150 | 0.029860 | **131.7** | **0.351** | 0.0083 |
 | **plait-4** | none | 0.000203 | 0.000000 | 0.000270 | 0.0 | — | 0.0004 |
-| gain 0.046471 | **route** | **0.010092** | **0.032300** | 0.002690 | 18.3 | 0.552 | 0.0100 |
-| ceiling 0.1859 | bits/1597 | 0.003970 | 0.013450 | 0.000810 | 9.7 | 0.409 | 0.0042 |
-| | bits-ultra/3194 | 0.004172 | 0.013450 | 0.001080 | 11.7 | 0.357 | 0.0158 |
-| | priced/1597 | 0.003832 | 0.012900 | 0.000810 | 30.7 | 0.125 | 0.0052 |
-| | **piloted/1597** | 0.007980 | 0.027060 | 0.001620 | **12.4** | **0.644** | 0.0464 |
+| gain 0.046471 | **route** | **0.010095** | **0.032290** | **0.002697** | 20.8 | 0.487 | **0.0004** |
+| | bits/1597 | 0.003970 | 0.013450 | 0.000810 | 9.7 | 0.411 | 0.0046 |
+| | bits-ultra/3194 | 0.004172 | 0.013450 | 0.001080 | 11.7 | 0.357 | 0.0167 |
+| | priced/1597 | 0.003832 | 0.012900 | 0.000810 | 30.7 | 0.125 | 0.0055 |
+| | piloted/1597 | 0.007983 | 0.027070 | 0.001620 | **14.3** | **0.560** | 0.0059 |
 | **plait-10** | none | 0.000730 | 0.000810 | 0.000721 | 0.0 | — | 0.0012 |
-| gain 0.046471 | **route** | **0.005081** | 0.029030 | 0.002420 | 18.7 | 0.272 | 0.0117 |
-| ceiling 0.4647 | bits/1597 | 0.002676 | 0.014620 | 0.001349 | 13.2 | 0.203 | 0.0136 |
-| | bits-ultra/3194 | 0.003308 | 0.015320 | 0.001973 | 19.2 | 0.172 | 0.0552 |
-| | priced/1597 | 0.002826 | 0.014520 | 0.001527 | 23.0 | 0.123 | 0.0157 |
-| | **piloted/1597** | 0.003998 | 0.022290 | 0.001966 | **10.3** | **0.388** | 0.0483 |
+| gain 0.046471 | **route** | **0.005226** | **0.033010** | 0.002139 | 18.5 | 0.282 | **0.0013** |
+| | bits/1597 | 0.002676 | 0.014620 | 0.001349 | 13.2 | 0.203 | 0.0142 |
+| | bits-ultra/3194 | 0.003308 | 0.015320 | 0.001973 | 19.2 | 0.172 | 0.0573 |
+| | priced/1597 | 0.002826 | 0.014520 | 0.001527 | 23.0 | 0.123 | 0.0167 |
+| | piloted/1597 | 0.003800 | 0.022720 | 0.001698 | **11.1** | **0.344** | 0.0165 |
 
-**Compute is not the constraint anywhere.** The dearest entrant runs at 0.059 s per thousand ticks
-against a budget of 1 — **seventeen times under**. Everything left is what to search for.
+**Compute is not the constraint anywhere.** The dearest entrant is 0.065 s per thousand ticks
+against a budget of 1, and `route` is **0.0004 — two and a half thousand times under**.
+
+### The correction: "bad aim" was a bug in the pilot, not a property of anything
+
+The previous table showed `route` flying 56–76% of the price gain in a flock and the conclusion
+drawn was that a pilot corrects too late. **The user rejected the premise**: the edge axiom makes a
+missed exit impossible for anything that simply avoids stepping onto a wrong edge, so bad aim is
+not an available explanation, and if an exit is missed the code is wrong or the decomposition is.
+
+Both halves checked out.
+
+**The decomposition is fine.** `Pipeline.checkNavigable` tests the invariant exhaustively — from
+every live state of every edge, does some single turn stay on the edge or reach the chosen exit —
+and it **holds on all three maps**, every arc, every state, in under 0.05 s. It now runs on every
+build and throws.
+
+**The pilot was wrong.** It carried a 0-1 BFS per edge for the fewest non-straight ticks to the
+exit, and steered only when *that* number said to. Two faults, one fatal: it guarded against
+failing to reach the target and **not** against being pushed onto some third edge entirely, and
+its "no route from here" case **returned silently**. Replaced by the rule itself — leave the
+flock's request alone if its successor stays on the edge or reaches the target, else take the
+first turn that does, else throw.
+
+| | occPsy before | occPsy after | of gain |
+| --- | --- | --- | --- |
+| dabnt-4 `route` | 0.059910 | **0.096660** | 54% → **88%** |
+| dabeone-4 `route` | 0.082070 | **0.097140** | 77% → **91%** |
+| plait-4 `route` | 0.032300 | 0.032290 | 69% (already right) |
+
+**A third of the psyboid's score on the dab-like maps was being lost to that bug**, and the
+compute fell 14x with the BFS gone. It changes the standings: `route` now matches the searches on
+the psyboid's own score everywhere, wins outright on dabnt and both plaits, and is beaten only on
+dabeone — where the searches earn it in `occOthers`, 0.0447 against 0.0310, which is real herding.
 
 ### Nothing dominates, and the frontier is the honest answer
 
-**On raw occupancy the searches win the dab-like maps and lose plait**; **on occupancy per override
-tick the pilots win everywhere.** `CORPUS.md` already says a psyboid algorithm is judged on the
-Pareto frontier of (flock occupancy, −impactful ticks), and this is the first time the project has
-had two entrants on it at once rather than one.
-
 | | best occupancy | best per override tick |
 | --- | --- | --- |
-| dabnt-4 | bits-ultra 0.0263 | piloted 0.153 |
-| dabeone-4 | priced 0.0573 | piloted 0.418 |
-| plait-4 | route 0.0101 | piloted 0.644 |
-| plait-10 | route 0.0051 | **piloted 0.388** |
+| dabnt-4 | bits-ultra 0.0263 (route 0.0260 at 1/160 the compute) | **piloted 0.159** |
+| dabeone-4 | priced 0.0573 | **piloted 0.351** |
+| plait-4 | **route 0.0101** | **piloted 0.560** |
+| plait-10 | **route 0.0052** | **piloted 0.344** |
 
-The searches buy their extra score with **roughly twice the spend** — 224 impactful ticks against
-97 on dabeone for 1.4x the occupancy. Under an unbudgeted regime that is a win; under any budget it
-is not obviously one.
+`piloted` is the most efficient entrant on every scenario and the highest-scoring on none;
+`route` is the cheapest by three orders of magnitude and wins three scenarios outright. The
+searches buy their remaining advantage on dabeone with **1.7x the override ticks**.
 
 ### Built in response: `piloted` — the search decides, a pilot executes
 

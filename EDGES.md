@@ -353,6 +353,39 @@ specific gate state rather than a diffuse boundary.
 ---
 
 
+
+### One-step navigability, and why bad aim cannot exist
+
+A consequence of the axiom, stated because everything that steers a boid depends on it.
+
+> From **every** live state of edge `e`, some single turn either keeps the boid on `e` or takes it
+> to any chosen `g` in `e`'s successor set.
+
+**Proof.** Every point of `e` has the same successor set, so from every state of `e` the target
+`g` is reachable by some turn sequence. A move that keeps the boid on `e` lands it on another
+state of `e`, from which `g` is again reachable. If all three moves left `e` for edges other than
+`g`, then no turn sequence from that state reaches `g` first — contradicting reachability.
+
+**So executing a planned exit needs no plan beyond the next tick:**
+
+```
+if (successor(STRAIGHT) is on this edge or the planned next) return STRAIGHT
+if (successor(LEFT)     is on this edge or the planned next) return LEFT
+if (successor(RIGHT)    is on this edge or the planned next) return RIGHT
+throw
+```
+
+**Verified exhaustively** on dabnt, dabeone and plait — every arc, every live state, no violations,
+under 0.05 s a map. `Pipeline.checkNavigable` runs it on every build and throws.
+
+**Two things this rules out.**
+
+- **"The override aimed badly" is not an explanation for a missed exit.** Either the decomposition
+  is broken or the steering was not following the rule. Nothing else is available.
+- **Holding one turn is not navigation.** The axiom promises nothing about always-left,
+  always-right or always-straight; reaching a given exit may require a specific alternation, and
+  all three constant policies can lead to the same wrong edge. A held-turn override works where it
+  was measured and can miss silently elsewhere.
 ### A band's width is not its usefulness, and `VACUOUS` is too permissive
 
 Measured 2026-09-06 by `Herding.trial`, the first test of a window in the direction a psyboid

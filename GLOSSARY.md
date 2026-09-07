@@ -672,6 +672,7 @@ anything not listed.
 | the price function | `EdgePrice` | in memory; reported by hand |
 | route-following override | `EdgePilot`, against `HeldTurn` | in a plan's label, prefix `q` |
 | window conversion | `Herding.trial`, inventory by `Herding.inventory` | printed; ~1s per map |
+| one-step navigability | `Pipeline.checkNavigable`, run on every build | throws on violation |
 | forward distance and rebasing | `EdgeReach` | in memory |
 | the phase ledger | `PhaseShift` | printed; under a second per map |
 | the benchmark | `Bench`, driven from `SimTest.main` | printed |

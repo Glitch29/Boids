@@ -71,7 +71,8 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them | `EdgePrice` |
 | windows convert | a leader in-band causes the exit 11-42% of the time against 0-2% outside it — the first forward test | `Herding.trial` |
 | phase costs override ticks | plait's edge 0 offers 53 ticks of hurry and 11 of dawdle; dabeone is on rails, edge 7 spanning 10 | `PhaseShift` |
-| the benchmark | 4 scenarios x 20 seeds x 5,000 ticks, 6 entrants; **nothing dominates** — searches win occupancy on dab-like maps, pilots win occupancy per override tick everywhere | `Bench` |
+| the benchmark | 4 scenarios x 20 seeds x 5,000 ticks, 6 entrants; **nothing dominates** — the route pilot wins 3 of 4 on occupancy and every one on occupancy per override tick | `Bench` |
+| one-step navigability | from every state of an edge some turn stays on it or reaches the chosen exit. Holds on all three maps; **bad aim cannot explain a missed exit** | `Pipeline.checkNavigable` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that

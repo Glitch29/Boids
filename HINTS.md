@@ -957,6 +957,45 @@ number to both.
 
 ---
 
+## 10h. Bad aim is not an available explanation — one step of lookahead is all of navigation
+
+Established 2026-09-06 by the user, and it retires a whole class of would-be bug.
+
+**The claim.** Every point of an edge has the same successor set, so from *every* state of edge
+`e` the target `g` is reachable by some turn sequence. Any move that keeps the boid on `e`
+therefore preserves that reachability. And if all three moves left `e` for wrong edges, then `g`
+was never reachable from that state at all — contradicting the axiom. **So a rule that only avoids
+stepping onto a wrong edge cannot get stuck**, and executing a planned exit is:
+
+```
+want = whatever the flocking rules asked for
+if (successor(want) is on this edge or the planned next) leave it alone
+for turn in {straight, left, right}
+    if (successor(turn) is on this edge or the planned next) return turn
+throw — the decomposition is wrong
+```
+
+No cost-to-go, no plan beyond the next tick, no schedule. **A missed exit therefore has exactly
+two possible causes: the decomposition is broken, or the thing steering was not following this
+rule.** "It aimed badly" is not on the list.
+
+**What that convicts.** An override that holds one turn for a fixed span is not navigation. The
+axiom promises nothing about holding right, or left, or straight — reaching a given exit may
+require a specific alternation, and on some maps all three constant policies lead to the same
+wrong place. A held turn works where it was measured and can silently miss elsewhere, which is
+what it was doing.
+
+**And what it retired here.** The route pilot had used a 0-1 BFS per edge for the fewest
+non-straight ticks to the exit. It worked, it was unnecessary, and it had one genuinely bad
+property: a "no route from here" case that **returned silently**. There is no such case, so the
+replacement throws instead.
+
+> **Check the invariant exhaustively rather than waiting to trip over it.** It is three successor
+> lookups per state per candidate exit — cheap enough to run on every map build — and a violation
+> then names the state rather than surfacing later as an algorithm that mysteriously underperforms.
+
+---
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.

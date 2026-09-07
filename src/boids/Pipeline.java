@@ -88,7 +88,20 @@ public final class Pipeline {
         StateSet plus = states.stablePlus(SimTest.QUORUM);
         PsyboidBits.Branches branches = PsyboidBits.branches(lab.map(), facts);
         int warm = recipe.warm(facts);
-        return new Built(preset, gate, facts, labelling, plus, branches, warm, where);
+        Built built = new Built(preset, gate, facts, labelling, plus, branches, warm, where);
+
+        // Checked on every build rather than on request. It is the precondition every steering
+        // rule in the project relies on, it costs three successor lookups per state per arc, and
+        // a violation found here names the state instead of surfacing later as an algorithm that
+        // mysteriously underperforms.
+        int stuck = checkNavigable(built);
+        if (stuck > 0) {
+            throw new IllegalStateException(stuck + " state(s) on " + preset.name() + " have no "
+                    + "turn that stays on their edge or reaches a chosen exit. One-step "
+                    + "navigability is a consequence of the edge axiom, so this is a broken "
+                    + "decomposition rather than a hard map — see the pairs listed above.");
+        }
+        return built;
     }
 
     /**
@@ -139,9 +152,68 @@ public final class Pipeline {
         }
         System.out.printf("%d steered arc(s), %d searchable%n", arcs,
                 b.branches().branch().length);
+
+        System.out.printf("%none-step navigability:%n");
+        int stuck = checkNavigable(b);
+        System.out.printf("  %s%n", stuck == 0
+                ? "every live state of every edge has a turn that stays on it or reaches the "
+                        + "chosen exit -- bad aim is not a possible explanation for a missed exit"
+                : stuck + " state(s) violate it, listed above");
         if (!b.steerable()) {
             System.out.printf("** no branch is searchable, so no psyboid can be planned here **%n");
         }
+    }
+
+    /**
+     * <b>One-step navigability:</b> from every live state of an edge, some single turn either keeps
+     * the boid on that edge or takes it to the chosen successor.
+     * <p>
+     * <b>This is a consequence of the edge axiom, and checking it is how a violation becomes
+     * loud.</b> Every point of an edge has the same successor set, so from every point of {@code e}
+     * the target {@code g} is reachable by some turn sequence. Any move that keeps the boid on
+     * {@code e} therefore preserves reachability, and if all three moves left {@code e} for wrong
+     * edges then {@code g} would not have been reachable from there at all — contradiction. So the
+     * greedy rule cannot get stuck, and <b>"the override aimed badly" is not an available
+     * explanation for a missed exit.</b> If an exit is missed, either this invariant is broken or
+     * the thing steering was not following the rule.
+     * <p>
+     * Cheap enough to run on every build: three successor lookups per state per candidate exit.
+     *
+     * @return states from which no single turn stays on the edge or reaches the target, per pair
+     */
+    public static int checkNavigable(Built b) {
+        SolverFacts f = b.facts();
+        NavMap map = b.labelling().map();
+        int[] edgeOf = b.labelling().edge();
+        int total = 0;
+
+        for (int e = 0; e < f.edges(); e++) {
+            for (int g = 0; g < f.edges(); g++) {
+                if (g == e || (f.arcs()[e] & (1L << g)) == 0) continue;
+                int stuck = 0, worst = -1;
+                for (int i = 0; i < b.labelling().liveCount(); i++) {
+                    int s = b.labelling().live()[i];
+                    if (edgeOf[s] != e) continue;
+                    boolean ok = false;
+                    for (int turn = -1; turn <= 1 && !ok; turn++) {
+                        int u = map.successor(s, turn);
+                        if (u < 0) continue;
+                        int on = edgeOf[u];
+                        ok = on == e || on == g;
+                    }
+                    if (!ok) { stuck++; if (worst < 0) worst = s; }
+                }
+                total += stuck;
+                if (stuck > 0) {
+                    int turns = Params.TURNS, w = map.width();
+                    System.out.printf("  ** %d -> %d: %,d state(s) with no safe turn, e.g. "
+                                    + "(%d,%d,%d) — either the decomposition is broken or this "
+                                    + "arc is not really an arc **%n", e, g, stuck,
+                            worst / turns % w, worst / turns / w, worst % turns);
+                }
+            }
+        }
+        return total;
     }
 
     private static int holdOf(PsyboidBits.Branches b, int from, int to) {

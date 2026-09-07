@@ -19,16 +19,22 @@ import java.util.Arrays;
  * the point</b>, because those are exactly the ticks on which the boid is indistinguishable from
  * an ordinary one.
  *
- * <h2>Where the steering comes from</h2>
- * {@link EdgeNavigation#steerCostTo} is a 0-1 BFS over the states of one edge giving, per state,
- * the fewest non-straight ticks needed to leave by a chosen exit. That is the whole navigation
- * problem solved in advance, and it makes the per-tick decision a table lookup and three
- * successor queries. It also makes the pilot <b>self-correcting</b>: pushed off the cheapest line,
- * it reads the cost from wherever it now is rather than from where it expected to be.
+ * <h2>Why one step of lookahead is the whole of navigation</h2>
+ * Every point of an edge has the same successor set, so from <em>every</em> state of {@code e} the
+ * target {@code g} is reachable. Any move that keeps the boid on {@code e} therefore preserves
+ * that, and if all three moves left {@code e} for wrong edges then {@code g} was never reachable
+ * from there — a contradiction. <b>So a rule that only avoids stepping onto a wrong edge cannot
+ * get stuck, and needs no plan beyond the next tick.</b>
  * <p>
- * <b>Only the edges that need it.</b> A cost table is built for an edge only where the route's
- * exit differs from {@link SolverFacts#straightTo} — everywhere else coasting is the route. On
- * both maps in the project that is a single edge, so the pilot costs one BFS to set up.
+ * This replaced a 0-1 BFS over each edge computing the fewest non-straight ticks to the exit. That
+ * worked and was unnecessary, and worse, it framed navigation as something that could be done
+ * badly: it had a "no route from here" case that <b>returned silently</b>. There is no such case.
+ * If no turn is safe the decomposition is wrong, and this throws.
+ * <p>
+ * <b>Nothing here may assume a hand of turn.</b> The axiom does not promise that holding right, or
+ * left, or straight reaches anything in particular — a specific alternation may be required. An
+ * override that holds one turn for a fixed span is therefore not navigation, and can miss an exit
+ * the decomposition guarantees is reachable.
  *
  * <h2>Idempotence</h2>
  * A pilot writes a turn or writes nothing, and writing nothing leaves whatever the flocking rules
@@ -45,17 +51,15 @@ public final class EdgePilot implements PsyboidOverride {
     private final int[] route;
     private final NavMap map;
     private final SolverFacts facts;
-    private final int[][] cost;
     private final long from;
     private final long to;
 
-    private EdgePilot(int psyboid, int[] route, NavMap map, SolverFacts facts, int[][] cost,
+    private EdgePilot(int psyboid, int[] route, NavMap map, SolverFacts facts,
                       long from, long to) {
         this.psyboid = psyboid;
         this.route = route;
         this.map = map;
         this.facts = facts;
-        this.cost = cost;
         this.from = from;
         this.to = to;
     }
@@ -73,15 +77,7 @@ public final class EdgePilot implements PsyboidOverride {
     /** The same, confined to {@code [from, to)} so a plan can hand control back. */
     public static EdgePilot of(int psyboid, int[] route, NavMap map, SolverFacts f,
                                Pipeline.Labelling l, long from, long to) {
-        int[][] cost = new int[f.edges()][];
-        for (int e = 0; e < f.edges(); e++) {
-            int target = route[e];
-            // Coasting already goes there, or the route says nothing about this edge.
-            if (target < 0 || target == f.straightTo()[e]) continue;
-            cost[e] = EdgeNavigation.steerCostTo(map, l.live(), l.liveCount(), l.edge(),
-                    f.edges(), e, target);
-        }
-        return new EdgePilot(psyboid, route.clone(), map, f, cost, from, to);
+        return new EdgePilot(psyboid, route.clone(), map, f, from, to);
     }
 
     @java.lang.Override
@@ -138,13 +134,7 @@ public final class EdgePilot implements PsyboidOverride {
             from = Long.parseLong(label, at + 1, dash, 10);
             to = Long.parseLong(label, dash + 1, label.length(), 10);
         }
-        int[][] cost = new int[f.edges()][];
-        for (int e = 0; e < f.edges() && e < route.length; e++) {
-            if (route[e] < 0 || route[e] == f.straightTo()[e]) continue;
-            cost[e] = EdgeNavigation.steerCostTo(map, live(f), liveCount(f), edgeOf(f),
-                    f.edges(), e, route[e]);
-        }
-        return new EdgePilot(psyboid, route, map, f, cost, from, to);
+        return new EdgePilot(psyboid, route, map, f, from, to);
     }
 
     // The BFS wants the live list and the per-state edge labels, both of which the facts already
@@ -187,43 +177,48 @@ public final class EdgePilot implements PsyboidOverride {
         int state = facts.state(x, y, h);
         if (state < 0 || state >= facts.edgeOf().length) return;
         int edge = facts.edgeOf()[state];
-        if (edge < 0 || edge >= cost.length || cost[edge] == null) return;
+        if (edge < 0 || edge >= route.length) return;
+        int target = route[edge];
+        if (target < 0 || target == edge) return;
 
-        int here = cost[edge][state];
-        if (here == EdgeNavigation.NEVER) return;   // off the route; nothing useful to ask for
-        if (here == 0) return;                      // coasting takes the exit: stay quiet
+        // Leave the flock alone if what it already wants is safe. This is the whole of the
+        // difference between a psyboid and a robot: on the great majority of ticks the rules'
+        // own request keeps the boid on its edge, and overriding it there would spend a tick,
+        // make the boid visible, and change nothing about where it ends up.
+        if (safe(map.successor(state, clamp(movement.movement[i])), edge, target)) return;
 
-        // Turn now rather than at the last moment. The cost is the fewest non-straight ticks still
-        // needed, and whenever it is positive some turn reduces it by one — so the turns can be
-        // spent immediately, at no extra cost in ticks, leaving the rest of the edge as slack for
-        // the flock to push the boid around in.
-        //
-        // Waiting was the first design and it measurably lost: in a flock this pilot flew 56% of
-        // the price gain on dabnt and 76% on dabeone against 91% for a scheduled held turn, while
-        // alone it flew 94-100%. Being inert until steering is strictly necessary means arriving
-        // at "strictly necessary" already displaced.
-        int best = 0, bestCost = Integer.MAX_VALUE;
-        for (int turn = -1; turn <= 1; turn += 2) {
-            int next = at(map.successor(state, turn), edge, cost[edge]);
-            if (next == EdgeNavigation.NEVER) continue;
-            if (next < bestCost) { bestCost = next; best = turn; }
+        for (int turn : ORDER) {
+            if (safe(map.successor(state, turn), edge, target)) {
+                movement.movement[i] = turn;
+                return;
+            }
         }
-        if (bestCost < here) movement.movement[i] = best;
+        throw new IllegalStateException(String.format(
+                "no turn from (%d,%d,%d) on edge %d stays on it or reaches edge %d, which the "
+                        + "decomposition says is reachable from every state of %d. Either the "
+                        + "edge axiom is violated here or %d is not really an arc out of %d.",
+                x, y, h, edge, target, edge, target, edge));
     }
 
     /**
-     * The cost at a successor, or {@link EdgeNavigation#NEVER}.
+     * Straight first, then left, then right.
      * <p>
-     * A successor that has already left the edge has left it <em>by the route's exit</em> if it
-     * landed on the target — that is a cost of zero, the goal reached — and by something else
-     * otherwise, which is unreachable as far as this table is concerned.
+     * Order matters only for which of several safe turns is taken, and straight is preferred
+     * because it is the one the collision layer is least likely to alter and the one that spends
+     * nothing. Left before right is arbitrary and deliberately so — <b>nothing here may assume a
+     * particular hand of turn works</b>, which is exactly the assumption a held-turn override
+     * makes and the reason one can miss an exit the decomposition guarantees.
      */
-    private int at(int state, int edge, int[] table) {
-        if (state < 0) return EdgeNavigation.NEVER;
-        int on = facts.edgeOf()[state];
-        if (on == edge) return table[state];
-        return on == route[edge] ? 0 : EdgeNavigation.NEVER;
+    private static final int[] ORDER = {0, -1, 1};
+
+    /** Whether stepping to {@code u} keeps the plan alive. */
+    private boolean safe(int u, int edge, int target) {
+        if (u < 0) return false;
+        int on = facts.edgeOf()[u];
+        return on == edge || on == target;
     }
+
+    private static int clamp(int turn) { return Math.max(-1, Math.min(1, turn)); }
 
     @java.lang.Override
     public String toString() {
