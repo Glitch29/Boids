@@ -903,6 +903,42 @@ where the measurement says there is something to find.**
 
 ---
 
+## 10f. Phase is the currency, and coasting is not the middle of the range
+
+Established 2026-09-06 on plait and dabeone. It follows from phase conservation (§8a) and is the
+practical half of it.
+
+**A boid cannot change where it is relative to another boid by waiting.** Waiting advances both by
+the same amount. So a leader that needs to be in a particular place at a particular moment has
+exactly one lever: travel some edge by a route that takes a *different number of ticks* than
+coasting does, leaving by the same exit. Cutting a corner arrives early; taking the wide way
+arrives late. **What that costs is override ticks**, so the quantity to rank by is phase per
+override tick, not the largest shift available.
+
+It computes as one dynamic program per edge. Tau is monotone along an edge, so the edge's internal
+transition graph is a DAG, and `(state, budget) -> fewest/most ticks to leave by the coasting
+exit` solves in one sweep in tau order. Under a second for a nine-edge map.
+
+**The finding worth carrying: coasting is often not in the middle of what is available, and which
+side it sits on decides what the map lets you do.**
+
+- One map's long edge has a **64-tick span with coasting 83% of the way up it** — the coasting line
+  already goes the wide way round a bulb. A boid there can arrive **53 ticks early and 11 late**.
+- The other map is the reverse almost everywhere: coasting sits 11–36% up each edge's range, so it
+  offers dawdle and not hurry — 63 ticks of hurry available map-wide against 133 of dawdle. It is
+  "on rails" in the sense that its *fast* line is the default, not that its routes are unique.
+
+So "can this boid be somewhere in N ticks" has an answer that is asymmetric in the sign of N, and
+asymmetric differently on different maps. **Do not assume a phase adjustment is available in both
+directions**, and do not assume the coasting time is the median of the achievable ones.
+
+> **A related bookkeeping trap.** Anything comparing two boids on different edges needs forward
+> rebasing — advance both by the same duration and ask where each lands — and a helper for it is
+> worth writing before the third call site rather than after. A distance that is one edge-length
+> out still looks like a distance, and nothing downstream will flag it.
+
+---
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.

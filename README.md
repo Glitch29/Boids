@@ -69,6 +69,7 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | spread is a floor, not a constant | 640 is a dabeone number; plait needs 1,597 or the search silently declines every bit | `PsyboidBits.minimumSpread` |
 | the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them | `EdgePrice` |
 | windows convert | a leader in-band causes the exit 11-42% of the time against 0-2% outside it — the first forward test | `Herding.trial` |
+| phase costs override ticks | plait's edge 0 offers 53 ticks of hurry and 11 of dawdle; dabeone is on rails, edge 7 spanning 10 | `PhaseShift` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -128,7 +129,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 58 files.
+One package, `src/boids`, 60 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -170,8 +171,10 @@ that map, drawn at envelope entry).
 **Pipeline** — `Pipeline` (a map and a gate in, a verified corpus out, every tier derived on the
 way). See `CORPUS.md` for what it resolves per map and what still blocks it.
 
-**Herding** — `Herding` (where a psyboid could lead, and whether standing there converts). The
-trial is two-boid and takes about a second a map; its table is what a search should branch on.
+**Herding** — `Herding` (where a psyboid could lead, and whether standing there converts; the
+trial is two-boid, about a second a map) · `EdgeReach` (forward distance and rebasing in
+`(edge, tau)`, so a window on one edge can be compared with a boid on another) · `PhaseShift`
+(what an override tick buys in phase: shortcuts and longcuts, ranked per tick spent).
 
 **Psyboid** — `PsyboidOverride` (the interface: anything that steers, in the same chain as the
 flocking rules) · `HeldTurn` (a fixed turn at an absolute tick) · `EdgePilot` (a route, steered

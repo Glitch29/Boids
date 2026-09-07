@@ -171,8 +171,10 @@ public final class Herding {
         int[] byWidthPlaced = new int[WIDTHS.length + 1];
         int[] byWidthExited = new int[WIDTHS.length + 1];
 
+        // Every band, vacuous or not. The vacuity test asks whether a band spans 90% of its edge,
+        // which is the right idea at the wrong scale on a long one — and the conversion measured
+        // here is a better answer to the same question than any fraction of an edge could be.
         for (SolverFacts.Band b : window.bands()) {
-            if (f.vacuous(b)) continue;
             List<Integer> targets = near(byEdge.get(from), f, b.tau());
             if (targets.isEmpty()) continue;
             int e = b.leaderEdge(), bucket = bucket(b.width());

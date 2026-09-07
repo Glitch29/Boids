@@ -11,6 +11,73 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-06 (late night) — distance and rebasing in (edge, tau), and the phase ledger
+
+Three corrections and two builds from the user, all landed.
+
+**Corrections taken.** EV is for valuing a terminal node; earlier in the tree, where compute is
+available, **branching answers the question about an exit definitively** — so branch and prune
+rather than estimating. Windows are recorded against the *led* boid's edge and name a leader
+elsewhere, so cross-edge comparison needs a helper. And override ticks will eventually be budgeted,
+so phase shifts want ranking per tick spent.
+
+**Built `EdgeReach`** — forward distance and forward rebasing. `advance` is the rebase everything
+else is built from; `unsteered` is coasting ticks and is **absent when coasting never arrives**,
+which is the normal case for a window on an unstable edge; `steered` is Dijkstra over the edge
+graph; `willLead` does all three rebasings in one call.
+
+Checked against something known independently: **dabeone's circuit back to edge 1 reads 528.3
+steered against 528.3 from summing the optimal cycle's clock lengths.** Absence works too — plait
+`1->5` and dabeone `2->1` both return absent, since coasting from a stable edge never leaves the
+stable cycle. And plait's shortest circuit back to edge 0 is **811.5, the bypass, not the 1,703-tick
+scoring loop**: shortest is not the route the psyboid wants, which is worth remembering at the call
+site.
+
+> A bug found and fixed on the way: asking for the position you already occupy returned **0**
+> rather than a circuit, because the same-edge shortcut tested `tau >= tau`. "When am I next here"
+> has an answer; "how far to where I am" does not.
+
+**Built `PhaseShift`** — one dynamic program per edge over `(state, budget)`, for the fewest and
+most ticks to leave **by the same exit coasting takes**. Same exit is what makes it a phase change
+rather than a route change. Under half a second for both maps.
+
+**Both of the user's predictions came out, which was the test.**
+
+| plait | span | hurry | dawdle | per tick |
+| --- | --- | --- | --- | --- |
+| **edge 0** | **64** | **53** | 11 | **2.21** — 3x the next edge |
+| edge 1 | 30 | 11 | 19 | 0.79 |
+
+**The bulb popped out**, with the sign the other way round from expected: coasting on edge 0 sits
+**83% of the way up its own range**, so the coasting line already takes the wide way round and the
+53-tick longcut is the one the boid is already on. Measured against coasting it prints as hurry.
+Operationally the useful form is that a psyboid there can arrive **53 ticks early and only 11
+late**.
+
+| dabeone | span | hurry | dawdle | per tick |
+| --- | --- | --- | --- | --- |
+| edge 5 | 27 | **18** | 9 | 0.75 — the one real shortcut, coasting 67% up |
+| **edge 7** | **10** | 5 | 5 | **0.33** — lowest on the map |
+
+**Edge 7's "modest difference" is 10 ticks**, exactly as predicted, and dabeone is on rails for
+hurrying: 63 ticks of hurry map-wide against 133 of dawdle, with every edge but 5 having coasting
+low in its own range.
+
+**Vacuity filter dropped from the conversion trial.** `SolverFacts.VACUOUS` was live only in
+code written this week plus one render entry point. Including every band moves the headline
+conversions by under a point — 30.0 / 13.2 / 27.5 / 41.2 / 11.0% against 29.3 / 14.1 / 26.6 / 41.9
+/ 11.2% — so it was near-inert, while the per-width table says the real thing: plait's bands over
+300 ticks convert at **2.2%**. The constant is left alone rather than retuned; a measured
+conversion is a better answer than a fraction of an edge.
+
+**Open.** The search itself: fork on a trigger — a boid entering a window's tau range with the
+psyboid able to reach a leader edge — fly both branches, prune on what happened, and fall back on
+the bias only at leaves. The three inputs are now in place. **Headspace** remains untouched; the
+user has taken the gate as a personal to-do and confirmed a radius of 40 for every map but
+hamburger, and that a scoring region can serve as the gate.
+
+---
+
 ## 2026-09-06 (night) — windows convert, and the conversion table is the estimator
 
 The user asked two things: whether plait actually has usable windows, and — the sharper one —

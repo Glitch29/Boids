@@ -106,6 +106,30 @@ never more than a strong correlation, and at a map-derived warm-up it is weaker:
 control occupancy is 0.0004 rather than 0.0000. Read a plan as **excess over control**, not as
 evidence that anything which scored was steered.
 
+**forward distance** — ticks from one `(edge, tau)` to another, travelling forwards. `EdgeReach`,
+in two flavours that answer different questions. **`unsteered`** is where a boid goes if nothing
+acts on it, and is **absent whenever coasting never arrives** — which is normal rather than
+exceptional, since unsteered travel from the stable cycle stays on it and every window on an
+unstable edge is therefore unreachable that way. **`steered`** is the fewest ticks with steering
+allowed. Asking for the position you already occupy means a **full circuit**, not zero.
+
+**forward rebasing** — advancing an `(edge, tau)` by a number of ticks along a route.
+`EdgeReach.advance`. The operation every window comparison is built from: a window is recorded
+against the led boid's edge and names a leader on another, so comparing them means advancing both
+by the same duration and asking where each lands.
+
+**phase per override tick** — the exchange rate between steering and arrival time, and the currency
+a psyboid actually spends. `PhaseShift`. **A psyboid cannot reach a window by waiting**, because
+waiting moves it and its target equally; the only way to change a phase relationship is to travel
+an edge by a longer or shorter route than coasting takes. Ranked per override tick rather than by
+size, because override ticks will eventually be budgeted.
+
+**shortcut / longcut** — a route through an edge that leaves by the same exit coasting does, in
+fewer or more ticks. **Coasting is not always in the middle of the range**: plait's edge 0 has a
+64-tick span with coasting 83% of the way up it, so a boid there can arrive 53 ticks early and only
+11 late. Dabeone is on rails by comparison — 63 ticks of hurry available map-wide against 133 of
+dawdle.
+
 **conversion rate** — how often a leader standing inside a window's band actually causes the exit
 that band describes. `Herding.trial`, two boids, against a control with the leader outside the
 band. **The first forward test of a window in this project**: everything before it took exits that
@@ -629,6 +653,8 @@ anything not listed.
 | the price function | `EdgePrice` | in memory; reported by hand |
 | route-following override | `EdgePilot`, against `HeldTurn` | in a plan's label, prefix `q` |
 | window conversion | `Herding.trial`, inventory by `Herding.inventory` | printed; ~1s per map |
+| forward distance and rebasing | `EdgeReach` | in memory |
+| the phase ledger | `PhaseShift` | printed; under a second per map |
 | spawn | `Spawn` + `Spawn.Rule` | in a corpus's address |
 
 > **Two different two-boid analyses. Do not conflate them.**

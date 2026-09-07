@@ -1276,17 +1276,82 @@ detour.
 the bypass, away from the scoring edge. A psyboid should avoid causing it, and it converts at
 29.3% — so avoiding it is not automatic.
 
+### Built: `EdgeReach`, so a window on one edge can be compared with a boid on another
+
+A leader window is recorded against the edge the **led** boid is on, and names a leader standing
+somewhere else entirely. Answering "will my psyboid be in that band when that boid gets there"
+means holding two positions on two edges and a duration and rebasing all three, which done by hand
+at each call site is an invitation to a silent sign error — a distance one edge-length out still
+looks like a distance.
+
+- **`advance(at, ticks, route)`** — the forward rebase, and what the other two are built from.
+- **`unsteered(from, to)`** — coasting ticks, **absent when coasting never arrives**. That is the
+  common case rather than the exception: unsteered travel from the stable cycle stays on it, so
+  every window on an unstable edge is unreachable this way. Verified — plait `1->5` and dabeone
+  `2->1` both return absent.
+- **`steered(from, to)`** — fewest ticks with steering allowed, Dijkstra over the edge graph.
+- **`willLead(...)`** — all three rebasings in one call, which is the question a psyboid asks.
+
+Checked against something known independently: **dabeone's circuit back to edge 1 reads 528.3
+steered against 528.3 from summing the optimal cycle's clock lengths.** On plait the shortest
+circuit back to edge 0 is 811.5 — the bypass, not the 1,703-tick scoring loop — which is right and
+worth remembering: **shortest is not the route the psyboid wants.**
+
+### Built: `PhaseShift`, the currency an override tick is spent in
+
+**A psyboid cannot reach a leader window by waiting.** Waiting advances it and the boid it wants
+to lead by the same amount, because phase is conserved (§0f). The only way to change a phase
+relationship is to travel a route through an edge that is longer or shorter than the coasting one,
+and what that costs is override ticks. Those are free today and will not be forever, so the ranking
+is by **phase per override tick**, not by the largest shift available.
+
+One dynamic program over `(state, budget)` per edge — tau is monotone, so the edge's internal graph
+is a DAG — for the fewest and most ticks to leave **by the same exit coasting takes**. Same exit is
+what makes it a phase change rather than a route change. Under half a second for both maps.
+
+**Both of the user's predictions came out, which is the test this was built to pass.**
+
+| plait | span | hurry | dawdle | per tick | |
+| --- | --- | --- | --- | --- | --- |
+| **edge 0** | **64** | **53** | 11 | **2.21** | **the bulb** — 3x the next edge |
+| edge 1 | 30 | 11 | 19 | 0.79 | |
+| edge 2 | 18 | 7 | 11 | 0.50 | |
+
+> **The bulb, with the sign the other way round from expected.** Coasting on edge 0 sits **83% of
+> the way up** its own range: the coasting line already takes the wide way round, so relative to
+> the fast line there is a 53-tick longcut and the boid is already on it. Measured against
+> coasting it therefore prints as *hurry*. Operationally that is the fact that matters — a psyboid
+> on plait's edge 0 can arrive **53 ticks early and only 11 late.**
+
+| dabeone | span | hurry | dawdle | per tick | |
+| --- | --- | --- | --- | --- | --- |
+| edge 5 | 27 | **18** | 9 | 0.75 | the one real shortcut; coasting sits 67% up |
+| **edge 7** | **10** | 5 | 5 | **0.33** | **"a modest difference"**, and the lowest on the map |
+
+Dabeone is **on rails for hurrying**: 63 ticks of hurry available across the whole map against 133
+of dawdle, and every edge but 5 has coasting sitting low in its own range. Plait is the opposite on
+its long edges.
+
+### The vacuity filter is gone from the trial
+
+`SolverFacts.VACUOUS` turned out to be live only in code written this week plus one render entry
+point. Including every band changes the headline conversions by under a point — 30.0 / 13.2 / 27.5
+/ 41.2 / 11.0% against 29.3 / 14.1 / 26.6 / 41.9 / 11.2% — so it was doing almost nothing, while
+the per-width table it was standing in for says the real thing: on plait, bands over 300 ticks wide
+convert at **2.2%**. **A measured conversion is a better answer than any fraction of an edge**, and
+the constant is left alone rather than retuned.
+
 ### Next
 
-Use the conversion table to decide where to branch: hold the pilot's route as the default, and
-fork only when a boid is inside a window's tau range with the psyboid able to reach a leader edge
-whose conversion is worth the detour. The bias gives the exchange rate — on plait `h(5) - h(4) =
-37.46` ticks of gain for converting one boid — and the conversion table gives the probability, so
-the two multiply into an expected value that a branch can be scored on.
+Branch and prune, not expected value. The user's correction: **EV is for valuing a terminal node;
+earlier in the tree, where compute is available, branching answers the question about an exit
+definitively.** So the search should fork on a *trigger* — a boid entering a window's tau range
+with the psyboid able to reach a leader edge — fly both branches, and prune on what actually
+happened, falling back on the price function's bias only at the leaves.
 
-Also worth a look: **headspace**, which the user says is dab-like enough to decompose and has many
-more herding opportunities than either map here. It needs a turning radius and a gate, both
-judgement calls, so it is a deliberate next step rather than a free one.
+The three pieces are now in place: `Herding` says where a lead is possible and how often it
+converts, `EdgeReach` says whether the psyboid can be there in time, and `PhaseShift` says what
+adjusting its arrival would cost.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 
