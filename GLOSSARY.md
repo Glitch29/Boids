@@ -106,6 +106,19 @@ never more than a strong correlation, and at a map-derived warm-up it is weaker:
 control occupancy is 0.0004 rather than 0.0000. Read a plan as **excess over control**, not as
 evidence that anything which scored was steered.
 
+**conversion rate** — how often a leader standing inside a window's band actually causes the exit
+that band describes. `Herding.trial`, two boids, against a control with the leader outside the
+band. **The first forward test of a window in this project**: everything before it took exits that
+happened and asked whether a leader could account for them, which cannot detect a band that is too
+wide. Measured 11–42% in-band against 0–2% out, so windows are levers rather than descriptions —
+and **dominated by the leader's edge rather than the band's width**, one 16-tick band converting
+at 1.0% where a 33-tick band on another arc converts at 86.9%.
+
+**herding chance** — a `(led boid tau, leader edge, tau band)` row a psyboid could stand in.
+`Herding.Chance`. Cheap to enumerate from the windows, and worth enumerating because most of a
+timeline offers none: knowing where a lead is possible is what makes it affordable to branch only
+there.
+
 **price function** — what a position is worth in `(edge, tau)` space, from the map alone.
 `EdgePrice`. Per edge the ticks a coasting traversal takes and how many of them score; then the
 **gain** `lambda*`, the best score per tick any cycle sustains, and the **bias** `h(e)`, how much
@@ -615,6 +628,7 @@ anything not listed.
 | the pipeline | `Pipeline`: map + gate in, corpus out | every tier under `ingests/<map>/` |
 | the price function | `EdgePrice` | in memory; reported by hand |
 | route-following override | `EdgePilot`, against `HeldTurn` | in a plan's label, prefix `q` |
+| window conversion | `Herding.trial`, inventory by `Herding.inventory` | printed; ~1s per map |
 | spawn | `Spawn` + `Spawn.Rule` | in a corpus's address |
 
 > **Two different two-boid analyses. Do not conflate them.**

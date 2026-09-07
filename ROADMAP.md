@@ -1211,13 +1211,82 @@ does not.
 **Compute: 0.001 s per 1,000 ticks — a thousandfold under the budget.** Every remaining problem is
 one of what to search for, not of how much searching is affordable.
 
+### Windows convert — the first forward test in the project
+
+**Asked by the user, 2026-09-06, and it was the right question:** every check on a window so far
+has run *backwards*. `ExitAudit` takes exits that happened and asks whether a leader was in
+position to account for them, which shows the bands are not too **narrow** and says nothing about
+whether they are too **wide**. A band that admits every placement explains every exit and predicts
+none.
+
+`Herding.trial` asks it forwards — put a leader inside the band, fly two boids, does the other one
+leave? Against two controls: the leader outside the band on the same edge, and no leader at all.
+**About a second per map.**
+
+| arc | leader in band | outside, same edge | alone |
+| --- | --- | --- | --- |
+| plait `0->3` | **29.3%** | 2.1% | 0.0% |
+| plait `1->5` | **14.1%** | 1.7% | 0.8% |
+| dabeone `2->1` | **26.6%** | 1.5% | 1.6% |
+| dabeone `4->0` | **41.9%** | 0.0% | 0.0% |
+| dabeone `5->6` | **11.2%** | 0.3% | 0.0% |
+
+**Windows are levers, not descriptions.** A leader standing in the band converts fifteen to forty
+times more often than one standing outside it on the same edge, and a boid with no neighbour at
+all essentially never exits — which is the same fact the near-zero control occupancy shows, from
+a different direction.
+
+### The conversion table, which is the cheap estimator
+
+**Conversion is dominated by which edge the leader stands on, and hardly at all by how tight the
+band is.** Dabeone's edge 0 has a 16.1-tick band on arc `2->1` that converts at **1.0%** and a
+33.3-tick band on arc `4->0` that converts at **86.9%**. Width is confounded, not causal.
+
+| dabeone `4->0` | band | converts | | dabeone `2->1` | band | converts |
+| --- | --- | --- | --- | --- | --- | --- |
+| leader edge 0 | 33.3 | **86.9%** | | leader edge 1 | 33.9 | **66.2%** |
+| leader edge 1 | 57.9 | **69.8%** | | leader edge 6 | 36.2 | **45.1%** |
+| leader edge 3 | 38.0 | 46.9% | | leader edge 3 | 25.6 | 24.8% |
+| leader edge 5 | 19.5 | 17.5% | | leader edge 8 | 11.5 | 24.5% |
+| leader edge 4 | 9.7 | 5.7% | | leader edge 2 | 11.3 | 5.1% |
+| leader edge 2 | 31.9 | 4.4% | | leader edge 0 | 16.1 | **1.0%**, under its control |
+
+So the table itself is the estimator the search should branch on: `(arc, leader edge) ->
+conversion probability`, measured once per map from two-boid physics in about a second. It says
+where a lead is *possible*; whether a given one materialises still needs lookahead, exactly as the
+user expects — 40% is a long way from certainty, and exits chaining into one another is not in
+this table at all.
+
+> ⚠ **`SolverFacts.VACUOUS = 0.9` is far too permissive on a long edge.** Plait's bands wider than
+> 300 ticks convert at **1.7%** against an overall control of 2.1% — no better than nothing — yet
+> they pass the vacuity test, because 439 ticks is only 58% of a 756-tick edge. **A band that
+> covers half a long edge predicts nothing and is counted as a constraint.** Anything reading band
+> counts on plait is over-counting; `EDGES.md` §7 carries this.
+
+### Plait is not a boring map
+
+Its windows exist, they convert, and **the useful leader positions are on the psyboid's own
+cycle.** The arc that matters is `1->5` — the one that pulls a boid off the non-scoring stable
+cycle and onto the scoring route — and its best leader edge is **5, converting at 24.2%**, which
+is where the psyboid is immediately after taking that exit itself. So the natural configuration is
+the productive one: **exit first, and the boid behind you may follow.** Leading costs phase, not a
+detour.
+
+`0->3` is the opposite and is a hazard rather than an opportunity: it pulls a boid off edge 0 onto
+the bypass, away from the scoring edge. A psyboid should avoid causing it, and it converts at
+29.3% — so avoiding it is not automatic.
+
 ### Next
 
-Herding. The psyboid has to be in a leader window when another boid reaches the critical tau, and
-`SolverFacts.Window` already says where that is — plait has bands for both arcs (`0->3` opening at
-tau 756, `1->5` at 748). The bias `h` gives what converting a boid is worth: on plait, moving one
-boid from the bypass cycle to the scoring cycle is worth `h(5) - h(4) = 37.46` ticks of gain, so a
-psyboid should give up most of a lap to do it. That trade is now a number rather than a guess.
+Use the conversion table to decide where to branch: hold the pilot's route as the default, and
+fork only when a boid is inside a window's tau range with the psyboid able to reach a leader edge
+whose conversion is worth the detour. The bias gives the exchange rate — on plait `h(5) - h(4) =
+37.46` ticks of gain for converting one boid — and the conversion table gives the probability, so
+the two multiply into an expected value that a branch can be scored on.
+
+Also worth a look: **headspace**, which the user says is dab-like enough to decompose and has many
+more herding opportunities than either map here. It needs a turning radius and a gate, both
+judgement calls, so it is a deliberate next step rather than a free one.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 

@@ -3,7 +3,7 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-05. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-06. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3.
 
@@ -345,6 +345,27 @@ specific gate state rather than a diffuse boundary.
 
 ---
 
+
+### A band's width is not its usefulness, and `VACUOUS` is too permissive
+
+Measured 2026-09-06 by `Herding.trial`, the first test of a window in the direction a psyboid
+uses one. Two findings, both of which change how a band should be read.
+
+**Conversion is dominated by the leader *edge*, not by the band's width.** Standing inside a band
+converts an exit 11–42% of the time against 0–2% outside it, but that aggregate hides an order of
+magnitude: dabeone's edge 0 carries a 16.1-tick band on `2->1` that converts at **1.0%** — below
+its own 2.4% control — and a 33.3-tick band on `4->0` that converts at **86.9%**. A tight band is
+not automatically a good lever, and a loose one is not automatically a bad one.
+
+**`SolverFacts.VACUOUS = 0.9` lets through bands that predict nothing.** The test is whether a
+band spans 90% of its edge, which is a sound idea and the wrong scale on a long edge. Plait's
+edges 0 and 1 run ~756 ticks, so a 439-tick band is 58% of one and passes — and bands wider than
+300 ticks convert at **1.7%** against an overall control of 2.1%. **Half of a long edge is not a
+constraint.** Any count of "usable bands" on plait is therefore inflated; on dabeone, whose edges
+are 70–160 ticks, the threshold bites much earlier and the counts are closer to honest.
+
+Not fixed. Tightening the constant would change every window on both maps and the right
+replacement is a measurement — conversion against control — rather than another fraction.
 ## 8. Things that look like findings and are not
 
 1. **Phase combs.** A ~4 px step means anything that comes out as an evenly-spread speckle

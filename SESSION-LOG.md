@@ -11,6 +11,59 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-06 (night) — windows convert, and the conversion table is the estimator
+
+The user asked two things: whether plait actually has usable windows, and — the sharper one —
+noted that **the ability of a psyboid to convert a window into an exit has never been tested.**
+Everything so far has attributed exits that happened. Both answered.
+
+**Built `Herding`.** An inventory of every non-vacuous band with the psyboid's cost to stand in
+it, and `trial`, which puts a leader inside a band, flies two boids, and counts exits — against a
+leader placed outside the band on the same edge, and against no leader at all. **About a second
+per map.**
+
+**Windows are levers, not descriptions.** First forward test in the project, and it passes:
+
+| arc | leader in band | outside, same edge | alone |
+| --- | --- | --- | --- |
+| plait `0->3` | **29.3%** | 2.1% | 0.0% |
+| plait `1->5` | **14.1%** | 1.7% | 0.8% |
+| dabeone `2->1` | **26.6%** | 1.5% | 1.6% |
+| dabeone `4->0` | **41.9%** | 0.0% | 0.0% |
+| dabeone `5->6` | **11.2%** | 0.3% | 0.0% |
+
+**Conversion is dominated by the leader's edge, not the band's width.** Dabeone's edge 0 carries a
+16.1-tick band on `2->1` converting at **1.0%** — below its own 2.4% control — and a 33.3-tick
+band on `4->0` converting at **86.9%**. Width is a confounder. The per-edge table is therefore the
+estimator itself, and it is cheap enough to compute per map at pipeline time.
+
+Best converters: dabeone `4->0` from edge 0 (86.9%) and edge 1 (69.8%); `2->1` from edge 1
+(66.2%) and edge 6 (45.1%). Plait `1->5` from edge 3 (26.7%), edge 5 (24.2%), edge 2 (17.8%).
+
+**Plait is not boring.** Its windows convert, and for the arc that matters — `1->5`, which pulls a
+boid off the non-scoring stable cycle onto the scoring route — the best on-cycle leader edge is
+**5, at 24.2%**, which is exactly where the psyboid stands immediately after taking that exit
+itself. **The natural configuration is the productive one: exit first and the boid behind may
+follow.** Leading costs phase rather than a detour. `0->3` is the mirror image and a hazard: it
+pulls a boid off edge 0 onto the bypass, away from scoring, and converts at 29.3%.
+
+**Found: `SolverFacts.VACUOUS = 0.9` is far too permissive on a long edge.** Plait's bands wider
+than 300 ticks convert at **1.7%** against an overall control of 2.1% — no better than nothing —
+yet they pass, because 439 ticks is only 58% of a 756-tick edge. Half of a long edge is not a
+constraint. **Not fixed**: tightening the constant changes every window on both maps, and the
+right replacement is a conversion measurement rather than another fraction. In `EDGES.md` §7.
+
+**Also checked:** a coincident second boid is invisible to `MovementLogic.perceived` (`d2 == 0`
+returns "cannot see"), so the alone control is genuinely alone rather than maximally repelled.
+
+**Open.** The obvious next move is to branch on the conversion table: hold the pilot's route as
+the default and fork only where a boid is inside a window's tau range and the psyboid can reach a
+leader edge worth the detour. The bias gives the exchange rate (`h(5) - h(4) = 37.46` on plait) and
+the table gives the probability, so the two multiply into an expected value a branch can be scored
+on. **Headspace** is untouched — it needs a turning radius and a gate, both judgement calls.
+
+---
+
 ## 2026-09-06 (evening) — the price function, and a psyboid that flies a route
 
 The user set the project for the next several turns: **maximum corpus score on plait, under one

@@ -868,6 +868,41 @@ optimistic**, which is worth knowing before treating the gain as a target.
 
 ---
 
+## 10e. Verify a derived constraint in the direction you intend to use it
+
+Established 2026-09-06, and it is a general point about how this project checks its own work.
+
+**Every check on a leader window had run backwards.** The classifier takes exits that happened
+and asks whether a leader was in position to account for them. Passing that shows the bands are
+not too **narrow** — an exit outside every band would be unexplained — and shows *nothing* about
+whether they are too **wide**. A band admitting every placement explains every exit and predicts
+none, and would pass the backward test perfectly.
+
+**The forward test is the one a psyboid needs**, and it is cheap: put a leader inside the band,
+fly two boids, see whether the other one leaves. Against two controls — the leader outside the
+band on the same edge, and no leader at all. About a second per map.
+
+The windows passed, and clearly: **in-band placements convert an exit 11–42% of the time against
+0–2% outside them**, and a boid with no neighbour essentially never exits at all. But two things
+only the forward test could show:
+
+- **Conversion is dominated by which edge the leader stands on, not by how tight the band is.**
+  One map has a 16-tick band converting at 1.0% — below its own control — and a 33-tick band on a
+  different arc converting at 86.9%. Anything ranking opportunities by band width is ranking on a
+  confounder.
+- **A "non-vacuous" band can still predict nothing.** The vacuity test asks whether a band spans
+  90% of its edge, which is the right idea at the wrong scale on a long edge: a band covering 58%
+  of a 756-tick edge passes, and converts at 1.7% against a 2.1% control. **Half of a long edge is
+  not a constraint.**
+
+**And 42% is not 100%.** The table says where a lead is *possible*; whether a particular one
+materialises still needs lookahead, because exits chain — inducing one can carry a second boid
+for free — and a crowd is chaotic in a way no table captures. That is the right division of
+labour: **measure the possibility cheaply, search the realisation expensively, and only search
+where the measurement says there is something to find.**
+
+---
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.
