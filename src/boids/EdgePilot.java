@@ -193,11 +193,15 @@ public final class EdgePilot implements PsyboidOverride {
         if (here == EdgeNavigation.NEVER) return;   // off the route; nothing useful to ask for
         if (here == 0) return;                      // coasting takes the exit: stay quiet
 
-        // The cost is the fewest non-straight ticks left, so a straight tick that does not raise
-        // it is free and is taken in preference — a pilot that turns when it need not is a pilot
-        // that is visible when it need not be.
-        int straight = at(map.successor(state, 0), edge, cost[edge]);
-        if (straight != EdgeNavigation.NEVER && straight <= here) return;
+        // Turn now rather than at the last moment. The cost is the fewest non-straight ticks still
+        // needed, and whenever it is positive some turn reduces it by one — so the turns can be
+        // spent immediately, at no extra cost in ticks, leaving the rest of the edge as slack for
+        // the flock to push the boid around in.
+        //
+        // Waiting was the first design and it measurably lost: in a flock this pilot flew 56% of
+        // the price gain on dabnt and 76% on dabeone against 91% for a scheduled held turn, while
+        // alone it flew 94-100%. Being inert until steering is strictly necessary means arriving
+        // at "strictly necessary" already displaced.
         int best = 0, bestCost = Integer.MAX_VALUE;
         for (int turn = -1; turn <= 1; turn += 2) {
             int next = at(map.successor(state, turn), edge, cost[edge]);

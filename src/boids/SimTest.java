@@ -3933,31 +3933,29 @@ picks, never in what is available to it.
     }
 
     public static void main(String[] args) throws IOException {
-        // End-to-end wiring: a map plus a gate produces a corpus, with every tier derived on the
-        // way. Plait first, because it has a source PNG and no ingest at all, so it exercises
-        // every step rather than reading a cache.
+        // The psyboid benchmark: every algorithm on the same seeds against the same controls.
         CriticalEnvelope.pruneOutOfRangeLeaders = true;
-        CorpusPreset recipe = CorpusPreset.valueOf(
-                System.getProperty("recipe", CorpusPreset.SMOKE.name()));
+        int seeds = Integer.getInteger("seeds", 20);
+        int ticks = Integer.getInteger("ticks", 5000);
 
-        System.out.printf("physics %d, simulation flies %s (%s)%n", Params.PHYSICS,
-                Aggregation.SIMULATION.id(), Aggregation.SIMULATION.describes());
-        System.out.printf("recipe %s: %s%n", recipe, recipe.fingerprint());
+        SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
+        List<Bench.Scenario> scenarios = List.of(
+                new Bench.Scenario(PresetScenarioParameter.DABNT, dab, 4),
+                new Bench.Scenario(PresetScenarioParameter.DABEONE, dab, 4),
+                new Bench.Scenario(PresetScenarioParameter.PLAIT,
+                        new SolverFacts.Gate(true, 360, 335, 350, 0), 4),
+                new Bench.Scenario(PresetScenarioParameter.PLAIT,
+                        new SolverFacts.Gate(true, 360, 335, 350, 0), 10));
 
-        record Map(PresetScenarioParameter preset, SolverFacts.Gate gate) {}
-        Map[] maps = {
-                new Map(PresetScenarioParameter.PLAIT,
-                        new SolverFacts.Gate(true, 360, 335, 350, 0)),
-                new Map(PresetScenarioParameter.DABEONE,
-                        new SolverFacts.Gate(false, 202, 174, 191, -1)),
-        };
-        for (Map m : maps) {
-            try {
-                Pipeline.corpus(m.preset(), m.gate(), recipe);
-            } catch (RuntimeException e) {
-                System.out.printf("%n** %s stopped: %s%n", m.preset().name(), e.getMessage());
-            }
-        }
+        List<Bench.Entrant> entrants = List.of(
+                Bench.none(),
+                Bench.route(),
+                Bench.bits("bits", 1.0, false, ticks),
+                Bench.bits("bits-ultra", 2.0, false, ticks),
+                Bench.bits("priced", 1.0, true, ticks),
+                Bench.piloted("piloted", 1.0, true, ticks));
+
+        Bench.run(scenarios, entrants, seeds, ticks, CorpusPreset.PLANS_40);
     }
 
     /**

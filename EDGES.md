@@ -102,7 +102,14 @@ Known-good gates, kept because rebuilding a decomposition needs them:
 | map | gate | edges |
 | --- | --- | --- |
 | dabeone | `x=202, y=[174,191]`, decreasing | 9 |
+| dabnt | `x=202, y=[174,191]`, decreasing — **the same one** | 9 |
 | plait | `y=360, x=[335,350]`, both ways | 6 |
+
+**dabnt takes dabeone's gate unchanged**, found 2026-09-06 by trying it first and then sweeping
+vertical lines: of every candidate tried, only that one decomposed into a sane edge count. The two
+maps are the same geometry with and without a trap, so a gate that cuts every cycle in one cuts
+every cycle in the other — which is a hint that a gate is a property of the corridor layout rather
+than of the pixels, and that a sweep is a workable way to find one.
 
 **Health check: arrival count.** A gate must be a *real cut* — every cycle crossing it. A bad
 gate does not fail loudly; it corrupts the partition. An arrival count far below the

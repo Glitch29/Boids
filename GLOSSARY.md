@@ -106,6 +106,25 @@ never more than a strong correlation, and at a map-derived warm-up it is weaker:
 control occupancy is 0.0004 rather than 0.0000. Read a plan as **excess over control**, not as
 evidence that anything which scored was steered.
 
+**the benchmark** — every psyboid algorithm on the same seeds against the same controls, with what
+it spent beside what it scored. `Bench`. Four scenarios — `dabnt-4`, `dabeone-4`, `plait-4`,
+`plait-10` — and three controls, of which **`route` is the one that matters**: the psyboid held to
+the price-optimal scoring cycle and otherwise coasting, which is pure selfishness with no attention
+to the flock. **Anything that does not beat `route` is not herding**, whatever else it is doing.
+
+**derived lookahead** — the search's coasting horizon set to one optimal scoring lap, with the
+discount chosen so a point at the end of it is worth 0.4: `alpha = 0.4 ^ (SECOND / lap)`. The old
+320 ticks at 0.95 per second were fitted on a map whose lap is 506; on a 1,738-tick lap they
+discount every decision's payoff to 0.006 of face value. **A horizon has to be a map property**,
+and this is the same shape that worked before, expressed in terms the map supplies.
+
+**potential** — the sum of every boid's bias over the flock, used to value a search leaf.
+`EdgePrice.potential`. **What lets a search see herding at all**: a boid induced off its route does
+not score for another lap, so any window shorter than that lap gives the inducing line and the
+declining line the same points, and the tie goes to declining. The potential values the induced
+exit on the tick it happens, because that boid's bias jumps by the difference between the route it
+was on and the one it is on now.
+
 **forward distance** — ticks from one `(edge, tau)` to another, travelling forwards. `EdgeReach`,
 in two flavours that answer different questions. **`unsteered`** is where a boid goes if nothing
 acts on it, and is **absent whenever coasting never arrives** — which is normal rather than
@@ -655,6 +674,8 @@ anything not listed.
 | window conversion | `Herding.trial`, inventory by `Herding.inventory` | printed; ~1s per map |
 | forward distance and rebasing | `EdgeReach` | in memory |
 | the phase ledger | `PhaseShift` | printed; under a second per map |
+| the benchmark | `Bench`, driven from `SimTest.main` | printed |
+| the search-decides-pilot-executes hybrid | `Bench.piloted` | printed |
 | spawn | `Spawn` + `Spawn.Rule` | in a corpus's address |
 
 > **Two different two-boid analyses. Do not conflate them.**

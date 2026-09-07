@@ -68,11 +68,29 @@ public final class PsyboidBits {
      * @param psyboid   which boid is overridden
      */
     public record Config(int warm, int spread, int lookahead, double alpha, int run,
-                         int settle, int psyboid) {
+                         int settle, int psyboid, EdgePrice.Price price) {
 
         public static Config of(int warm, int spread, int lookahead, double alpha, int run,
                                 int settle) {
-            return new Config(warm, spread, lookahead, alpha, run, settle, Sim.PSYBOID);
+            return new Config(warm, spread, lookahead, alpha, run, settle, Sim.PSYBOID, null);
+        }
+
+        /**
+         * The same search, valuing a leaf by the flock's <b>position</b> rather than by the points
+         * it collected on the way.
+         * <p>
+         * <b>Discounted score cannot see herding, and no lookahead fixes it.</b> A boid induced
+         * to leave its route does not score for another lap, so the line that induced it and the
+         * line that did not collect the same points over any window shorter than that lap — they
+         * tie, and a tie goes to declining. Summing every boid's bias instead values the induced
+         * exit on the tick it happens, because that boid's bias jumps by the difference between
+         * the route it was on and the route it is on now.
+         * <p>
+         * With a price attached the discount is not applied: the potential already carries the
+         * tail, and discounting it would reintroduce the horizon it exists to remove.
+         */
+        public Config priced(EdgePrice.Price price) {
+            return new Config(warm, spread, lookahead, alpha, run, settle, psyboid, price);
         }
     }
 
@@ -298,6 +316,7 @@ public final class PsyboidBits {
                               Branches b, Config config, long seed) throws java.io.IOException {
         Boids2DEngine engine = spawn.engine();
         MovementLogic rules = new MovementLogic(spawn.scenario().turningRadius());
+        facts.set(f);
 
         Sim.State root = spawn.warmed(seed, config.warm());
         long began = root.tick;
@@ -619,7 +638,7 @@ public final class PsyboidBits {
      */
     private static double value(Boids2DEngine engine, Config config, Fork first, Sim.State leaf) {
         Sim.State s = SimTest.withOverrides(first.before(), leaf.psyboidOverrides);
-        long was = s.score;
+        long was = s.score, base = s.score;
         double total = 0, weight = 1;
         int ticks = (int) (leaf.tick - first.before().tick) + config.lookahead();
         for (int t = 0; t < ticks; t++) {
@@ -628,8 +647,21 @@ public final class PsyboidBits {
             was = s.score;
             if ((t + 1) % SECOND == 0) weight *= config.alpha();
         }
-        return total;
+        if (config.price() == null) return total;
+        // Undiscounted points plus where the whole flock ended up. Siblings are compared over the
+        // same span from the same fork, so the gain-per-tick both share cancels and only the
+        // difference in position survives.
+        return (s.score - base) + EdgePrice.potential(config.price(), facts.get(), s);
     }
+
+    /**
+     * The facts the potential needs, which the search is otherwise not given.
+     * <p>
+     * A thread-local rather than another parameter on five call sites: the value is fixed for a
+     * whole run and threading it through {@code walk} would put a field on every frame of the
+     * recursion to serve one leaf in it. Set by {@link #search} and cleared after.
+     */
+    private static final ThreadLocal<SolverFacts> facts = new ThreadLocal<>();
 
     private static PsyboidOverride[] append(PsyboidOverride[] have, PsyboidOverride add) {
         PsyboidOverride[] out = Arrays.copyOf(have, have.length + 1);

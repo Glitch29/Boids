@@ -939,6 +939,24 @@ directions**, and do not assume the coasting time is the median of the achievabl
 
 ---
 
+## 10g. A search's horizon has to be told how long the run is
+
+Caught 2026-09-06 while building the benchmark, before any figure was quoted, and it would have
+made every compute measurement wrong by more than an order of magnitude.
+
+A receding-horizon search commits decisions for as long as its `run` parameter asks. The harness
+flew each algorithm over 5,000 ticks and handed the search a `run` of 100,000, so it planned
+twenty times the timeline that was actually used — and charged all of it to the algorithm's compute
+budget. The measured cost was **0.38 seconds per thousand ticks against a true 0.009**, a factor of
+forty-two, and nothing about the output looked wrong: the plans were valid, the scores were right,
+and only the cost was nonsense.
+
+**The general shape:** when a planner and a simulator are given separate notions of how long the
+episode is, the planner's is invisible in the results and shows up only in the bill. Pass one
+number to both.
+
+---
+
 ## 11. Things that look like findings and are not
 
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.

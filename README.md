@@ -1,7 +1,8 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-06. **Physics 3** — see `ROADMAP.md` §0a-§0g. **Two maps:** dabeone
-`609cffdb84be218c` and plait `46f880d41d2c1e4e`. Verified against dabeone ingest
+**Status:** 2026-09-06. **Physics 3** — see `ROADMAP.md` §0a-§0h. **Three maps:** dabeone
+`609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **`Bench` is the
+measure** — every algorithm on the same seeds against the same controls. Verified against dabeone ingest
 `609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
 figure without one is not reproducible and should not be trusted, and **figures taken under
 physics 2 are marked as such** rather than silently carried forward.
@@ -70,6 +71,7 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them | `EdgePrice` |
 | windows convert | a leader in-band causes the exit 11-42% of the time against 0-2% outside it — the first forward test | `Herding.trial` |
 | phase costs override ticks | plait's edge 0 offers 53 ticks of hurry and 11 of dawdle; dabeone is on rails, edge 7 spanning 10 | `PhaseShift` |
+| the benchmark | 4 scenarios x 20 seeds x 5,000 ticks, 6 entrants; **nothing dominates** — searches win occupancy on dab-like maps, pilots win occupancy per override tick everywhere | `Bench` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -129,7 +131,7 @@ unclassified by design — `ROADMAP.md` §1.
 
 ## Map of the code
 
-One package, `src/boids`, 60 files.
+One package, `src/boids`, 61 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -170,6 +172,10 @@ that map, drawn at envelope entry).
 
 **Pipeline** — `Pipeline` (a map and a gate in, a verified corpus out, every tier derived on the
 way). See `CORPUS.md` for what it resolves per map and what still blocks it.
+
+**Benchmark** — `Bench` (every algorithm on the same seeds against the same controls: no
+override, the price-optimal route, and the branch search at two budgets). The lookahead and
+discount are derived per map, not constants.
 
 **Herding** — `Herding` (where a psyboid could lead, and whether standing there converts; the
 trial is two-boid, about a second a map) · `EdgeReach` (forward distance and rebasing in

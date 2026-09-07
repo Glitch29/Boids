@@ -1341,17 +1341,99 @@ the per-width table it was standing in for says the real thing: on plait, bands 
 convert at **2.2%**. **A measured conversion is a better answer than any fraction of an edge**, and
 the constant is left alone rather than retuned.
 
-### Next
+### Built: `Bench`, and what an algorithm is measured against
 
-Branch and prune, not expected value. The user's correction: **EV is for valuing a terminal node;
-earlier in the tree, where compute is available, branching answers the question about an exit
-definitively.** So the search should fork on a *trigger* — a boid entering a window's tau range
-with the psyboid able to reach a leader edge — fly both branches, and prune on what actually
-happened, falling back on the price function's bias only at the leaves.
+Asked for by the user 2026-09-06, and it is the thing that should have existed before any psyboid
+was called good. Four scenarios — **dabnt-4, dabeone-4, plait-4, plait-10** — every entrant on the
+same seeds, with what it spent beside what it scored.
 
-The three pieces are now in place: `Herding` says where a lead is possible and how often it
-converts, `EdgeReach` says whether the psyboid can be there in time, and `PhaseShift` says what
-adjusting its arrival would cost.
+**dabnt takes dabeone's gate unchanged**, `x=202, y=[174,191]` decreasing, 9 edges. Found by trying
+it first and then sweeping vertical lines; nothing else decomposed sanely. The two maps are the same
+corridors with and without a trap, which is a hint that a gate is a property of the layout rather
+than of the pixels.
+
+**The controls.**
+
+| | what it is |
+| --- | --- |
+| `none` | no override. The floor, and on three of four scenarios it is exactly zero |
+| **`route`** | the psyboid held to the price-optimal scoring cycle, coasting otherwise. **Pure selfishness — it never looks at the flock, so anything that does not beat it is not herding** |
+| `bits` | the established branch search at its own budget |
+| `bits-ultra` | the same at twice the spread, so the gap between them separates compute from method |
+| `priced` | the same tree, valuing a leaf by the flock's *position* rather than by the points it collected |
+
+**The lookahead is derived, not inherited.** 320 ticks at 0.95 per second were fitted on a map
+whose scoring lap is 506; on plait's 1,738-tick lap they discount every decision's payoff to 0.006
+of face value, which is why the search declined everything there. Both now come from the map: the
+lookahead is one optimal scoring lap, and `alpha = 0.4 ^ (SECOND / lap)` puts a point at the end of
+it at 0.4. That is the shape that has worked before, in terms the map supplies.
+
+> ⚠ **A harness bug worth recording, because it would have made every compute figure wrong.** The
+> search commits decisions for as long as its `run` asks, and the first version passed 100,000
+> while flying 5,000 — twenty times the planning actually used, charged to the algorithm's compute
+> budget. Caught before the numbers were quoted. **A search's horizon must be told the length of
+> the run it is planning for.**
+
+### The benchmark, 20 seeds x 5,000 ticks
+
+Occupancy is the fraction of the flock scoring at any moment. `impactful` is ticks the psyboid's
+turn differed from the rules' after the veto — **what it spends**. `occ/1ksp` is occupancy per
+thousand impactful ticks, which is the axis that matters once override ticks are budgeted, and
+`s/1000t` is compute against a budget of 1.
+
+| scenario | algorithm | occFlock | occPsy | occOthers | impactful | occ/1ksp | s/1000t |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **dabnt-4** | none | 0.000000 | 0.000000 | 0.000000 | 0.0 | — | 0.0005 |
+| gain 0.110390 | route | 0.016990 | 0.059910 | 0.002683 | 125.6 | 0.135 | 0.0057 |
+| ceiling 0.4416 | bits/640 | 0.025068 | 0.083330 | 0.005647 | 217.5 | 0.115 | 0.0091 |
+| | **bits-ultra/1280** | **0.026347** | 0.083520 | 0.007290 | 221.3 | 0.119 | 0.0587 |
+| | priced/640 | 0.024437 | 0.076260 | 0.007163 | 206.4 | 0.118 | 0.0080 |
+| | **piloted/640** | 0.018215 | 0.061570 | 0.003763 | **119.0** | **0.153** | 0.0513 |
+| **dabeone-4** | none | 0.000137 | 0.000550 | 0.000000 | 0.0 | — | 0.0003 |
+| gain 0.106634 | route | 0.040770 | 0.082070 | 0.027003 | 98.0 | 0.416 | 0.0055 |
+| ceiling 0.4265 | bits/640 | 0.053818 | 0.097010 | 0.039420 | 235.2 | 0.229 | 0.0075 |
+| | bits-ultra/1280 | 0.057203 | 0.096320 | 0.044163 | 233.6 | 0.245 | 0.0451 |
+| | **priced/640** | **0.057308** | 0.095140 | **0.044697** | 224.0 | 0.256 | **0.0077** |
+| | **piloted/640** | 0.040522 | 0.081950 | 0.026713 | **97.0** | **0.418** | 0.0515 |
+| **plait-4** | none | 0.000203 | 0.000000 | 0.000270 | 0.0 | — | 0.0004 |
+| gain 0.046471 | **route** | **0.010092** | **0.032300** | 0.002690 | 18.3 | 0.552 | 0.0100 |
+| ceiling 0.1859 | bits/1597 | 0.003970 | 0.013450 | 0.000810 | 9.7 | 0.409 | 0.0042 |
+| | bits-ultra/3194 | 0.004172 | 0.013450 | 0.001080 | 11.7 | 0.357 | 0.0158 |
+| | priced/1597 | 0.003832 | 0.012900 | 0.000810 | 30.7 | 0.125 | 0.0052 |
+| | **piloted/1597** | 0.007980 | 0.027060 | 0.001620 | **12.4** | **0.644** | 0.0464 |
+| **plait-10** | none | 0.000730 | 0.000810 | 0.000721 | 0.0 | — | 0.0012 |
+| gain 0.046471 | **route** | **0.005081** | 0.029030 | 0.002420 | 18.7 | 0.272 | 0.0117 |
+| ceiling 0.4647 | bits/1597 | 0.002676 | 0.014620 | 0.001349 | 13.2 | 0.203 | 0.0136 |
+| | bits-ultra/3194 | 0.003308 | 0.015320 | 0.001973 | 19.2 | 0.172 | 0.0552 |
+| | priced/1597 | 0.002826 | 0.014520 | 0.001527 | 23.0 | 0.123 | 0.0157 |
+| | **piloted/1597** | 0.003998 | 0.022290 | 0.001966 | **10.3** | **0.388** | 0.0483 |
+
+**Compute is not the constraint anywhere.** The dearest entrant runs at 0.059 s per thousand ticks
+against a budget of 1 — **seventeen times under**. Everything left is what to search for.
+
+### Nothing dominates, and the frontier is the honest answer
+
+**On raw occupancy the searches win the dab-like maps and lose plait**; **on occupancy per override
+tick the pilots win everywhere.** `CORPUS.md` already says a psyboid algorithm is judged on the
+Pareto frontier of (flock occupancy, −impactful ticks), and this is the first time the project has
+had two entrants on it at once rather than one.
+
+| | best occupancy | best per override tick |
+| --- | --- | --- |
+| dabnt-4 | bits-ultra 0.0263 | piloted 0.153 |
+| dabeone-4 | priced 0.0573 | piloted 0.418 |
+| plait-4 | route 0.0101 | piloted 0.644 |
+| plait-10 | route 0.0051 | **piloted 0.388** |
+
+The searches buy their extra score with **roughly twice the spend** — 224 impactful ticks against
+97 on dabeone for 1.4x the occupancy. Under an unbudgeted regime that is a win; under any budget it
+is not obviously one.
+
+### Built in response: `piloted` — the search decides, a pilot executes
+
+Finding 2 says the two failures are separable, so each decision the search commits becomes an
+{@code EdgePilot} confined to that decision's own stretch of timeline, carrying the *route* the
+search chose rather than the tick it guessed. Deciding and steering stop sharing a failure mode.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 

@@ -87,6 +87,51 @@ public final class EdgePrice {
 
         /** How much better than the gain-rate baseline it is to stand here rather than there. */
         public double advantage(int from, int to) { return bias[to] - bias[from]; }
+
+        /**
+         * The bias at a position part way along an edge, in points.
+         * <p>
+         * <b>The bias is defined at an edge's start; a search needs it anywhere.</b> Advancing tau
+         * ticks along {@code e} spends {@code tau} ticks and collects whatever scores in them, so
+         * by the same Bellman relation the value there is
+         * {@code bias(e) + lambda* * tau - score collected}. It is continuous across a boundary by
+         * construction: at {@code tau = length(e)} it equals {@code bias(next)}, which is what
+         * makes it safe to compare two boids on different edges.
+         * <p>
+         * The score collected is prorated along the edge rather than profiled exactly. That is a
+         * heuristic, and the one approximation here: on an edge whose scoring region is bunched at
+         * one end it misplaces up to {@code score(e)} of value within that edge. It cancels
+         * between siblings compared at the same instant, which is the only comparison made of it.
+         */
+        public double at(int edge, double tau) {
+            if (edge < 0 || edge >= bias.length) return 0;
+            Arc a = arcs[edge];
+            double along = a.ticks() <= 0 ? 0 : Math.min(1, Math.max(0, tau / a.ticks()));
+            return bias[edge] + gain * tau - a.scoring() * along;
+        }
+    }
+
+    /**
+     * What a whole flock's position is worth, as a potential.
+     * <p>
+     * <b>This is what lets a search see herding.</b> Scoring a line by the points it collects
+     * cannot value inducing an exit, because the boid that was induced does not score for another
+     * lap; scoring it by the sum of every boid's bias values the induced exit <em>the moment it
+     * happens</em>, since that boid's bias jumps by the difference between the route it was on and
+     * the route it is on now. On plait that difference is 37.5 points, half a scoring pass, and it
+     * is invisible to any lookahead shorter than 900 ticks.
+     * <p>
+     * Boids on no edge contribute nothing rather than being skipped, so the total is comparable
+     * between arrangements with different numbers of boids off the decomposition.
+     */
+    public static double potential(Price price, SolverFacts f, Sim.State s) {
+        double total = 0;
+        for (int i = 0; i < s.n; i++) {
+            int e = f.edgeAt(s.x[i], s.y[i], s.h[i]);
+            if (e < 0) continue;
+            total += price.at(e, f.tickAt(s.x[i], s.y[i], s.h[i]));
+        }
+        return total;
     }
 
     /**

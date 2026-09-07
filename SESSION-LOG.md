@@ -11,6 +11,62 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-06 (very late) — the benchmark, and three findings that point different ways
+
+The user asked for metrics on the best psyboid alongside named controls. Built `Bench` and ran it:
+four scenarios, 20 seeds x 5,000 ticks each, every entrant on the same seeds.
+
+**dabnt is available.** It takes **dabeone's gate unchanged** — `x=202, y=[174,191]` decreasing,
+9 edges, ingest `48b46d3d06e54c75` — found by trying that first and then sweeping vertical lines;
+nothing else decomposed sanely. Same corridors with and without a trap, so a gate that cuts every
+cycle in one cuts every cycle in the other.
+
+**The lookahead is derived now, not inherited.** 320 ticks at alpha 0.95 per second were fitted on
+a 506-tick lap; on plait's 1,738-tick lap they discount every decision's payoff to 0.006 of face
+value. Both come from the map: lookahead is one optimal scoring lap and
+`alpha = 0.4 ^ (SECOND / lap)`, so a point at the end of the horizon is worth 0.4.
+
+> ⚠ **A harness bug caught before any figure was quoted.** The search commits decisions for as long
+> as its `run` asks, and the first version passed 100,000 while flying 5,000 — twenty times the
+> planning actually used, charged to the algorithm's compute budget. Measured cost 0.38 s per
+> thousand ticks against a true 0.009, a factor of forty-two, with nothing else about the output
+> looking wrong. In `HINTS.md` §10g.
+
+**Full table in `ROADMAP.md` §0h.** Three findings:
+
+**1. The potential works and buys a budget increase for free.** On dabeone `priced/640` reaches
+**0.057308** against `bits-ultra/1280`'s 0.057203 — the same score at **one sixth the compute** —
+and herds hardest of anything measured, `occOthers` 0.044697.
+
+**2. On plait every search loses to a psyboid that never searches, by 2.5x**, and the gap is in the
+psyboid's own score rather than in herding: `route` 0.0317 against 0.0134. **The searches are not
+failing to decide; they are failing to execute.** A held turn is a schedule, and on plait the
+prediction runs up to 775 ticks ahead against eight ticks of margin, so the turn misses. The
+derived lookahead fixed the search's judgement there; nothing had fixed its aim.
+
+**3. The route pilot underperforms its own ceiling in a flock and the scheduled search does not.**
+`route` flies 56% of gain on dabnt and 76% on dabeone where `bits` flies 91%, while the same pilot
+alone flies 94-100%. **Being inert on 99.65% of ticks was sold as a virtue and is partly a defect**
+— it waits until steering is strictly necessary, and arrives at "strictly necessary" already
+displaced.
+
+**Built in response: `piloted`** — the search decides, a pilot executes, each committed decision
+becoming an `EdgePilot` over its own stretch of timeline carrying the route rather than the tick.
+On plait it doubles the search's psyboid score (0.0271 against 0.0134) and lifts flock occupancy
+from 0.0040 to 0.0080. On dabeone it lands *below* `route`, which isolates a fourth thing: once
+execution is equalised, **the search's declines are mostly mistakes** — `piloted` is `route` minus
+the decisions the search chose not to take, and it is worse for them.
+
+**And then the pilot fix that finding 3 asks for**: spend the turns *immediately* rather than at
+the last moment. The cost is the fewest non-straight ticks still needed and some turn always
+reduces it by one, so they can be spent up front at no extra cost in ticks, leaving the rest of the
+edge as slack for the flock to push the boid around in.
+
+**Compute is not the constraint anywhere.** The most expensive entrant runs at 0.06 s per thousand
+ticks against a budget of 1.
+
+---
+
 ## 2026-09-06 (late night) — distance and rebasing in (edge, tau), and the phase ledger
 
 Three corrections and two builds from the user, all landed.
