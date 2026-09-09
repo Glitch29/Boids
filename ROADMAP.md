@@ -1,7 +1,8 @@
 # What is being built now
 
 **Status:** 2026-09-07. `README.md` has the inventory; this file has the work in front of us
-and the specifications for it.
+and the specifications for it. **§0h is the live thread and ends with a handoff — read that
+first.**
 
 ---
 
@@ -1484,8 +1485,49 @@ searches buy their remaining advantage on dabeone with **1.7x the override ticks
 ### Built in response: `piloted` — the search decides, a pilot executes
 
 Finding 2 says the two failures are separable, so each decision the search commits becomes an
-{@code EdgePilot} confined to that decision's own stretch of timeline, carrying the *route* the
-search chose rather than the tick it guessed. Deciding and steering stop sharing a failure mode.
+`EdgePilot` confined to that decision's own stretch of timeline, carrying the *route* the search
+chose rather than the tick it guessed. Deciding and steering stop sharing a failure mode.
+
+
+### Handoff — where this stands, 2026-09-07
+
+**Waiting on the user, who is specifying the search procedure.** Do not invent one first; the
+last three attempts at improving it from the inside are recorded above and the pattern is that
+the *structure* is wrong rather than the tuning.
+
+**The bar to beat is `route`**, not any search. It is the price-optimal edge route flown by a
+pilot that never looks at the flock, it costs 0.0004 s per thousand ticks, and it wins three of
+four scenarios outright. **Any proposal that does not beat it is not herding**, whatever else it
+does. The only scenario where a search earns its place is dabeone, where it buys +21% occupancy
+with 1.7x the override ticks.
+
+**What exists and should be reused rather than rebuilt** — `GLOSSARY.md`'s table is canonical, but
+the ones that matter here:
+
+| | |
+| --- | --- |
+| `Bench` | the measure. Four scenarios, named controls, `-Dseeds -Dticks -Donly=<scenario>` |
+| `EdgePrice` | gain and bias over `(edge, tau)`, and `potential` over a whole flock |
+| `EdgePilot` | route-following override; **one step of lookahead is all of navigation** |
+| `PsyboidOverride` | the interface. `HeldTurn` is the schedule kind, and a schedule is what keeps failing |
+| `Herding` | where a lead is possible, and the measured conversion table |
+| `EdgeDistance` / `PhaseShift` | forward distance in `(edge, tau)`, and what an override tick buys in phase |
+
+**Three things known to be true and easy to forget.**
+
+1. **A held turn is not navigation.** The axiom promises nothing about always-left or
+   always-right; an override that holds one turn for a fixed span can miss an exit the
+   decomposition guarantees. `EDGES.md` §7.
+2. **Bad aim cannot explain a missed exit.** One-step navigability is verified exhaustively on
+   every build and throws. If an exit is missed, the steering was not following the rule.
+3. **The searches skip decisions they are already inside.** `PsyboidBits.walk` forks on a change
+   of edge, so a root landing mid-branch-edge never considers that visit. Documented at the line.
+   The obvious patch was measured and rejected — see above.
+
+**Two open threads that are not blocked on the spec.** The `VACUOUS = 0.9` band test is far too
+permissive on a long edge and inflates plait's usable-band counts (`EDGES.md` §7); and six
+`SimTest` audit entry points still replay corpus plans at `PsyboidBits.WARM` rather than the
+corpus's own warm-up, which is correct only for `LEGACY_40`.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 

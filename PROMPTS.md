@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-315 prompts across 10 sessions.
+326 prompts across 11 sessions.
 
 ---
 
@@ -9970,3 +9970,198 @@ Mostly, I think it's just time to move on to other elements of the project. TAU_
 Let's focus next on end-to-end wiring. Let's bring plait up to speed with these choices. See how far you can get with a function that generates a corpus starting with just the map.
 
 I don't think we have selected a generic psyboid override-generating algorithm yet, so we won't be able to go all the way. Let me know if there's anything else that is preventing the automated pipeline.
+
+---
+
+## Session 11 - 2026-09-06
+
+*Log `11f0c1b1-5077-47af-ae82-30b38b0f7d6b`, 11 prompts.*
+
+### 1
+
+Alright. I'm ready to close the books on this issue. There are scoring events afterward. But that's fine. They're caused by some small windows (perhaps just one) that allows a boid on a stable orbit to induce another boid to exit.
+
+The fact that they continue to go down over is due to exits adding entropy to phase offsets, while non-exits do not. Despite the fact that any of the configurations having equal probability of being arrived at from a random state, non-exiting configurations lock in while exiting configurations rerandomize themselves.
+
+Our goal isn't to be in total long-term equilibrium, it's just to have a sufficiently obfuscated history.
+
+Mostly, I think it's just time to move on to other elements of the project. TAU_UNIFORM and (total edge length) / speed are good defaults.
+
+Let's focus next on end-to-end wiring. Let's bring plait up to speed with these choices. See how far you can get with a function that generates a corpus starting with just the map.
+
+I don't think we have selected a generic psyboid override-generating algorithm yet, so we won't be able to go all the way. Let me know if there's anything else that is preventing the automated pipeline.
+
+If there are any javadocs that conflict with what I just said, go ahead and update them. In the past we had some reliance on scoring implies psyboid. There's still correlation there now, but it's not a hard assumption being relied on.
+
+### 2
+
+Plait's failure for the existing psyboid algorithm is equally a success on map design. The map was built specifically to:
+
+* Obfuscate the implied score (both previous and future) associated with edge occupancy.
+* And by extension, obfuscate the value of pathing decisions where there is a choice involved.
+
+
+Any successful analysis of plait, whether it's us generating psyboid behavior, or the agent identifying it, is going to need to be capable of efficiently shortcutting through large periods of near-deterministic behavior in (edge, tau)-space.
+
+I'm going to give you some ideas, and then leave you to try to accomplish a goal. That goal is to get the maximum corpus score on plait that takes less than 1 second per 1000 ticks to compute. So for a 20 seed, 5000 tick corpus, that would be 100 seconds.
+
+The only restriction is that the algorithm can't rely on simulation results for plait. It can only rely on deterministic properties of the map that we've computed, and further calculations from those properties. You can add new static map analysis if desired. So the solution should have no problem running on any dab-like map, provided we do the same deterministic preparations.
+
+Note: A lot of the analysis we've already done gives information that closely mirrors what you could be found via simulation.
+
+Note: Short, targeted 1-, 2-, or 3- boid measurements facilitated using actual physics are fine. Just no training off of full sims.
+
+Edge decomposition is going to be able to solve for the idea path through (edge, tau)-space for a psyboid-only simulation. It's unclear to me whether exit windows are best tackled in (edge, tau)-space, or through simulation.
+
+A more deterministic version of the 3-boid phase diagram may be a good source of data.
+
+I think a few things are going to be critical to success.
+
+* Creating a system of override exploration that branches under certain triggering conditions, such as entering critical envelopes or approaching a leader window, rather than branching at predetermined ticks
+* Creating a correspondingly useful system of overrides. This can include major additions or modifications to the internal logic of overrides. If it's not already, overrides should probably be abstracted out, so that new implementations don't conflict with existing ones.
+   * Having the override for a psyboid contain its entire edge path seems promising. The way that would execute would be to override iff doing so is required to stick to the path.
+   * If you go down this path, multiple overrides should be idempotent, but it would probably be good to clean out old ones for computational efficiency. Especially if the override needs to analyze state.
+* Programmatically pre-identifying either states or state transitions that are associated with an important choice, and adding a hook for them.
+* Decoupling from any reliance on the idea that the tick value is the same for all nodes on the exploration tree at the same depth.
+
+
+Three potential leads. At least one of which I think is good:
+
+* Rather than, or in addition to measuring score directly, calculate a price function in (edge, tau)-space for boids or (psyboid, boid).
+* Based on calculations in (edge, tau)-space, programmatically generate predetermined criteria for most psyboid behavior, reserving branching only for circumstances where analysis of the full state is required.
+* Introduce {FAST, SLOW} as possible overrides on top of edge navigation, which override based on trying to minimize or maximize tau/tick. The goal being to create the proper alignment to induce exits of other boids.
+
+
+This is a rather large and open-ended task. Don't take too seriously what I listed as critical. The more accurate description would be "potential solutions to foreseeable problems". And don't feel obligated to stick with any existing infrastructure override creation and execution. What's fixed is that the override implements MovementControl and continues to be applied in the same manner.
+
+You've got plenty of time to establish any groundwork or perform any preliminary surveys you want to do. I might intervene with a bit of direction when it seems applicable. But this is the project for the next several turns, and there's no urgency to commit.
+
+A couple notes on the corpus itself:
+
+You're free to play with whatever dab-like map you want on your turn. A 1-boid sim makes for a fantastic way to test certain aspects of core functionality.
+
+I'm not going to over-specify the conditions being graded against, as the goal here is to create generic-purpose psyboid logic. But expecting a split of 4-boid and 10-boid sims is reasonable. The number of boids on the map is fair game both for programmatic analysis run before the clock starts, and as a number that can be accessed by override logic itself.
+
+### 3
+
+Awesome. I haven't actually checked whether plait has windows. Or whether those windows have leaders in places that the psyboid can traverse without too much loss. So it might be a relatively boring map if it doesn't. If that turns out to be the case, you can look to dabeone or dabnt as places to test everything window-based.
+
+Go ahead and keep doing what you're doing.
+
+Next major step seems to be accounting for herding opportunities when setting overrides.
+
+A useful intermediate step in that might be working on ways to cheaply and accurately measure where herding opportunities might exist. I don't think there's going to be any total substitute for lookahead via branching and pruning when it comes to figuring out whether a potential window can actually materialize. There is just too much chaos at higher number of boids to treat anything as deterministic. Especially considering that exits can chain into one another meaning that inducing one exit can sometimes get another one or even two for free. But accurately estimating when a psyboid can *potentially* lead could save a lot of compute budget.
+
+The analysis we've already done should be useful in making that estimation. But I don't think we've directly tested the ability of a psyboid to convert a possible window into an exit. We've only verified that the exits that did occur could be attributed.
+
+It might also be worth looking at headspace. I believe it's dab-like enough for edge decomposition to be successful. And it has a lot of herding opportunities. Don't try too hard to make it work if it's not helpful, but it's another potential playground.
+
+### 4
+
+Just a reminder before you go too far down the rabbit hole of calculating EVs: Being able to guess EV based on potentially induced exits might be useful for assigning a value to a terminal node. But earlier in the search tree where compute is still available, branching allows the question about an exit to be answered definitively. Just branch and then prune as appropriate.
+
+One other important question that I'm not sure has been accounted for. When considering upcoming leader windows, they might be recorded on different edges than where the boids are currently at. For many sets of edges, this a bookkeeping difference rather than a functional one. This would be a real pain to keep track of without a helper function. I'd suggest having a helper that will calculate the forward distance from (edge, tau) to (edge, tau) by doing forward rebasing operations. Two useful flavors - unsteered distance (might sometimes return null if destination is on an unstable edge), and shortest steered distance.
+
+Another reminder about opportunities for the psyboid to change its phase by choosing routes within an edge that move faster or slower through tau. This might be useful for reaching windows. Eventually override ticks will be budgeted, even though for the purpose of this analysis they're free and unlimited. Because they'll eventually be budgeted we're eventually going to want to be able to be somewhat discriminating about where override ticks can be converted into phase movement through tau phase space. It also might be useful for tree exploration purposes to enumerate a list of particularly efficient shortcuts or longcuts (in terms of change of phase per override tick). Signs that this analysis is successful: If you run this analysis for plait, the opportunity for a longcut through the bulb should pop out. Dabeone is generally on rails, but has shortcuts available when cornering. It also has a modest difference between the shortest and longest routes available around the beginning of edge 7.
+
+I forgot that we still need a gate to run edge decomposition. I'm going to make this a personal to-do item. Headspace has a turning radius of 40. I think All the maps except Hamburger do. Either or both scoring regions can serve as a gate for purposes of initiating edge decomposition.
+
+I'm not entirely sure what vacuous is doing. A quick look at the javadoc makes me think this was an invented concept, and I'm not sure what problem it was initially solving. It looks like the variable only appears in uncalled functions. Unless it's actively hampering you, I wouldn't worry about it. If it is actively hampering you, go ahead and change it.
+
+Keep on keeping on.
+
+### 5
+
+Sounds like you're getting there. Go ahead and take up to an hour and a half on this turn. I'll check in before I go to bed.
+
+Starting this turn, can you include some metrics on the best version of the psyboid algorithm.
+
+I'll leave it up to you to pick which maps/seeds are included in the analysis. My suggestion would be some mixture of dabnt-4, dabeone-4, plait-4, and plait-10.
+
+Seeds:
+
+* How many seeds on each map/boid count
+* Measured interval
+
+
+Budget:
+
+* Compute time
+* Override ticks
+
+
+Score:
+
+* Occupancy metrics
+
+
+Control(s):
+
+* No override
+* Override prevents psyboid from leaving optimal scoring path. Otherwise coasting.
+* Nx1x1x1+300 coast .95 alpha? Or some other previously established brute-force override creation method.
+   * Normal budget and ultra-high budget versions, to get a sense of the scaling difference.
+
+
+Note: We already know that coast is insufficient for plait, so we should change it to be a function of map properties. {coast = optimal scoring route, alpha ^ coast = 0.4} is within the range of what's had good results in the past. Sub-note: I didn't specify units, but the idea is that score should be discounted to around 0.4 by the end of the coasting lookahead.
+
+Notably, the controls only need to be run once as long as you keeping testing the same seeds. Please give me the full breakout for them along with the full breakout for your current algorithm this turn. But in later turns we can just highlight important comparisons.
+
+### 6
+
+It sounds like you've discovered a bug if overrides designed to reach an exit aren't reaching that exit.
+
+Let's make sure that if this is happening it's loud. Because edge definitions should mean it's impossible to accidentally miss an exit in a complicated way. Bad aim shouldn't exist. Any boid that avoids immediate navigation onto the wrong edge will inevitably exit onto the correct edge.
+
+Executing an override should be as simple as:
+if (successor(STRAIGHT) == currentEdge or plannedNextEdge) return STRAIGHT;
+if (successor(LEFT) == currentEdge or plannedNextEdge) return LEFT;
+if (successor(RIGHT) == currentEdge or plannedNextEdge) return RIGHT;
+throw new EdgesAreBorkedException();
+
+Notably, edge definitions don't guarantee that always steering left or always steering right will do anything in particular. In some cases, always straight, always left and always right might all lead to one edge while a specific path is required to reach another. All that's guaranteed is that looking ahead to the result of the current movement is sufficient navigation.
+
+### 7
+
+<task-notification>
+<task-id>b2fw256v5</task-id>
+<summary>Monitor event: "greedy pilot benchmark and navigability check"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
+
+### 8
+
+Good news, bad news. The good news is that route seems to be a competent control. The bad news is that it's cleanly in first place on plait.
+
+There's plenty of compute available within budget. Either the movement from route isn't being considered by other models, or it's being incorrectly pruned. Either seems like a bug.
+
+If you can quickly figure out which, go for it. See if it salvages the results. Otherwise I'm going to explicitly spec out the search procedure tomorrow.
+
+Don't spend too much time. If you try something and it doesn't work, just pass back.
+
+### 9
+
+<task-notification>
+<task-id>bhhi285vm</task-id>
+<summary>Monitor event: "fork-fix benchmark rows"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
+
+### 10
+
+<task-notification>
+<task-id>be8a0hwgq</task-id>
+<summary>Monitor event: "corrected fork-fix benchmark rows"</summary>
+<event>[Monitor timed out — re-arm if needed.]</event>
+</task-notification>
+
+### 11
+
+<task-notification>
+<task-id>b2fw256v5</task-id>
+<task-id>bhhi285vm</task-id>
+<task-id>be8a0hwgq</task-id>
+<task-id>__orphan_summary__:shell</task-id>
+<status>stopped</status>
+<summary>3 background shell command task(s) from the previous session have no completion record. They may have been stopped (via the UI, Monitor timeout, or agent teardown — these leave no transcript marker), or they may have been running when the previous Claude Code process exited. They have been marked stopped. Task ids: b2fw256v5, bhhi285vm, be8a0hwgq. Task ids in this notification beginning with "__orphan_summary" are internal scan markers, not tasks.</summary>
+</task-notification>
