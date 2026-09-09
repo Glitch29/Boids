@@ -14,9 +14,11 @@ package boids;
  * is enough to express any plan, but only as a list of absolute-tick instructions worked out in
  * advance — which means the plan cannot react, and a search producing it has to know at planning
  * time exactly when the boid will arrive somewhere. On a map whose edges run 750 ticks, it will
- * not. {@link HeldTurn} is still that class and still what a bit-search emits; {@link EdgePilot}
- * is the other kind, carrying a route rather than a schedule and steering only on the ticks where
- * coasting would leave it.
+ * not. <b>That class is gone</b>, deleted 2026-09-08 with the search that emitted it.
+ * {@link EdgePilot} is the kind that remains: it carries a route rather than a schedule and steers
+ * only on the ticks where coasting would leave it. Whatever a decision point installs will be of
+ * that shape too — a rule evaluated against where the boid actually is, never a tick worked out
+ * in advance.
  *
  * <h2>The window, generically</h2>
  * Everything that reads an override reads one of three things — when it can act, whether it asks
@@ -55,9 +57,36 @@ public interface PsyboidOverride extends MovementControl {
     /** Whether this is in force at {@code tick}. */
     default boolean actsAt(long tick) { return tick >= from() && tick < to(); }
 
-    /** A fixed turn held over a fixed span. The original kind, and what a bit-search emits. */
+    /**
+     * A fixed turn held over a span of ticks, for an <em>analysis</em> that wants a boid steered
+     * bluntly and does not care where it ends up.
+     * <p>
+     * <b>This is not a plan kind and must not become one again.</b> It is what
+     * {@link ThreeBoidPhase} and {@link ThreeBoidSamples} use to say "turn right the whole time"
+     * while mapping phase, and what a synthetic grading override is. The class it used to live in
+     * carried a label format as well, which made it the unit a search emitted and a corpus stored;
+     * that was the mistake, because an absolute tick cannot survive a change of warm-up and the
+     * boid it steers does not arrive when the plan assumed. Deleted 2026-09-08. There is
+     * deliberately no {@code label()} worth parsing here — see {@link #parse}.
+     */
     static PsyboidOverride held(int onset, int duration, int direction, int psyboid) {
-        return new HeldTurn(onset, duration, direction, psyboid);
+        return new PsyboidOverride() {
+            public int psyboid() { return psyboid; }
+
+            public String label() { return "held" + psyboid + "@" + onset + "+" + duration; }
+
+            public long from() { return onset; }
+
+            public long to() { return (long) onset + duration; }
+
+            public boolean asks() { return duration > 0; }
+
+            public void calculate(Movement movement, int i) {
+                if (i == psyboid && actsAt((long) movement.boids.tick())) {
+                    movement.movement[i] = direction;
+                }
+            }
+        };
     }
 
     /**
@@ -66,14 +95,12 @@ public interface PsyboidOverride extends MovementControl {
      * @throws IllegalArgumentException for a kind that does, naming the overload that can
      */
     static PsyboidOverride parse(String label) {
-        if (label.startsWith("p")) return HeldTurn.parseHeld(label);
         throw new IllegalArgumentException("'" + label + "' names an override that is a function "
                 + "of the map, so reading it back needs parse(label, map, facts)");
     }
 
     /** The same, for a context where the map is available. Handles every kind. */
     static PsyboidOverride parse(String label, NavMap map, SolverFacts f) {
-        if (label.startsWith("p")) return HeldTurn.parseHeld(label);
         if (label.startsWith("q")) return EdgePilot.parsePilot(label, map, f);
         throw new IllegalArgumentException("no override kind is written '" + label.charAt(0)
                 + "': " + label);

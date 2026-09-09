@@ -21,13 +21,12 @@ import java.io.IOException;
  * <ol>
  *   <li><b>The gate.</b> As above. A gate-finder is possible in principle — a cut that every
  *       cycle crosses is a graph property — and does not exist.</li>
- *   <li><b>A generic psyboid algorithm.</b> {@link PsyboidBits} searches one bit per visit to a
- *       branching edge, and reads a branch as <em>an arc that holding right reaches</em>. On a
- *       map whose branch needs a left hold it finds nothing, and reports no branches rather than
- *       failing — see {@link #report}, which says so out loud.</li>
+ *   <li><b>A psyboid algorithm.</b> There is none. The branch search that used to sit here was
+ *       removed on 2026-09-08 along with the corpora it wrote; its replacement is a search over
+ *       decision points, specified in `ROADMAP.md` §0i and not yet built.</li>
  * </ol>
  * Everything else — ingest, navmap, decomposition, clock, per-edge navigation, solver facts,
- * stable+, warm-up, spawn, corpus — is derived here without a further decision.
+ * stable+, warm-up and spawn — is derived here without a further decision.
  */
 public final class Pipeline {
     private Pipeline() {}
@@ -40,8 +39,8 @@ public final class Pipeline {
      * @param warm  what the recipe's warm-up policy comes to on this map
      */
     public record Built(PresetScenarioParameter preset, SolverFacts.Gate gate, SolverFacts facts,
-                        Labelling labelling, StateSet plus, PsyboidBits.Branches branches,
-                        int warm, Derived.Behaviour where) {
+                        Labelling labelling, StateSet plus, int warm,
+                        Derived.Behaviour where) {
 
         /** Total edge length in ticks: the time to traverse every edge once. */
         public double totalEdgeLength() {
@@ -49,9 +48,6 @@ public final class Pipeline {
             for (double l : facts.length()) total += l;
             return total;
         }
-
-        /** Whether a psyboid can be searched at all on this map. */
-        public boolean steerable() { return branches.branch().length > 0; }
     }
 
     /** The decomposition, kept together because everything downstream wants all four parts. */
@@ -86,9 +82,8 @@ public final class Pipeline {
 
         MapStates states = MapStates.of(lab.map(), flock, lab.live(), lab.liveCount());
         StateSet plus = states.stablePlus(SimTest.QUORUM);
-        PsyboidBits.Branches branches = PsyboidBits.branches(lab.map(), facts);
         int warm = recipe.warm(facts);
-        Built built = new Built(preset, gate, facts, labelling, plus, branches, warm, where);
+        Built built = new Built(preset, gate, facts, labelling, plus, warm, where);
 
         // Checked on every build rather than on request. It is the precondition every steering
         // rule in the project relies on, it costs three successor lookups per state per arc, and
@@ -126,6 +121,10 @@ public final class Pipeline {
         System.out.printf("stable+ %,d states: %s%n", b.plus().size(),
                 MapStates.byEdge(b.plus(), b.labelling().edge(), f.edges()));
 
+        // Every steered arc is a decision the psyboid has. There is no "searchable" subset and
+        // no hold length to report: one-step navigability says some turn reaches any chosen
+        // successor from every state of an edge, so the question a held turn answered — "does
+        // always-right get there" — was never the right one. See `EDGES.md` §7.
         System.out.printf("%nsteered arcs (an arc unsteered travel does not take):%n");
         int arcs = 0;
         for (int a = 0; a < f.edges(); a++) {
@@ -133,25 +132,10 @@ public final class Pipeline {
                 if (a == c || f.straightTo()[a] == c) continue;
                 if ((f.arcs()[a] & (1L << c)) == 0) continue;
                 arcs++;
-                boolean found = false;
-                for (int i = 0; i < b.branches().branch().length; i++) {
-                    if (b.branches().branch()[i] == a && b.branches().exit()[i] == c) found = true;
-                }
-                if (found) {
-                    System.out.printf("  %d -> %d  searchable, hold right %d ticks%n", a, c,
-                            holdOf(b.branches(), a, c));
-                    continue;
-                }
-                PsyboidBits.Reach r = PsyboidBits.reaches(b.labelling().map(), f, a, c);
-                System.out.printf("  %d -> %d  ** NOT SEARCHABLE — %s **%n", a, c, r.reached()
-                        ? "a LEFT hold of " + r.ticks() + " ticks reaches it, and PsyboidBits "
-                                + "only tries the right"
-                        : "no single held turn reaches it from any critical state, so it is not "
-                                + "a decision the psyboid has");
+                System.out.printf("  %d -> %d%n", a, c);
             }
         }
-        System.out.printf("%d steered arc(s), %d searchable%n", arcs,
-                b.branches().branch().length);
+        System.out.printf("%d steered arc(s)%n", arcs);
 
         System.out.printf("%none-step navigability:%n");
         int stuck = checkNavigable(b);
@@ -159,9 +143,6 @@ public final class Pipeline {
                 ? "every live state of every edge has a turn that stays on it or reaches the "
                         + "chosen exit -- bad aim is not a possible explanation for a missed exit"
                 : stuck + " state(s) violate it, listed above");
-        if (!b.steerable()) {
-            System.out.printf("** no branch is searchable, so no psyboid can be planned here **%n");
-        }
     }
 
     /**
@@ -216,30 +197,17 @@ public final class Pipeline {
         return total;
     }
 
-    private static int holdOf(PsyboidBits.Branches b, int from, int to) {
-        for (int i = 0; i < b.branch().length; i++) {
-            if (b.branch()[i] == from && b.exit()[i] == to) return b.hold()[i];
-        }
-        return -1;
-    }
-
     /**
-     * The whole thing: a map, a gate and a named recipe in, a verified corpus out.
+     * Everything a map needs before a psyboid can be planned on it, with the default recipe.
      * <p>
-     * Refuses rather than writing an empty corpus when the map has no searchable branch, because
-     * a corpus of plans that steer nothing is indistinguishable from a corpus of controls and
-     * would grade a solver against nothing at all.
+     * <b>There is no {@code corpus} step at present.</b> It ran the branch search and wrote a
+     * verified plan corpus; the search has been removed and the one replacing it is specified in
+     * `ROADMAP.md` §0i. What survives is every tier below the corpus, which is what this builds.
      */
-    public static PsyboidCorpus.Corpus corpus(PresetScenarioParameter preset,
-                                              SolverFacts.Gate gate, CorpusPreset recipe)
+    public static Built build(PresetScenarioParameter preset, SolverFacts.Gate gate)
             throws IOException {
-        Built b = build(preset, gate, recipe);
-        report(b, recipe);
-        if (!b.steerable()) {
-            throw new IllegalStateException(preset.name() + " has no searchable branch, so there "
-                    + "is no psyboid to plan. See the report above: the map has steered arcs but "
-                    + "PsyboidBits reaches none of them by holding right.");
-        }
-        return PsyboidCorpus.build(preset, b.facts(), b.plus(), recipe);
+        Built b = build(preset, gate, CorpusPreset.PLANS_40);
+        report(b, CorpusPreset.PLANS_40);
+        return b;
     }
 }

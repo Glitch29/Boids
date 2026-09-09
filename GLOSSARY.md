@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-06, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-08, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -107,7 +107,8 @@ control occupancy is 0.0004 rather than 0.0000. Read a plan as **excess over con
 evidence that anything which scored was steered.
 
 **the benchmark** — every psyboid algorithm on the same seeds against the same controls, with what
-it spent beside what it scored. `Bench`. Four scenarios — `dabnt-4`, `dabeone-4`, `plait-4`,
+it spent beside what it scored. **Deleted 2026-09-08 with the search it measured**; the shape is
+worth rebuilding and the definition is kept for that. Four scenarios — `dabnt-4`, `dabeone-4`, `plait-4`,
 `plait-10` — and three controls, of which **`route` is the one that matters**: the psyboid held to
 the price-optimal scoring cycle and otherwise coasting, which is pure selfishness with no attention
 to the flock. **Anything that does not beat `route` is not herding**, whatever else it is doing.
@@ -138,7 +139,8 @@ against the led boid's edge and names a leader on another, so comparing them mea
 by the same duration and asking where each lands.
 
 **phase per override tick** — the exchange rate between steering and arrival time, and the currency
-a psyboid actually spends. `PhaseShift`. **A psyboid cannot reach a window by waiting**, because
+a psyboid actually spends. The class that measured it was deleted 2026-09-08 as "done sloppily";
+the fact is not in doubt. **A psyboid cannot reach a window by waiting**, because
 waiting moves it and its target equally; the only way to change a phase relationship is to travel
 an edge by a longer or shorter route than coasting takes. Ranked per override tick rather than by
 size, because override ticks will eventually be budgeted.
@@ -150,7 +152,7 @@ fewer or more ticks. **Coasting is not always in the middle of the range**: plai
 dawdle.
 
 **conversion rate** — how often a leader standing inside a window's band actually causes the exit
-that band describes. `Herding.trial`, two boids, against a control with the leader outside the
+that band describes. Measured by a two-boid trial against a control with the leader outside the
 band. **The first forward test of a window in this project**: everything before it took exits that
 happened and asked whether a leader could account for them, which cannot detect a band that is too
 wide. Measured 11–42% in-band against 0–2% out, so windows are levers rather than descriptions —
@@ -158,7 +160,7 @@ and **dominated by the leader's edge rather than the band's width**, one 16-tick
 at 1.0% where a 33-tick band on another arc converts at 86.9%.
 
 **herding chance** — a `(led boid tau, leader edge, tau band)` row a psyboid could stand in.
-`Herding.Chance`. Cheap to enumerate from the windows, and worth enumerating because most of a
+Cheap to enumerate from the windows, and worth enumerating because most of a
 timeline offers none: knowing where a lead is possible is what makes it affordable to branch only
 there.
 
@@ -184,8 +186,8 @@ for one boid; the bias is measured in ticks-of-gain and only its differences mea
 **pilot** — an override carrying a **route** rather than a schedule: one target exit per edge, and
 a turn asked for only on the ticks where coasting would leave it. `EdgePilot`. Self-correcting,
 because it reads where the boid is rather than where a plan expected it to be, and **inert on
-99.65% of ticks**. Contrast `HeldTurn`, a fixed turn at an absolute tick — what a bit-search emits,
-and what cannot survive the slip a boid accumulates over a 750-tick edge.
+99.65% of ticks**. Contrast a **held turn**, a fixed turn at an absolute tick — what the deleted
+bit-search emitted, and what cannot survive the slip a boid accumulates over a 750-tick edge.
 
 **phase** — how far round its loop a boid is, in ticks. **Conserved:** a boid advances exactly one
 step per tick along a route of fixed length, so its phase at tick `t` is its spawn phase plus `t`,
@@ -337,9 +339,31 @@ disagree about their next-or-previous edge sets. Terminates.
 **orbit** — an edge some point of which can forward-navigate back to itself. Strongly
 connected, so the axiom cannot split it; it has to be cut.
 
-**gate** — a line segment in `(x, y)` used to cut cycles so a decomposition can be
-bootstrapped. **Not an analysis tool.** That it lives in `(x, y)` at all is the tell. See
-`EDGES.md` §2.
+**gate** — a set of trigger conditions guaranteed to fire **exactly once as a boid traverses an
+edge**. Formally: for any state `s` on the associated edge, exactly one of — `s` is in the gate;
+every infinite backward navigation from `s` meets the gate for exactly one tick; every infinite
+forward navigation from `s` does. Two implementations, both gates: **state-based**, a set of
+`(x, y, d)`; and **transition-based**, a set of `((x, y, d), (x, y, d))` or
+`((x, y, d), {LEFT, STRAIGHT, RIGHT})`, which is the slightly more versatile set. Stored as sets;
+the guarantee is what makes them gates. **Edge transitions are gates by construction.** Full
+statement in `EDGES.md` §2a.
+
+> **The word was redefined 2026-09-08 and the old sense narrowed, not dropped.** What used to be
+> called a gate is now a **cut line**; every cut line is still a gate under the new definition,
+> which is why the collision is tolerable. The retired rule "gates are a bootstrap, not an
+> analysis tool" is gone from `CLAUDE.md`: gates are now the primary way of advancing a boid.
+> What it was guarding against — measuring commitment to an edge by proximity to a line, when
+> commitment is a property of the edge relation — remains a mistake.
+
+**cut line** — a line segment in `(x, y)` used to cut cycles so a decomposition can be
+bootstrapped. `SolverFacts.Gate`, and still called "the gate" at every entry point. Recorded for
+provenance; nothing at solve time reads one. See `EDGES.md` §2.
+
+**decision** — a gate, plus the options available to a boid that triggers it. `decide(option)`
+returns the triggering state with the appropriate override installed; how and when that override
+acts is a black box to the caller. **Exits and shortcuts are not different in kind** — both hand a
+boid precomputed navigation decisions for some of its upcoming states, one to force an edge exit,
+the other to shift phase in tau-space. Specified in `ROADMAP.md` §0i; not yet built.
 
 **stable edge** — unsteered travel returns to it without scoring. A boid on a stable edge
 could have been there forever and owes no explanation. On dabeone: `{2, 4, 7}`.
@@ -624,14 +648,17 @@ mistake can *raise* the penalty. **The caps must be the population rates**: a co
 flat at only one class balance and otherwise lets an uninformative solver gain by answering
 PSYBOID less often.
 
-**plan** — a searched psyboid timeline, as a seed plus one override per decision.
-`PsyboidBits.Replay`.
+**plan** — a searched psyboid timeline, as a seed plus one override per decision. **No class holds
+one at present**: the search that produced plans and the corpus that stored them were deleted
+2026-09-08. The replacement is specified in `ROADMAP.md` §0i, where a plan becomes a list of
+`(decision, option)` rather than of absolute-tick instructions.
 
-**label** — the text form of a plan, e.g. `seed200|p1Rd24t10028|…`. **The label is the
-artifact**: everything else can be recomputed from it.
+**label** — the text form of a plan. **The label is the artifact**: everything else can be
+recomputed from it. The retired format was `seed200|p1Rd24t10028|…`, whose `t` field is an
+absolute tick and therefore only meaningful alongside the warm-up it was flown under.
 
-**corpus** — a body of runs to measure against. `ingests/<hash>/psyboid/plans.tsv` is the
-dab-like one, written by `PsyboidCorpus`, every row verified by replay before it is written.
+**corpus** — a body of runs to measure against. None exists; the two that did were archived
+2026-09-08 as unsound.
 
 ---
 
@@ -659,24 +686,17 @@ anything not listed.
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
-| psyboid corpus | `PsyboidCorpus` + `CorpusPreset` | `<behaviour>/psyboid/<preset>-<hash>/` |
 | edge-occupancy decay | `EdgeOccupancy` + `Spawn.Rule`, with `warmupScoring` | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` |
-| scoring floor | `SimTest.scoringFloor`, per-seed detail in `SimTest.scoringLaps` | `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` |
 | proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
 | exit classification | `ExitAudit` | `<ingest>/audit/` |
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |
-| psyboid search | `PsyboidBits` | — |
-| the pipeline | `Pipeline`: map + gate in, corpus out | every tier under `ingests/<map>/` |
+| the pipeline | `Pipeline`: map + cut line in, solver facts out | every tier under `ingests/<map>/` |
 | the price function | `EdgePrice` | in memory; reported by hand |
-| route-following override | `EdgePilot`, against `HeldTurn` | in a plan's label, prefix `q` |
-| window conversion | `Herding.trial`, inventory by `Herding.inventory` | printed; ~1s per map |
+| route-following override | `EdgePilot` | in a plan's label, prefix `q` |
 | one-step navigability | `Pipeline.checkNavigable`, run on every build | throws on violation |
 | forward distance and rebasing | `EdgeReach` | in memory |
-| the phase ledger | `PhaseShift` | printed; under a second per map |
-| the benchmark | `Bench`, driven from `SimTest.main` | printed |
-| the search-decides-pilot-executes hybrid | `Bench.piloted` | printed |
 | spawn | `Spawn` + `Spawn.Rule` | in a corpus's address |
 
 > **Two different two-boid analyses. Do not conflate them.**

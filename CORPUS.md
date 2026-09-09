@@ -3,8 +3,19 @@
 Canonical for psyboid corpora: what one is, how it is generated, how it is addressed, and which
 numbers are worth reading off it.
 
-**Status:** 2026-09-06, physics 3. Figures measured on dabeone ingest `609cffdb84be218c`,
-structure `b65011999ad52a55`, behaviour `cc1ab3e9a4831bfd`.
+**Status:** 2026-09-08, physics 3. **No corpus exists.** `PsyboidCorpus`, `PsyboidBits` and both
+corpora on disk were removed on 2026-09-08 — the search that wrote them was map-specific to
+dabeone and the plans it produced were unsound; the artifacts are archived under
+`archive/2026-09-08/`. What survives and is still canonical is everything below about **what a
+corpus is for, how one is addressed, and why the warm-up is a policy** — `CorpusPreset` still
+holds the recipe and `Derived.corpus` still hashes it into the path. Figures below were measured
+on dabeone ingest `609cffdb84be218c`, structure `b65011999ad52a55`, behaviour `cc1ab3e9a4831bfd`,
+and cannot currently be reproduced. The replacement is `ROADMAP.md` §0i.
+
+> The recipe no longer carries `spread`, `lookahead`, `alpha` or `settle`: those were the deleted
+> search's settings, so `CorpusPreset.fingerprint` — and therefore every corpus hash — has
+> changed. `LEGACY_40` survives but its stated purpose, keeping pre-2026-09-06 figures
+> reproducible, is void.
 
 ---
 

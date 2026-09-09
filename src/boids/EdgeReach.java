@@ -108,7 +108,7 @@ public final class EdgeReach {
      * Dijkstra over the edge graph, an arc out of edge {@code x} costing {@code length(x)},
      * because that is the ground a boid covers by leaving it. <b>The turn itself is free here</b>,
      * which is right for a distance and wrong for a cost: what a turn costs is override ticks, and
-     * {@link PhaseShift} is where those are counted.
+     * override ticks, which the shortcut/longcut decision points will count.
      */
     public static OptionalDouble steered(SolverFacts f, At from, At to) {
         if (from.edge() == to.edge() && to.tau() > from.tau()) {

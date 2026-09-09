@@ -11,6 +11,78 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-08 — gates get a definition, and the §0h era is torn out
+
+The user's framing: the last session was given a lot of leeway on a very difficult task and did
+not solve it, **which is not a bad outcome** — the point of the project is to produce a task hard
+for SOTA models. What follows is a replacement specified by the user rather than invented.
+
+**Familiarisation first.** Read the docs in the prescribed order and reproduced `dabeone-4` at 20
+seeds x 5,000 ticks: the §0h benchmark table came back row for row, so the environment and the
+recorded figures were live at the start.
+
+### The tear-out
+
+Deleted on explicit authorisation, all recoverable at `0f9b2b7`: `PsyboidBits` (map-specific to
+dabeone), `Bench` (built on it), `PsyboidCorpus` and both corpora, `HeldTurn`, `Herding`,
+`PhaseShift`, `Sim.segmentedOverride`, `SimTest.stablePlusSweep`, and the seven `SimTest` entry
+points that read a corpus — `graded`, `auditCorpus`, `renderUnexplained`, `steeringHistory`,
+`renderTick`, `scoringFloor`, `scoringLaps`. `SimTest` went 3,982 → 3,096 lines; the package went
+61 → 55 files.
+
+Surgery to keep the tree compiling: `CorpusPreset` lost `spread`/`lookahead`/`alpha`/`settle` and
+`config(...)`, **which changes `fingerprint()` and therefore every corpus hash**; `Pipeline` lost
+`Built.branches`, `steerable()`, `holdOf` and `corpus(...)`, and gained a two-argument `build`;
+`PsyboidOverride` lost the `p` label branch and kept `held` as an anonymous *analysis* primitive,
+because `ThreeBoidPhase` and `ThreeBoidSamples` need "turn right forever" to map phase and those
+analyses are not part of what was scrapped. `SimTest.main` now builds all three maps.
+
+Corpora were **untracked**, so no git recovery existed; archived to `archive/2026-09-08/` rather
+than hard-deleted. Verified afterwards: all three maps build, one-step navigability holds
+everywhere, warm-ups unchanged at 941 / 923 / 1,814.
+
+### A defect found by deleting its caller
+
+`EdgePrice.of` took a `steerableOnly` flag; its **only** caller passed `true`, and that path
+dropped any exit no single held turn reached from a critical state. One-step navigability says
+every successor is reachable from every state of an edge, so the filter could only ever discard
+real exits — and with them the cycles through those exits. `Pipeline.report` was printing "NOT
+SEARCHABLE" on the same basis. **Every `EdgePrice` figure on record was measured through it**:
+gain 0.046471 on plait, 0.106634 on dabeone, the best cycles, and the bias. They need
+re-measuring and may come out higher. Flag removed; nothing re-measured this session.
+
+### Gates, defined
+
+The user specified a formal **gate**: a set of trigger conditions guaranteed to fire exactly once
+as a boid traverses an edge, stated as a trichotomy over states of that edge (in the gate /
+exactly one tick of it in any infinite past / exactly one tick of it in any infinite future).
+State-based and transition-based are both gates. Canonical in `EDGES.md` §2a, with the strategy
+and the control-flow sketch in `ROADMAP.md` §0i.
+
+The linguistic clash with the old `(x, y)` gate was raised as a conflict against `CLAUDE.md`'s
+hard rules and `EDGES.md` §2, and the user resolved it: **scrap the rule.** It existed to prevent
+one regression — measuring commitment to an edge via a nearby gate, when edge definitions already
+imply commitment. The old sense is now called a **cut line**; every cut line is still a gate.
+
+**A correction worth recording.** This session asserted that the flock could push a boid off an
+edge early and asked how `nextGate` should handle it. It cannot: while on an edge it is
+physically impossible to do anything but continue on it until landing on a successor. The user
+asked for a more memorable form of the axiom, and `CLAUDE.md`'s hard rules now carry one — *an
+edge is a corridor with no side doors; edges are cut exactly where the options change, so inside
+one the options cannot.*
+
+### Open
+
+Four questions put to the user and not yet answered, listed at the end of `ROADMAP.md` §0i: where
+`nextDecision` gets its map/facts/engine context given `Sim.State` holds none; whether two gates
+can fire at once; what `Windows.inPhase` is; and whether a decision instance is identified by
+`(gate, nth trigger)` or `(gate, tick)`. Nothing was stubbed pending those answers.
+
+`EdgeReach` survives uncalled, kept on the guess that its `(edge, tau)` rebase primitives will be
+wanted by the execution tables.
+
+---
+
 ## 2026-09-07 — why the searches lose to `route` on plait: found, and not worth fixing here
 
 The user's framing: `route` is a policy the search could pick, so either it is never considered or

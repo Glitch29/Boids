@@ -3,9 +3,11 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-06. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-08. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
-physics 3.
+physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
+line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
+bootstrap, not an analysis tool" is retired.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -84,20 +86,25 @@ This terminates. In practice, more than a couple of iterations means something i
 
 ---
 
-## 2. Gates are a bootstrap, not an analysis tool
+## 2. Cut lines
 
-A **gate** is a line segment in `(x, y)` used to cut cycles so that a first decomposition can
-be constructed. That is its only sanctioned use.
+A **cut line** is a line segment in `(x, y)` used to cut cycles so that a first decomposition
+can be constructed. That is its only sanctioned use. It is what `SolverFacts.Gate` holds and
+what every entry point still calls "the gate".
 
-**That a gate lives in `(x, y)` at all is the tell that it is unfit for analysis.** It cannot
-distinguish the two directions of travel through a corridor, it has no meaning in
-`(edge, tau)`, and its placement is a human choice that nothing downstream should depend on.
-Anything that evaluates a gate where it should be evaluating an edge relation is a bug.
+**The rule this section used to carry — "gates are a bootstrap, not an analysis tool" — was
+retired 2026-09-08 and is not a rule any more.** It existed to stop one specific regression:
+measuring *commitment to an edge* by proximity to some nearby line, when commitment is a
+property of the edge relation and nothing else. That regression is still a regression. What
+changed is the word: **gate** now names a formal construct with a guarantee (§2a), of which a
+cut line is one instance, and the new gates are the primary way of advancing a boid.
 
-Gates are recorded in `SolverFacts.Gate` **for provenance only** — so a reader can reproduce a
-decomposition. Nothing at solve time reads one, and nothing new should.
+**A cut line still lives in `(x, y)` and that is still its limitation.** It cannot distinguish
+the two directions of travel through a corridor, it has no meaning in `(edge, tau)`, and its
+placement is a human choice. It is recorded for provenance — so a reader can reproduce a
+decomposition — and nothing at solve time reads one.
 
-Known-good gates, kept because rebuilding a decomposition needs them:
+Known-good cut lines, kept because rebuilding a decomposition needs them:
 
 | map | gate | edges |
 | --- | --- | --- |
@@ -116,6 +123,71 @@ gate does not fail loudly; it corrupts the partition. An arrival count far below
 corridor's cross-section means the line is clipping something rather than spanning it. 62
 arrivals against a healthy 120–180 signalled a bad gate that made refinement run away to 493
 edges.
+
+---
+
+## 2a. Gates
+
+**Canonical, specified 2026-09-08.** A **gate** is a set of trigger conditions guaranteed to fire
+**exactly once as a boid traverses an edge**. Gates are the primary way of advancing a boid for
+psyboid evaluation, and probably for most other analysis too.
+
+### The property
+
+If an edge has a gate `G` associated with it, then **for any state `s` on that edge, exactly one
+of the following is true**:
+
+1. `s` is in `G`.
+2. Any infinite *backward* navigation from `s` is in `G` for exactly one tick.
+3. Any infinite *forward* navigation from `s` is in `G` for exactly one tick.
+
+Both 2 and 3 assume the path in question never visits the edge again.
+
+Note the quantifier: **any**, not *some*. Every navigation, steered or coasting, meets the gate
+exactly once. That is what makes a gate something a psyboid cannot dodge and a search cannot skip,
+and it is why the property has to be *verified* of a candidate set rather than assumed.
+
+Read the trichotomy as: the gate is either **on** you, **behind** you, or **ahead** of you, and
+never two of those. A set that some path crosses twice fails it; so does a set some path bypasses.
+
+### Two implementations
+
+Both are gates. Either can be used, depending on need.
+
+| | |
+| --- | --- |
+| **state-based** | a set of `(x, y, d)`, firing when a boid lands on one |
+| **transition-based** | a set of `((x, y, d), (x, y, d))`, or of `((x, y, d), {LEFT, STRAIGHT, RIGHT})`, firing when a boid paths through one |
+
+**Transition-based is the slightly more versatile set.** A state-based gate can be stepped over
+where a transition-based one cannot, which matters wherever the ~4 px step means a boid crosses a
+tau level between ticks rather than landing on it.
+
+Ultimately gates are stored as **sets** — of states, or of transitions. They are just sets with a
+particular guarantee attached. There is no interesting representation question here.
+
+### What follows
+
+- **Edge transitions are gates by construction.** The set of transitions leaving an edge fires
+  exactly once per traversal, because a traversal ends by leaving.
+- **A gate is generally located on the edge it belongs to, but need not be.** There may be reason
+  to put a gate several ticks *before* an edge starts, in which case it sits near the end of every
+  edge that feeds into it. The association is with the edge whose traversal it counts, not with
+  the pixels it occupies.
+- **Gates cannot be placed on an edge where infinite stalling is possible.** A boid that can
+  loiter can cross a gate and come back to it, which breaks exactly-once. No such edge exists on
+  dabeone, dabnt or plait — but some certainly will, and the freely-navigable edge in §11 is the
+  shape of the problem.
+- **A gate is tied to a decomposition, not just to a map.** Decomposition is fairly rigid but not
+  unique, and the gate property is defined in terms of the edge property.
+
+### Gates versus decisions
+
+A gate is *where* a decision is put; it is not itself a choice. A **decision** hands a boid that
+triggered the gate an override that makes it take certain precomputed navigation decisions at some
+of its upcoming states. **Exits and shortcuts are not different in kind** — same mechanism, same
+table-driven execution, different consequence: an exit decision forces a particular edge exit, a
+shortcut decision advances or regresses phase in tau-space. See `ROADMAP.md` §0i.
 
 ---
 

@@ -50,7 +50,10 @@ move; silently substituting your own version never is.
   wrong conclusion.
 - **Every number gets its ingest hash.** A figure without one cannot be reproduced or
   falsified.
-- **Gates are a bootstrap, not an analysis tool.** See `EDGES.md` §2.
+- **An edge is a corridor with no side doors.** Once a boid is on one it *will* traverse it and
+  leave by a successor; nothing can push it out early, and every state on it has the same exits
+  ahead and the same entrances behind. This is not a tendency, it is the axiom — edges are cut
+  exactly where the options change, so inside one the options cannot. See `EDGES.md` §1.
 
 ## The three spaces
 

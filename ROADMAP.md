@@ -1,8 +1,8 @@
 # What is being built now
 
-**Status:** 2026-09-07. `README.md` has the inventory; this file has the work in front of us
-and the specifications for it. **§0h is the live thread and ends with a handoff — read that
-first.**
+**Status:** 2026-09-08. `README.md` has the inventory; this file has the work in front of us
+and the specifications for it. **§0i is the live thread — read that first.** §0h is closed; its
+handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
 ---
 
@@ -1528,6 +1528,156 @@ the ones that matter here:
 permissive on a long edge and inflates plait's usable-band counts (`EDGES.md` §7); and six
 `SimTest` audit entry points still replay corpus plans at `PsyboidBits.WARM` rather than the
 corpus's own warm-up, which is correct only for `LEGACY_40`.
+
+## 0i. In flight — gates, decision points, and a search over decisions
+
+**Started 2026-09-08. §0h is closed**: the user is specifying the search procedure rather than
+tuning the one that lost to `route`. The §0h implementations have been torn out — see the
+tear-out below — and what replaces them is specified here by the user, not invented.
+
+### The strategy
+
+**Reduce the map to a series of binary decision points**, in a system parallel to and heavily
+overlapping with edge decomposition.
+
+From the tree search's side, every action is a **binary decision**: take this exit? take this
+shortcut? take this longcut? do some exit-inducing wiggle? Those decisions go into the override.
+From the simulation's side an **override is a black box** that steers the psyboid. The override
+itself holds no policy — it **references precomputed tables** that translate a decision in the
+search tree into specific actions at specific nodes.
+
+The steps, in order:
+
+1. **Define decision points** — invocation, decision, execution.
+   - **Edge exits** — done, possibly damaged in the last session; needs manual review.
+   - **Shortcuts / longcuts** — done sloppily as `PhaseShift`, deleted, being replaced.
+   - **Wiggles** — deferred.
+2. **Control and data flow** for overrides and search.
+3. **Tables** for the override implementation.
+4. **Search structure.**
+5. **Comparator for pruning, and the commit mechanism** — with heuristics for endpoint
+   evaluation to be tested.
+
+### Gates — canonical statement in `EDGES.md` §2a
+
+A **gate** is a set of trigger conditions guaranteed to fire **exactly once as a boid traverses
+an edge**. For a state `s` on the gate's edge, exactly one of: `s` is in the gate; any infinite
+backward navigation from `s` is in it for exactly one tick; any infinite forward navigation from
+`s` is. (The latter two assume the path never revisits the edge.)
+
+State-based and transition-based are both gates and either can be used; transition-based is the
+slightly more versatile set. **Only the state-based form is being discussed for the moment.**
+Gates are stored as sets — sets with a guarantee, nothing more. Code-wise a gate is an abstract
+contract, which is to say nothing; there will be **a class for gate helper methods**, and whether
+the several kinds need abstracting is not yet known.
+
+Three consequences worth writing down:
+
+- **A gate is usually, but need not be, located on the edge it belongs to.** A gate several ticks
+  before an edge starts would sit near the end of every edge feeding into it.
+- **No gate can live on an edge where infinite stalling is possible.** None exist today; some
+  certainly will.
+- **A gate is tied to a decomposition**, since the gate property is defined on the edge property,
+  and decomposition — though fairly rigid — is not unique.
+
+### There is no such thing as being pushed out of an edge early
+
+Stated here because a session got it wrong on 2026-09-08 and it is the recurring error.
+
+**While on an edge it is physically impossible to do anything but continue on that edge until
+landing on a successor edge.** The flock cannot displace a boid off an edge; it can only
+influence *which* successor. A traversal always completes, so a gate always fires.
+
+The axiom is what guarantees it, and the memorable form is: **an edge is a corridor with no side
+doors** — edges are cut exactly where the options change, so inside one, the options cannot.
+Now in `CLAUDE.md`'s hard rules in place of the retired gate rule.
+
+### Decisions
+
+A `Decision` holds **some options** and **a `State` in need of an override**. Which override gets
+applied is the result of how `decide()` is called.
+
+**Exits and shortcuts are not fundamentally different.** An exit decision gives a boid that
+started anywhere in the gate an override making it take certain precomputed navigation decisions
+at some of its upcoming states, the end result being a forced edge exit. A shortcut decision does
+exactly the same thing, and the result is advancing or regressing relative phase in tau-space.
+
+**`decide` returns the state the decision took place on, with the override installed.** For the
+caller, how and when that decision gets implemented is a black box — it might have no effect on
+the next tick, so advancing a single tick was never a meaningful thing to return.
+
+```java
+stateWithOverride = state.nextDecision(Decision.Gate.PSYBOID_EXIT).decide(Decision.Option.EXIT);
+```
+
+Helper methods could shorten that to `state.exit()` and `state.continue()` where the exit is or
+is not taken.
+
+Search tree expansion is then, ideally:
+
+```java
+List<State> getChildren(State state) {
+    List<State> states = new ArrayList<>();
+    List<Decision.Gate> gates = new ArrayList<>(Decision.Gate.PSYBOID_EXIT);
+
+    if (Windows.inPhase(state)) gates.add(Decision.Gate.SHORTCUT);
+
+    Decision decision = state.nextDecision(gates);
+
+    if (decision.hasGateType(Decision.Gate.SHORTCUT)) {
+        states.add(decision.decide(Decision.Option.FAST));
+        states.add(decision.decide(Decision.Option.SLOW));
+        states.add(decision.decide(Decision.Option.NONE));
+    } else {
+        states.add(decision.decide(Decision.Option.EXIT));
+        states.add(decision.decide(Decision.Option.NONE));
+    }
+}
+```
+
+**Evaluation data belongs on the `Decision`.** Functionally the same as reading it off the state,
+but it can be read *before* a `State` is made from a `Decision` — which is the cheap place to
+prune, since every child of a node is the same arrangement differing only in installed override.
+
+### The tear-out, 2026-09-08
+
+Deleted, all recoverable at `0f9b2b7`:
+
+| | why |
+| --- | --- |
+| `PsyboidBits` | an old map-specific algorithm for dabeone |
+| `Bench` | built on `PsyboidBits`, which explains one of the last session's bugs |
+| `PsyboidCorpus`, and both corpora on disk | the corpora were nonsense; archived to `archive/2026-09-08/` |
+| `HeldTurn` | part of the same nonsense. `PsyboidOverride.held` survives as an *analysis* primitive with no label format |
+| `Herding` | window conversion; the finding is in `EDGES.md` §7 |
+| `PhaseShift` | shortcuts and longcuts, done sloppily |
+| `Sim.segmentedOverride` | uncalled, pre-decomposition era |
+| `SimTest.stablePlusSweep` | the agreement-ratio scan `QUORUM = 5` settled by naming |
+| `SimTest.graded`, `auditCorpus`, `renderUnexplained`, `steeringHistory`, `renderTick`, `scoringFloor`, `scoringLaps` | every one read a corpus. `SimTest` fell 3,982 → 3,096 lines |
+
+`EdgeReach` was kept on the guess that its `(edge, tau)` rebase primitives will be wanted for the
+execution tables; if they are not, that will become obvious and it can go.
+
+**One defect fell out of the tear-out.** `EdgePrice.of` took a `steerableOnly` flag whose only
+caller passed `true`, and that path dropped any exit no *single held turn* reached from a critical
+state — the held-turn fallacy §0h had already disproved. One-step navigability says every
+successor is reachable from every state, so the filter could only discard real exits and the
+cycles through them. **Every `EdgePrice` figure on record — `gain`, the best cycle, the bias
+`h(e)` — was measured through it and needs re-measuring.**
+
+### Open questions put to the user
+
+1. **Does `nextDecision` tick the flock, and if so where does the context come from?**
+   `Sim.State` is a context-free holder — `n, x, y, h, tick, score, boidScore, label,
+   psyboidOverrides` — with no reference to the map, the facts or the engine, and that is
+   load-bearing at several dozen call sites. `state.nextDecision(...)` needs all three.
+2. **Can two gates fire on the same state**, and if so does the `Decision` carry both option sets?
+   The sketch reads SHORTCUT as taking priority over PSYBOID_EXIT.
+3. **What is `Windows.inPhase`?** It gates whether a shortcut is worth considering and is the only
+   part of the sketch reaching outside the decision machinery.
+4. **How is a decision instance identified in a plan** — `(gate, nth trigger)` or `(gate, tick)`?
+   The ordinal is warm-up independent; the tick is not, which is what made the retired labels
+   only meaningful alongside their recipe.
 
 ## 1. Critical-envelope analysis — redesign — **priority one**
 

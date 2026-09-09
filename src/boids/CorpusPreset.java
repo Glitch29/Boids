@@ -33,16 +33,17 @@ public enum CorpusPreset {
      * replays, in a minute rather than an hour.
      */
     SMOKE("smoke test, not a sample", 3, Warmup.TOTAL_EDGE_LENGTH, Spawn.Rule.TAU_UNIFORM,
-            600, 640, 320, 0.95, PsyboidBits.SETTLE),
+            600),
 
     /**
      * The standard corpus: forty seeds over a three-thousand-tick run.
      * <p>
-     * Spread and lookahead are {@link PsyboidBits#standard}'s, which are measured rather than
-     * chosen — see its javadoc for why 640 is a floor and not a knob.
+     * Forty seeds and a three-thousand-tick run. The search settings are no longer part of a
+     * recipe: they belonged to a search that has been removed, and the one replacing it is not
+     * yet specified.
      */
     PLANS_40("the standard corpus", 40, Warmup.TOTAL_EDGE_LENGTH, Spawn.Rule.TAU_UNIFORM,
-            3000, 640, 320, 0.95, PsyboidBits.SETTLE),
+            3000),
 
     /**
      * The recipe every figure recorded before 2026-09-06 was taken under: the simulation's own
@@ -53,7 +54,7 @@ public enum CorpusPreset {
      * this one, and a recipe nobody can re-run is a set of numbers nobody can check.
      */
     LEGACY_40("the pre-2026-09-06 recipe, kept for reproducibility", 40, Warmup.FIXED_5000,
-            Spawn.Rule.UNIFORM, 3000, 640, 320, 0.95, PsyboidBits.SETTLE);
+            Spawn.Rule.UNIFORM, 3000);
 
     /**
      * How long a flock flies before the psyboid is switched on.
@@ -113,22 +114,13 @@ public enum CorpusPreset {
     private final Warmup warmup;
     private final Spawn.Rule spawn;
     private final int run;
-    private final int spread;
-    private final int lookahead;
-    private final double alpha;
-    private final int settle;
 
-    CorpusPreset(String describes, int seeds, Warmup warmup, Spawn.Rule spawn, int run, int spread,
-                 int lookahead, double alpha, int settle) {
+    CorpusPreset(String describes, int seeds, Warmup warmup, Spawn.Rule spawn, int run) {
         this.describes = describes;
         this.seeds = seeds;
         this.warmup = warmup;
         this.spawn = spawn;
         this.run = run;
-        this.spread = spread;
-        this.lookahead = lookahead;
-        this.alpha = alpha;
-        this.settle = settle;
     }
 
     public String describes() { return describes; }
@@ -146,20 +138,6 @@ public enum CorpusPreset {
     public int warm(SolverFacts f) { return warmup.ticks(f); }
 
     /**
-     * The search settings, with the warm-up and the spread resolved against this map.
-     * <p>
-     * <b>The spread is a floor, not a value.</b> {@code 640} was measured on dabeone as the point
-     * where the answers stop moving, and it is kept — but on a map whose branch edge is longer
-     * than dabeone's whole lap it is far too small to see a decision matter, and the search then
-     * declines every bit without saying so. {@link PsyboidBits#minimumSpread} derives what the map
-     * needs; whichever is larger wins.
-     */
-    public PsyboidBits.Config config(SolverFacts f, PsyboidBits.Branches b) {
-        return PsyboidBits.Config.of(warm(f), Math.max(spread, PsyboidBits.minimumSpread(f, b)),
-                lookahead, alpha, run, settle);
-    }
-
-    /**
      * Every field, in a form a hash and a {@code meta.txt} can both use.
      * <p>
      * <b>The warm-up appears as its policy, not its value.</b> The value is a function of the map,
@@ -167,7 +145,7 @@ public enum CorpusPreset {
      * the same information in twice and make the same recipe look like two.
      */
     public String fingerprint() {
-        return String.format("seeds=%d warmup=%s spawn=%s run=%d spread=%d lookahead=%d alpha=%s "
-                + "settle=%d", seeds, warmup, spawn, run, spread, lookahead, alpha, settle);
+        return String.format("seeds=%d warmup=%s spawn=%s run=%d",
+                seeds, warmup, spawn, run);
     }
 }

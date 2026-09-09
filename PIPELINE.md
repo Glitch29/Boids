@@ -19,7 +19,10 @@ A map and a gate in, a verified corpus out. Read on for what each tier is and ho
 read `CORPUS.md` for what the recipe resolves per map and what still blocks running unattended.
 The gate is the only argument that is neither the map nor a named recipe.
 
-**Status:** 2026-09-06, physics 3. **Every path below moved**: derived output is addressed by
+**Status:** 2026-09-08, physics 3. **The corpus step is gone** — `Pipeline.corpus` and everything
+under it were removed on 2026-09-08 with the search that produced plans; `Pipeline.build` still
+takes a map and a cut line to solver facts, and step 18 onward has no implementation. See
+`ROADMAP.md` §0i. **Every path below moved**: derived output is addressed by
 the inputs it depends on, in a structure tier and a behaviour tier under the ingest — see
 `README.md`'s artifact index and `ROADMAP.md` §0c. Entry points take a `Derived.Structure` or
 `Derived.Behaviour`, which `SimTest.structure` and `SimTest.behaviour` build from the gate and the

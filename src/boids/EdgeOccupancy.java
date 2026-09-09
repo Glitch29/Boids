@@ -281,7 +281,7 @@ public final class EdgeOccupancy {
 
     /**
      * How many seeds score with no psyboid at all, over a run of a given length starting at a
-     * given tick — the measurement {@link PsyboidBits#WARM} was chosen on.
+     * given tick — the measurement the superseded 5,000-tick warm-up was chosen on.
      *
      * @param scored   seeds accruing any score at all in the window
      * @param wentOff  seeds putting any boid off the stable edges in it. <b>The same event seen

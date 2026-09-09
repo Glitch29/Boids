@@ -264,7 +264,7 @@ public final class EdgePrice {
             if (g == e) continue;
             if (f.straightTo()[e] == g) { exits.add(g); continue; }
             if ((f.arcs()[e] & (1L << g)) == 0) continue;
-            if (!steerableOnly || PsyboidBits.reaches(map, f, e, g).reached()) exits.add(g);
+            exits.add(g);
         }
 
         int[] out = new int[exits.size()];

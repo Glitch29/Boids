@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-326 prompts across 11 sessions.
+327 prompts across 11 sessions.
 
 ---
 
@@ -9975,7 +9975,7 @@ I don't think we have selected a generic psyboid override-generating algorithm y
 
 ## Session 11 - 2026-09-06
 
-*Log `11f0c1b1-5077-47af-ae82-30b38b0f7d6b`, 11 prompts.*
+*Log `11f0c1b1-5077-47af-ae82-30b38b0f7d6b`, 12 prompts.*
 
 ### 1
 
@@ -10165,3 +10165,7 @@ Don't spend too much time. If you try something and it doesn't work, just pass b
 <status>stopped</status>
 <summary>3 background shell command task(s) from the previous session have no completion record. They may have been stopped (via the UI, Monitor timeout, or agent teardown — these leave no transcript marker), or they may have been running when the previous Claude Code process exited. They have been marked stopped. Task ids: b2fw256v5, bhhi285vm, be8a0hwgq. Task ids in this notification beginning with "__orphan_summary" are internal scan markers, not tasks.</summary>
 </task-notification>
+
+### 12
+
+About to close this thread. Just double checking that everything's wrapped up. If you've got any notes to hand off to the next thread, now's the time to make them.

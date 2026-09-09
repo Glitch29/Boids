@@ -6,12 +6,12 @@ import java.util.Arrays;
  * An override that carries a <b>route</b> rather than a schedule: one target exit per edge, and a
  * turn asked for only on the ticks where coasting would leave it.
  * <p>
- * <b>What a held turn cannot do.</b> {@link HeldTurn} is a turn at an absolute tick, so a plan
- * made of them has to know in advance exactly when the boid will arrive somewhere. Under flocking
- * it will not: neighbours push it a few ticks either way, and on a map whose edges run 750 ticks
- * the accumulated slip is larger than the window the turn has to land in. The existing search
- * covers that with eight ticks of margin on each end, which works on dabeone's hundred-tick edges
- * and is hopeless on plait's.
+ * <b>What a held turn cannot do.</b> A held turn is a turn at an absolute tick, so a plan made of
+ * them has to know in advance exactly when the boid will arrive somewhere. Under flocking it will
+ * not: neighbours push it a few ticks either way, and on a map whose edges run 750 ticks the
+ * accumulated slip is larger than the window the turn has to land in. The search that emitted
+ * them covered that with eight ticks of margin on each end, which worked on dabeone's
+ * hundred-tick edges and was hopeless on plait's. Both were deleted on 2026-09-08.
  * <p>
  * A pilot has no schedule to slip against. Each tick it asks where the boid actually is, what it
  * would take to leave that edge by the target exit, and whether coasting does it. Nearly always

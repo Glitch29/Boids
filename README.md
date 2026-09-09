@@ -1,8 +1,9 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-07. **Physics 3** — see `ROADMAP.md` §0a-§0h. **Three maps:** dabeone
-`609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **`Bench` is the
-measure** — every algorithm on the same seeds against the same controls. Verified against dabeone ingest
+**Status:** 2026-09-08. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+`609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
+its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
+over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
 `609cffdb84be218c` unless stated. Every figure below carries the ingest it was measured on; a
 figure without one is not reproducible and should not be trusted, and **figures taken under
 physics 2 are marked as such** rather than silently carried forward.
@@ -43,8 +44,8 @@ odd one out is not evidence; being the boid that had nothing to follow is. Worke
 
 Most live pixels carry two or more edges running different directions through them, so any
 claim keyed on `(x, y)` alone is a claim about unrelated trajectories at once. An analysis
-that needs `(x, y)` is either a renderer or a mistake. Gates are the one sanctioned
-exception, and only for bootstrapping — see `EDGES.md` §2.
+that needs `(x, y)` is either a renderer or a mistake. A cut line is the one sanctioned
+exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 
 ---
 
@@ -62,16 +63,10 @@ exception, and only for bootstrapping — see `EDGES.md` §2.
 | two-boid reachability | 213,423,450 arrangements, bit-identical from 5 seeds | `TwoBoid` |
 | steerable arcs | **exactly three** on dabeone: `2→1`, `4→0`, `5→6` | `TwoBoid.boidEdgeMoves` |
 | leader windows | opening bands per arc; tightest `2→1` at leader edge 7, 0.2 ticks | `<ingest>/windows/` |
-| psyboid corpus | 40 plans, every row verified by replay, regenerates byte-identical | `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` |
-| the scoring floor | a solo psyboid scores 54 points every 533 ticks, `sd 0.00` over 40 seeds | `<preset>-<hash>/floor.tsv` |
 | phase is conserved | edge occupancy oscillates at the lap period, autocorrelation 0.99 after 73 laps | `EdgeOccupancy` |
 | warm-up needed | **500 ticks** on edge occupancy; the scoring criterion never terminates. Settled as total edge length: 941 on dabeone, 1,814 on plait | `CorpusPreset.Warmup` |
-| pipeline from a map | plait taken from its PNG to a corpus; both maps run end to end | `Pipeline` |
-| spread is a floor, not a constant | 640 is a dabeone number; plait needs 1,597 or the search silently declines every bit | `PsyboidBits.minimumSpread` |
-| the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them | `EdgePrice` |
-| windows convert | a leader in-band causes the exit 11-42% of the time against 0-2% outside it — the first forward test | `Herding.trial` |
-| phase costs override ticks | plait's edge 0 offers 53 ticks of hurry and 11 of dawdle; dabeone is on rails, edge 7 spanning 10 | `PhaseShift` |
-| the benchmark | 4 scenarios x 20 seeds x 5,000 ticks, 6 entrants; **nothing dominates** — the route pilot wins 3 of 4 on occupancy and every one on occupancy per override tick | `Bench` |
+| pipeline from a map | all three maps run from PNG to solver facts, every invariant checked | `Pipeline` |
+| the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them. **Both figures are suspect** — see below | `EdgePrice` |
 | one-step navigability | from every state of an edge some turn stays on it or reaches the chosen exit. Holds on all three maps; **bad aim cannot explain a missed exit** | `Pipeline.checkNavigable` |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
@@ -79,11 +74,21 @@ boid on an **unstable edge** is somewhere unsteered travel would not have left i
 needs only `(x, y, d)` plus the decomposition — both of which a photograph plus precomputation
 supply.
 
+> ⚠ **The price function's gain figures were measured through a filter that should not have been
+> there.** `EdgePrice.of` took a `steerableOnly` flag, and its only caller passed `true`; that
+> path dropped any exit no *single held turn* reached from a critical state. One-step
+> navigability says every successor is reachable from every state of an edge, so the filter could
+> only ever discard real exits, and with them the cycles through those exits. The flag was removed
+> on 2026-09-08 along with the code it called. **`gain`, the best cycle, and the bias `h(e)` all
+> need re-measuring on all three maps**, and may come out higher.
+
 ### In flight
 
-The solver skeleton is built and grading runs end to end: `Solver` + `Clue` +
-`UnstableEdgeClue`, facts built by `SolverStore` into `<ingest>/solver/facts.bin`, graded by
-`SimTest.graded` against the plan corpus and by `SimTest.solve` against synthetic overrides.
+The solver skeleton is built: `Solver` + `Clue` + `UnstableEdgeClue`, facts built by
+`SolverStore` into `<ingest>/solver/facts.bin`, exercised by `SimTest.solve` against synthetic
+overrides and by `SimTest.solverInvariants`. **Grading against a corpus is gone with the
+corpus** — `SimTest.graded` was deleted 2026-09-08 and wants rebuilding against whatever plan
+format the decision-point search produces.
 
 **There are no trustworthy grading figures.** Every number previously recorded was taken
 against a broken classifier and a corpus since found unsound; they have been removed from the
@@ -123,16 +128,18 @@ from the broken edit was right — `EdgeNavigation.exitTurns` in place of the `s
 since an exit is a property of the edge pair, which recovered ~30% of branch crossings the old
 filter silently dropped.
 
-Current standing, 40-plan corpus over arcs `2->1` and `5->6`: **553 exits, 300 under an
+Last standing, on the 40-plan corpus over arcs `2->1` and `5->6`: **553 exits, 300 under an
 override, 250 with a leader under the true constants, 1 needing the diluted model, 2
 unclassified, 0 without an envelope entry.** The two are a multi-leader baton pass and are
-unclassified by design — `ROADMAP.md` §1.
+unclassified by design — `ROADMAP.md` §1. **That corpus was retired 2026-09-08**, so the figure
+stands as the last measurement rather than a reproducible one; the classifier itself is unchanged
+and `SimTest.census` still exercises it on plain seeds.
 
 ---
 
 ## Map of the code
 
-One package, `src/boids`, 61 files.
+One package, `src/boids`, 55 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -171,24 +178,21 @@ that map, drawn at envelope entry).
 **Solving** — `SolverFacts` (what a solver may know) · `SolverStore` (builds and stores it) ·
 `Solver` · `Clue` · `UnstableEdgeClue` · `SolverScore` (how an answer is graded).
 
-**Pipeline** — `Pipeline` (a map and a gate in, a verified corpus out, every tier derived on the
-way). See `CORPUS.md` for what it resolves per map and what still blocks it.
-
-**Benchmark** — `Bench` (every algorithm on the same seeds against the same controls: no
-override, the price-optimal route, and the branch search at two budgets). The lookahead and
-discount are derived per map, not constants.
-
-**Herding** — `Herding` (where a psyboid could lead, and whether standing there converts; the
-trial is two-boid, about a second a map) · `EdgeReach` (forward distance and rebasing in
-`(edge, tau)`, so a window on one edge can be compared with a boid on another) · `PhaseShift`
-(what an override tick buys in phase: shortcuts and longcuts, ranked per tick spent).
+**Pipeline** — `Pipeline` (a map and a cut line in, every tier below the corpus derived on the
+way, one-step navigability checked on every build). See `CORPUS.md` for what it resolves per map.
 
 **Psyboid** — `PsyboidOverride` (the interface: anything that steers, in the same chain as the
-flocking rules) · `HeldTurn` (a fixed turn at an absolute tick) · `EdgePilot` (a route, steered
-only where coasting would leave it) · `EdgePrice` (the price function: gain and bias over
-`(edge, tau)`) · `PsyboidBits` (bit-string search over branch decisions) · `PsyboidCorpus`
-(plans, verified by replay) · `CorpusPreset` (named recipes, so a corpus is addressed by the
-settings that produced it). See `CORPUS.md`.
+flocking rules; `held` is an analysis primitive and not a plan kind) · `EdgePilot` (a route,
+steered only where coasting would leave it — **one step of lookahead is all of navigation**) ·
+`EdgePrice` (the price function: gain and bias over `(edge, tau)`) · `EdgeReach` (forward
+distance and rebasing in `(edge, tau)`; currently uncalled) · `CorpusPreset` (named recipes, so
+a corpus is addressed by the settings that produced it). See `CORPUS.md`.
+
+> **Removed 2026-09-08, with the era they belonged to.** `PsyboidBits` (bit-string branch
+> search), `PsyboidCorpus` (plans verified by replay), `HeldTurn` (a turn at an absolute tick,
+> and the plan-label format), `Bench` (the benchmark and its five entrants), `Herding` (window
+> conversion) and `PhaseShift` (shortcuts and longcuts). All are in git at `0f9b2b7`. The
+> replacement is a search over decision points — `ROADMAP.md` §0i.
 
 **Audit** — `ExitAudit` (a shareable `Tables` plus a cheap per-thread instance) ·
 `CriticalEnvelopeStore` · `ExitRender`.
@@ -197,7 +201,7 @@ settings that produced it). See `CORPUS.md`.
 `StateSetRender` (state sets projected to `(x, y)`, several to a sheet) ·
 `SceneRender` · `TwoBoidRender` · `TwoBoidRouteSheet`.
 
-**Driver** — `SimTest`, 3,981 lines. Holds every entry point below *and* the whole
+**Driver** — `SimTest`, 3,096 lines. Holds every entry point below *and* the whole
 decomposition algorithm. Splitting the algorithm out is an open item in `ROADMAP.md`.
 
 ## Entry points
@@ -221,19 +225,12 @@ ways → 6 edges.
 | `windows` | the critical-envelope windows for one arc; writes `windows/window_f_t.tsv` |
 | `census` | which windows the audit actually sees, and how often |
 | `solve` | grade the solver on synthetic overrides |
-| `graded` | grade the solver on the plan corpus |
-| `scoringFloor` | what one psyboid scores alone, and every plan against it. Writes `floor.tsv` |
-| `scoringLaps` | one solo seed's passes lap by lap, with the route each came round on |
 | `EdgeOccupancy.run` | how fast edge occupancy forgets the spawn, under each spawn rule. Not in `SimTest` |
 | `EdgeOccupancy.warmupScoring` | % of seeds that score with no psyboid, per candidate warm-up. Not in `SimTest` |
 | `solverInvariants` | assert what the solver must do with no windows |
 | `envelope` | build one arc's critical-envelope table and report it |
 | `chains` | how far a history walks back inside an edge, and by what |
 | `census` | audit plain seeds — few exits, so mostly a smoke test |
-| `auditCorpus` | audit the psyboid corpus. **The one that has enough exits to mean anything** |
-| `renderUnexplained` | draw every exit nothing accounts for, with its influence decomposition |
-| `steeringHistory` | per tick, what *every* neighbour accounts for — finds multi-leader histories |
-| `renderTick` | one exit at whole-map scale, for structural rather than influence questions |
 | `stablePlus` | the map-wide stable set and what agreement expands it to, per edge |
 | `stablePlusScan` | the same over a range of agreement ratios, with cost-to-leave and a render |
 | `aggregationPhaseMaps` | the phase map flown under each candidate aggregation, cross-tabbed against the baseline |
@@ -242,9 +239,9 @@ ways → 6 edges.
 | `tablesOnStablePlus` | the critical-envelope tables for one arc on that same ground |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
-points and do not live in `SimTest`. `explain` is the per-region counterpart of
-`steeringHistory`: it prints one sampled exit tick by tick, marking which ticks actually **demand**
-a leader and which are free because coasting or the veto produced the move anyway.
+points and do not live in `SimTest`. `explain` prints one sampled exit tick by tick, marking which
+ticks actually **demand** a leader and which are free because coasting or the veto produced the
+move anyway.
 
 `SimTest.main` is a scratch dispatcher, not an interface. `PIPELINE.md` gives the real
 invocations in order with expected numbers.
@@ -294,10 +291,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `<behaviour>/corpus/*.tsv` | `SimTest.corpus`, `steering` | flown journeys against the clock; measured steering marginals |
 | `<behaviour>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
 | `<behaviour>/audit/exits_*.tsv` | `ExitAudit` | every classified exit |
-| `<behaviour>/psyboid/<preset>-<hash>/plans.tsv` | `PsyboidCorpus` | the plan corpus. The label is the artifact; the recipe is in the path. See `CORPUS.md` |
-| `<behaviour>/psyboid/<preset>-<hash>/floor.tsv` | `SimTest.scoringFloor` | every plan's scoring rate against what its psyboid scores alone |
 | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` | `EdgeOccupancy` | edge occupancy per 50-tick window against the long run, one file per spawn rule |
-| `<behaviour>/psyboid/<preset>-<hash>/meta.txt` | `Derived` | which recipe, and its every setting |
 | `<behaviour>/solver/facts.bin` | `SolverStore` | everything a solver may know |
 | **loose renders** | | **gitignored, regenerable** |
 | `render/phase<f>_<t>.png` | `ThreeBoidPhase` | the three-boid phase map, one panel per route pair |
