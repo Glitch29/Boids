@@ -282,6 +282,48 @@ public final class MapStates {
             return new Set(b);
         }
 
+        public StateSet backwardsPerfect() {
+            Bits b = new Bits(bits);
+            ArrayList<Integer> queue = new ArrayList<>();
+            for (int s : toArray()) queue.add(s);
+            int[] preds = new int[3];
+            for (int i = 0; i < queue.size(); i++) {
+                int n = map.steeredPredecessors(queue.get(i), preds);
+                for (int j = 0; j < n; j++) {
+                    int p = preds[j];
+                    if (b.get(p)) continue;
+                    boolean trapped = true;
+                    for (int t = -1; t <= 1 && trapped; t++) {
+                        int u = map.successor(p, t);
+                        if (u >= 0 && !b.get(u)) trapped = false;
+                    }
+                    if (trapped) { b.set(p); queue.add(p); }
+                }
+            }
+            return new Set(b);
+        }
+
+        public StateSet forwardsPerfect() {
+            Bits b = new Bits(bits);
+            ArrayList<Integer> queue = new ArrayList<>();
+            for (int s : toArray()) queue.add(s);
+            int[] preds = new int[3];
+            for (int i = 0; i < queue.size(); i++) {
+                int v = queue.get(i);
+                for (int t = -1; t <= 1; t++) {
+                    int u = map.successor(v, t);
+                    if (u < 0 || b.get(u)) continue;
+                    // A live state on a bidirectionally-navigable map always has a predecessor,
+                    // so an empty list means something is wrong rather than vacuously true.
+                    int n = map.steeredPredecessors(u, preds);
+                    boolean only = n > 0;
+                    for (int j = 0; j < n && only; j++) only = b.get(preds[j]);
+                    if (only) { b.set(u); queue.add(u); }
+                }
+            }
+            return new Set(b);
+        }
+
         public StateSet closed(Steering how) {
             Bits b = new Bits(bits);
             ArrayList<Integer> queue = new ArrayList<>();

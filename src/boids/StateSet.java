@@ -76,6 +76,45 @@ public interface StateSet {
     StateSet closed(Steering how);
 
     /**
+     * Everything that cannot avoid this set, added to it: repeatedly take any state all of whose
+     * successors are already members, until nothing more qualifies.
+     * <p>
+     * <b>What it fixes.</b> A set built forwards from one seed is reached by some states and
+     * missed by others that are, as far as anything downstream can tell, in the same position —
+     * a state whose every future runs through the set is not distinguishable from a member by
+     * where it can get to, but a decomposition will still split it out for not being one. Adding
+     * it removes a distinction that was never real. Without this a set with a single source is
+     * reliably <em>backwards-imperfect</em>, and that shows up as an edge shattering.
+     * <p>
+     * <b>Not the same as a backward closure.</b> Closing backwards would add every predecessor;
+     * this adds only predecessors with nowhere else to go, so a state that can still dodge the
+     * set stays out. That is what keeps the result meaningful rather than growing to the whole
+     * map.
+     * <p>
+     * Successors are the map's post-veto landings over all three turns, which is what a boid can
+     * actually do rather than what it may ask for.
+     */
+    StateSet backwardsPerfect();
+
+    /**
+     * Everything that can only be reached from this set, added to it: repeatedly take any state
+     * all of whose predecessors are already members, until nothing more qualifies.
+     * <p>
+     * The mirror of {@link #backwardsPerfect}, and needed for the mirror reason. That operation
+     * removes a distinction nothing downstream can see; this one removes a distinction nothing
+     * <em>upstream</em> can see. A state reachable only through the set is, as far as any history
+     * can tell, already part of it — but a decomposition keyed on where a state can have come
+     * from will still cut it out for not being a member.
+     * <p>
+     * <b>The two cannot feed each other, so one pass of each is a joint fixed point.</b> Anything
+     * backwards perfection adds has all its successors in the set already, so it can never be the
+     * last missing predecessor of a non-member; anything forwards perfection adds has all its
+     * predecessors in the set already, so it can never be the last missing successor of one.
+     * Order does not matter and iterating does nothing.
+     */
+    StateSet forwardsPerfect();
+
+    /**
      * Everywhere a quorum of {@code influencers} could push a boid in this set, and where it
      * would end up.
      * <p>

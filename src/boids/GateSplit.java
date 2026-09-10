@@ -117,7 +117,8 @@ public final class GateSplit {
      *                  short edge is not away from anything
      */
     public static List<Split> run(PresetScenarioParameter preset, SolverFacts.Gate gate,
-                                  double minLength, boolean phaseBleed) throws IOException {
+                                  double minLength, boolean phaseBleed, boolean perfect)
+            throws IOException {
         SimTest.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(), gate.lo(),
                 gate.hi(), gate.dir());
         NavMap map = l.map();
@@ -129,7 +130,8 @@ public final class GateSplit {
 
         System.out.printf("%n=== %s @%s: gate-from-one-state, edges of length >= %.0f, S = %s ===%n",
                 preset.name(), preset.ingest().hash(), minLength,
-                phaseBleed ? "state + partial unsteered tick" : "one state");
+                (phaseBleed ? "state + partial tick" : "one state")
+                        + (perfect ? ", perfected both ways" : ""));
 
         // 1. One state per long edge, as near the middle of it in tau as the phase comb allows.
         int[] chosen = new int[edges];
@@ -215,7 +217,10 @@ public final class GateSplit {
             // existing model of exactly that phase bleed -- `GLOSSARY.md`, and it is applied
             // once for the same reason it is applied once there.
             StateSet one = lattice.of(chosen[e]);
-            StateSet all = phaseBleed ? one.partialTick(StateSet.Steering.STRAIGHT) : one;
+            StateSet spread = phaseBleed ? one.partialTick(StateSet.Steering.STRAIGHT) : one;
+            // One pass of each is a joint fixed point; neither direction can create candidates for
+            // the other. See StateSet.forwardsPerfect.
+            StateSet all = perfect ? spread.backwardsPerfect().forwardsPerfect() : spread;
             int[] members = all.toArray();
             final int on = e;
             int[] onEdge = Arrays.stream(members).filter(s -> base[s] == on).toArray();
@@ -228,8 +233,22 @@ public final class GateSplit {
             int[] edge = base.clone();
             for (int s : onEdge) edge[s] = edges;
 
-            System.out.printf("%n-- edge %d: %d edges + S (%d states) going in --%n", e, edges,
-                    onEdge.length);
+            System.out.printf("%n-- edge %d: %d edges + S (%d states, %d before perfecting) --%n",
+                    e, edges, onEdge.length, spread.size());
+
+            // StateSet reads the map's constrained relation; this file skips a vetoed turn instead.
+            // The reachable sets should agree; checked rather than assumed, because the two came
+            // apart once already.
+            int inSet = 0;
+            for (int s : onEdge) {
+                for (int j = 0; j < predDegree[s]; j++) {
+                    for (int t : onEdge) if (pred[s * 3 + j] == t) inSet++;
+                }
+            }
+            if (inSet > 0) {
+                System.out.printf("   ** %d predecessor link(s) inside S under the decomposition's "
+                        + "own graph **%n", inSet);
+            }
             int after = SimTest.refine(live, liveCount, succ, degree, pred, predDegree, edge,
                     edges + 1);
             System.out.printf("   after refinement: %d edges%n", after);
@@ -315,7 +334,7 @@ public final class GateSplit {
             pieces.sort((a, b) -> Integer.compare(b.states(), a.states()));
             out.add(new Split(e, m.length()[e], states, onEdge.length, chosenTau[e], pieces,
                     totals, inFront, behind));
-            draw(map, base, live, liveCount, e, edge, side, pieces, phaseBleed);
+            draw(map, base, live, liveCount, e, edge, side, pieces, phaseBleed && perfect);
         }
 
         report(out);
