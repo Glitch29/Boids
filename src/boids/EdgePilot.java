@@ -70,13 +70,13 @@ public final class EdgePilot implements PsyboidOverride {
      * @param route one target edge per edge index, or -1 to leave that edge to coasting
      */
     public static EdgePilot of(int psyboid, int[] route, NavMap map, SolverFacts f,
-                               Pipeline.Labelling l) {
+                               EdgeDecomposition.Labelling l) {
         return of(psyboid, route, map, f, l, Long.MIN_VALUE, Long.MAX_VALUE);
     }
 
     /** The same, confined to {@code [from, to)} so a plan can hand control back. */
     public static EdgePilot of(int psyboid, int[] route, NavMap map, SolverFacts f,
-                               Pipeline.Labelling l, long from, long to) {
+                               EdgeDecomposition.Labelling l, long from, long to) {
         return new EdgePilot(psyboid, route.clone(), map, f, from, to);
     }
 

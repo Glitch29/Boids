@@ -39,7 +39,7 @@ public final class Pipeline {
      * @param warm  what the recipe's warm-up policy comes to on this map
      */
     public record Built(PresetScenarioParameter preset, SolverFacts.Gate gate, SolverFacts facts,
-                        Labelling labelling, StateSet plus, int warm,
+                        EdgeDecomposition.Labelling labelling, StateSet plus, int warm,
                         Derived.Behaviour where) {
 
         /** Total edge length in ticks: the time to traverse every edge once. */
@@ -49,9 +49,6 @@ public final class Pipeline {
             return total;
         }
     }
-
-    /** The decomposition, kept together because everything downstream wants all four parts. */
-    public record Labelling(NavMap map, int[] live, int liveCount, int[] edge, int edges) {}
 
     /**
      * Ingests the map if it is not already frozen, then derives every tier above it.
@@ -77,13 +74,11 @@ public final class Pipeline {
 
         EdgeDecomposition.Labelling lab = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
                 gate.lo(), gate.hi(), gate.dir());
-        Labelling labelling = new Labelling(lab.map(), lab.live(), lab.liveCount(), lab.edge(),
-                lab.edges());
 
         MapStates states = MapStates.of(lab.map(), flock, lab.live(), lab.liveCount());
         StateSet plus = states.stablePlus(SimTest.QUORUM);
         int warm = recipe.warm(facts);
-        Built built = new Built(preset, gate, facts, labelling, plus, warm, where);
+        Built built = new Built(preset, gate, facts, lab, plus, warm, where);
 
         // Checked on every build rather than on request. It is the precondition every steering
         // rule in the project relies on, it costs three successor lookups per state per arc, and

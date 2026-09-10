@@ -11,6 +11,43 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-10 — the decomposition moves out, and gates get a construction
+
+**`EdgeDecomposition` extracted from `SimTest`**, 822 lines holding the axiom and all six steps
+of the construction; `SimTest` keeps the driver and falls 3,096 → 2,501. Verified a pure move:
+byte-identical labelling fingerprints on all three maps with the alongside merge both on and off,
+and the gate split still nine of nine. `Pipeline`'s duplicate `Labelling` record folded into it at
+the same time, so there is now one.
+
+**Two questions answered by tracing rather than reading.** Added stage-by-stage and
+round-by-round snapshots to the decomposition, cross-tabbed against the final labelling.
+
+- **The scoring zone is not a bootstrap.** `EdgeDecomposition` never reads `map.score` or anything
+  derived from it; `avoidScoring` belongs to `SimTest.report`, which runs after the algorithm.
+- **An inverse pair is separated by a directional cut.** Edges 0 and 1 survive every stage as one
+  piece and part in `splitOrbits` pass 1, refinement round 1 — the first refine after the orbit's
+  artificial gate goes in. The two orbit cuts land on final edges 2 and 3, themselves an inverse
+  pair. A cut is a set of states at one pixel and **one heading**, so it is inherently
+  directional, and that is what gives refinement something to tell two directions apart by. Edge 8
+  receives no cut, so it comes out of the same round whole and is never split at any stage.
+- **The alongside merge is plait-only.** On dabeone and dabnt it merges nothing — two edges in,
+  two out, identical fingerprints skipped. Plait still needs it; without it orbit 0 refines 7, 12,
+  14, 19, 45, 296 and `splitOrbits` throws. That failure is in orbit cutting, not refinement,
+  which is the stage `EDGES.md` §3 already flags as missing revert-on-invalid-merge.
+
+**Specified by the user, not built: edge insertion and navigation gates.** `EDGES.md` §2a gains
+both. A gate is derived by inserting a minimal well-formed edge around a mostly arbitrary `S`;
+every transition between edges is well-formed by the axiom, so the boundaries are gates for free.
+Two conditions on `S` — a reachability **assertion** the algorithm cannot repair, and a closure
+condition that wants a **third perfection operator** alongside the two built yesterday. And a gate
+need not join the decomposition at all: kept for navigation logic only, it bounds on-edge travel
+under the existing one-step lookahead, which is the mechanism for shortcuts and longcuts and
+closes the question `PhaseShift` was deleted over.
+
+**Open.** The third perfection operator; the reachability assertion; and edge insertion needs to
+check whether `S`'s inverse is on the same edge, because `mergeAlongside` deliberately declines to
+separate an edge from its inverse.
+
 ## 2026-09-09 — a gate from one state: the boundaries are right, the count is not
 
 The user's construction, put to test: split a state `S` off edge `E`, refine, and see whether

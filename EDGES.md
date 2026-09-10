@@ -3,11 +3,13 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-08. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-10. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
-bootstrap, not an analysis tool" is retired.
+bootstrap, not an analysis tool" is retired. **§2a gained edge insertion and navigation gates on
+2026-09-10** — how a gate is actually built, and how the same machinery does on-edge navigation
+for shortcuts.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -180,6 +182,64 @@ particular guarantee attached. There is no interesting representation question h
   shape of the problem.
 - **A gate is tied to a decomposition, not just to a map.** Decomposition is fairly rigid but not
   unique, and the gate property is defined in terms of the edge property.
+
+### Inserting an edge, which is how a gate is built
+
+**Specified 2026-09-10.** A gate is not drawn; it is derived from a decomposition that has had a
+new edge inserted into it. Take an edge `E` and a set of states `S` on it, split `S` off, and
+refine: `E` comes apart into `S` and three more, `E<S`, `E⊥S` and `E>S`. **Every transition
+between two edges is well-formed by the axiom**, so the boundaries that fall out are gates for
+free — no separate proof of the exactly-once property is needed.
+
+**`S` may be almost arbitrary.** What the construction produces is the *minimal well-formed edge*
+around whatever states it is given. Three conditions govern it:
+
+1. **Reachability, which is an assertion about the `S` supplied and not something the algorithm
+   can fix.** Every **entrance** of `E` — an on-edge state with an off-edge predecessor — must be
+   able to navigate to `S`; and every **exit** of `E` — an *off*-edge state with an on-edge
+   predecessor — must be navigable to from some point of `S`. Fail this and the result is not a
+   gate, because a traversal can enter and leave without ever meeting it.
+2. **Closure, which the algorithm can and should fix**, as a further perfection step: any state
+   that can navigate both **to** and **from** a state of `S` without leaving `E` belongs in `S`.
+3. **Phase completeness, optional.** Where `S` is phase-complete, `E⊥S` comes out as two
+   disconnected regions, which can then be separated into edges of their own.
+
+**Relationship to `splitOrbits`.** The cut-and-heal in §3 step 6 is the same operation, and the
+trace shows it plainly — during dabeone's first orbit cut, final edge 2 sits in three pieces at
+once. The differences are that `splitOrbits` manufactures **one very specific cut, chosen to
+work**, and then heals the seam afterwards; edge insertion takes a **mostly arbitrary** set and
+keeps the result.
+
+**A self-inverse edge has to be handled.** `mergeAlongside` (§3 step 4) identifies headings mod 32
+and so deliberately declines to separate an edge from its inverse — it was added against a plait
+blowup, and in most cases a later step separates the two directions anyway unless they are
+functionally identical. That is still tenable, but while it stands, **edge insertion must check
+whether `S`'s inverse lies on the same edge**, and union it in where it does. Measured on dabeone:
+edge 8 is the only self-inverse edge, and splitting a state off only one of its two halves runs
+refinement past the 63-edge mask; unioning the inverse settles it at once.
+
+> ⚠ **On dabeone and dabnt `mergeAlongside` merges nothing at all** — two edges in, two out, and
+> the labelling is byte-identical with it skipped. So edge 8 being self-inverse there is *not*
+> that step's doing; it is what the axiom produces, the scoring corridor having the same
+> predecessor and successor edges travelled either way. The requirement to check the inverse holds
+> regardless of which cause applies on a given map.
+
+### Navigation gates: gates that are not part of the decomposition
+
+The insertion above yields gates at **near-arbitrary precision**, and they do not have to be kept
+in the decomposition to be useful. **A gate can serve as an additional edge in navigation logic
+alone**, invisible to everything that reads the real decomposition.
+
+**This is how on-edge navigation is done for shortcuts and longcuts.** Choose an `S` that bounds
+travel along a wall, then build the gate from a chosen subset of the transitions the insertion
+creates — for instance including `E<S → E⊥S` on the left and `E<S → S`, while omitting
+`E<S → E⊥S` on the right. A boid steered by the same greedy one-step lookahead that handles
+navigation across real edges is then unable to travel through it, because the rule refuses any
+turn whose successor lies across a boundary it was not sent to. See §7 for that rule and why one
+step of lookahead is all of navigation.
+
+So a shortcut needs no new steering mechanism. It needs a gate placed where the wall is, and the
+existing pilot.
 
 ### Gates versus decisions
 

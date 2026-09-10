@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-09, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-10, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -355,6 +355,20 @@ statement in `EDGES.md` §2a.
 > What it was guarding against — measuring commitment to an edge by proximity to a line, when
 > commitment is a property of the edge relation — remains a mistake.
 
+
+**edge insertion** — splitting a chosen set of states `S` off an edge `E` and refining, so that
+`E` comes apart into `S`, `E<S`, `E⊥S` and `E>S`. **The way a gate is built**, since every
+transition between two edges is well-formed by the axiom. What it produces is the *minimal
+well-formed edge* around a mostly arbitrary `S`; contrast `splitOrbits`, which manufactures one
+specific cut chosen to work and then heals the seam. Requirements and the self-inverse caveat in
+`EDGES.md` §2a.
+
+**navigation gate** — a gate used by navigation logic alone, never entered into the decomposition
+anything else reads. Built by edge insertion and then keeping a chosen subset of the transitions
+it creates, so a boid under the ordinary one-step lookahead cannot cross it. **This is the
+mechanism for shortcuts and longcuts**: an on-edge route is bounded by a gate rather than by any
+new kind of steering. `EDGES.md` §2a.
+
 **cut line** — a line segment in `(x, y)` used to cut cycles so a decomposition can be
 bootstrapped. `SolverFacts.Gate`, and still called "the gate" at every entry point. Recorded for
 provenance; nothing at solve time reads one. See `EDGES.md` §2.
@@ -672,6 +686,7 @@ anything not listed.
 | ingest | `MapStore` | `ingests/<hash>/` |
 | viability kernel / navmap | `NavMapBuilder` → `NavMap` | in memory |
 | edge decomposition | `EdgeDecomposition`, driven by `SimTest.decompose` | `<ingest>/edges/` |
+| edge insertion / gate construction | `GateSplit`, run by hand | printed; renders in `render/gate-split/` |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

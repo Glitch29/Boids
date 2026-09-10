@@ -2398,58 +2398,11 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        EdgeDecomposition.traceNames = new ArrayList<>();
-        EdgeDecomposition.traceSnaps = new ArrayList<>();
+        SolverFacts.Gate plait = new SolverFacts.Gate(true, 360, 335, 350, 0);
 
-        EdgeDecomposition.Labelling l = labelFor(PresetScenarioParameter.DABEONE,
-                dab.horizontal(), dab.line(), dab.lo(), dab.hi(), dab.dir());
-        int[] live = l.live(), fin = l.edge();
-        int liveCount = l.liveCount(), edges = l.edges();
-
-        System.out.printf("%n=== which stage separates which final edges ===%n");
-        System.out.printf("%-38s %s%n", "stage", "final edges still sharing a piece");
-        for (int t = 0; t < EdgeDecomposition.traceSnaps.size(); t++) {
-            int[] at = EdgeDecomposition.traceSnaps.get(t);
-
-            // For each stage piece, which final edges it holds; and for each final edge, how
-            // many pieces it is spread over. The first says when two edges part company, the
-            // second says when one edge is cut in half.
-            Map<Integer, java.util.TreeSet<Integer>> holds = new java.util.LinkedHashMap<>();
-            Map<Integer, java.util.TreeSet<Integer>> spread = new java.util.LinkedHashMap<>();
-            for (int i = 0; i < liveCount; i++) {
-                int s = live[i];
-                holds.computeIfAbsent(at[s], k -> new java.util.TreeSet<>()).add(fin[s]);
-                spread.computeIfAbsent(fin[s], k -> new java.util.TreeSet<>()).add(at[s]);
-            }
-            StringBuilder groups = new StringBuilder();
-            for (java.util.TreeSet<Integer> g : holds.values()) {
-                if (g.size() < 2) continue;
-                if (groups.length() > 0) groups.append(' ');
-                groups.append(g);
-            }
-            StringBuilder cut = new StringBuilder();
-            for (Map.Entry<Integer, java.util.TreeSet<Integer>> e : spread.entrySet()) {
-                if (e.getValue().size() < 2) continue;
-                if (cut.length() > 0) cut.append(' ');
-                cut.append(e.getKey()).append("x").append(e.getValue().size());
-            }
-            System.out.printf("%-38s %s%s%n", EdgeDecomposition.traceNames.get(t),
-                    groups.length() == 0 ? "(all separated)" : groups,
-                    cut.length() == 0 ? "" : "   | split across pieces: " + cut);
-        }
-
-        int turns = Params.TURNS, w = l.map().width();
-        System.out.printf("%nthe orbit cuts, and which final edge each landed on:%n");
-        for (int[] c : new int[][]{{21, 83, 23}, {14, 104, 48}}) {
-            int s = (c[0] + c[1] * w) * turns + c[2];
-            System.out.printf("   (%d,%d,%d) -> final edge %d%n", c[0], c[1], c[2], fin[s]);
-        }
-
-        System.out.printf("%nsizes of the final edges: ");
-        int[] size = new int[edges];
-        for (int i = 0; i < liveCount; i++) size[fin[live[i]]]++;
-        for (int e = 0; e < edges; e++) System.out.printf("%d:%d ", e, size[e]);
-        System.out.println();
+        Pipeline.build(PresetScenarioParameter.DABEONE, dab);
+        Pipeline.build(PresetScenarioParameter.DABNT, dab);
+        Pipeline.build(PresetScenarioParameter.PLAIT, plait);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

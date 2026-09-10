@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-09-09. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-10. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it. **§0i is the live thread — read that first.** §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
@@ -1550,7 +1550,8 @@ The steps, in order:
 
 1. **Define decision points** — invocation, decision, execution.
    - **Edge exits** — done, possibly damaged in the last session; needs manual review.
-   - **Shortcuts / longcuts** — done sloppily as `PhaseShift`, deleted, being replaced.
+   - **Shortcuts / longcuts** — done sloppily as `PhaseShift`, deleted. The replacement mechanism
+     is a **navigation gate**, specified below; not built.
    - **Wiggles** — deferred.
 2. **Control and data flow** for overrides and search.
 3. **Tables** for the override implementation.
@@ -1791,6 +1792,35 @@ of the split.
 is what `SimTest.renderEdges` already used to pair edges. Measured on dabeone: an exact involution
 over all 136,276 live states with none falling off the map, and a total edge pairing. Now
 `StateSet.inverted()`.
+
+### Shortcuts and longcuts have a mechanism now: navigation gates
+
+**Specified 2026-09-10, not built.** Step 1's third decision point needed a way to steer a boid
+*within* an edge, which is the one thing the edge machinery had no answer for — a route across
+edges is one step of lookahead, but nothing bounded travel along a wall.
+
+**Edge insertion supplies it.** `EDGES.md` §2a: split a chosen `S` off `E`, refine, and the
+boundaries that fall out are gates for free, because every transition between two edges is
+well-formed by the axiom. That gives gates at near-arbitrary precision.
+
+**And such a gate need not join the decomposition.** It can serve as an extra edge in
+**navigation logic alone**, invisible to everything that reads the real one. Choose an `S` that
+bounds travel along a wall, keep a chosen subset of the transitions the insertion creates — say
+`E<S → E⊥S` on the left and `E<S → S`, omitting `E<S → E⊥S` on the right — and a boid steered by
+the same greedy one-step lookahead that crosses real edges simply cannot pass through it.
+
+**So a shortcut needs no new steering.** It needs a gate where the wall is, and `EdgePilot`.
+That closes the question `PhaseShift` was deleted over: the thing to precompute is not a table of
+hurry-and-dawdle offers but the gates that bound each one.
+
+Two conditions on `S` fall out of §2a and want building:
+
+- **The reachability condition is an assertion**, not something the algorithm can repair: every
+  entrance of `E` must be able to navigate to `S`, and every exit of `E` reachable from some point
+  of `S`. Fail it and the result is not a gate.
+- **The closure condition is another perfection step**: any state that can navigate both to and
+  from `S` without leaving `E` belongs in `S`. This is a third operator alongside
+  `backwardsPerfect` and `forwardsPerfect`, and does not exist yet.
 
 ### The tear-out, 2026-09-08
 
