@@ -3087,7 +3087,8 @@ picks, never in what is available to it.
     public static void main(String[] args) throws IOException {
         PresetScenarioParameter preset = PresetScenarioParameter.EDGE_TEST;
         SolverFacts.Gate gate = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        GateSplit.run(preset, gate, 50);
+        GateSplit.run(preset, gate, 50, false);
+        GateSplit.run(preset, gate, 50, true);
     }
 
     /**

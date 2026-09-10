@@ -54,9 +54,17 @@ public final class GateSplit {
         Side(String label) { this.label = label; }
     }
 
-    /** What one original edge came apart into. */
-    public record Split(int edge, double length, int states, int chosen, double chosenTau,
-                        List<Piece> pieces) {
+    /**
+     * What one original edge came apart into.
+     *
+     * @param inFront of the states by which a boid <em>enters</em> the edge, the fraction that can
+     *                reach {@code S}. <b>The number the construction lives or dies on</b>: a gate
+     *                fires exactly once per traversal only if every entrance is behind it
+     * @param behind  the same for the states by which a boid <em>leaves</em>, against {@code E>S}
+     */
+    public record Split(int edge, double length, int states, int sStates, double chosenTau,
+                        List<Piece> pieces, Map<Side, Integer> totals, double inFront,
+                        double behind) {
 
         /** Whether refinement produced exactly the predicted pieces and nothing else. */
         public boolean clean() {
@@ -64,6 +72,9 @@ public final class GateSplit {
             for (Piece p : pieces) if (p.mixed()) return false;
             return true;
         }
+
+        /** Whether the gate covers every way into and out of the edge. */
+        public boolean covers() { return inFront >= 1.0 && behind >= 1.0; }
     }
 
     /**
@@ -106,7 +117,7 @@ public final class GateSplit {
      *                  short edge is not away from anything
      */
     public static List<Split> run(PresetScenarioParameter preset, SolverFacts.Gate gate,
-                                  double minLength) throws IOException {
+                                  double minLength, boolean phaseBleed) throws IOException {
         SimTest.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(), gate.lo(),
                 gate.hi(), gate.dir());
         NavMap map = l.map();
@@ -116,8 +127,9 @@ public final class GateSplit {
         EdgeMetric.Metric m = EdgeMetricStore.of(SimTest.structure(preset, gate).at("metric"),
                 map, base, live, liveCount, edges, SimTest.SCHEME, SimTest.CHAIN);
 
-        System.out.printf("%n=== %s @%s: gate-from-one-state, edges of length >= %.0f ===%n",
-                preset.name(), preset.ingest().hash(), minLength);
+        System.out.printf("%n=== %s @%s: gate-from-one-state, edges of length >= %.0f, S = %s ===%n",
+                preset.name(), preset.ingest().hash(), minLength,
+                phaseBleed ? "state + partial unsteered tick" : "one state");
 
         // 1. One state per long edge, as near the middle of it in tau as the phase comb allows.
         int[] chosen = new int[edges];
@@ -190,22 +202,47 @@ public final class GateSplit {
                 ? "a fixed point, so any change below is the split"
                 : "NOT A FIXED POINT: every figure below is measuring this instead");
 
-        // 4. One edge at a time: split its state off, refine, score the pieces it produced.
+        // 4. One edge at a time: split S off, refine, score the pieces it produced.
+        MapStates lattice = MapStates.of(map, Flocking.of(preset.turningRadius()), live, liveCount);
         List<Split> out = new ArrayList<>();
         for (int e = 0; e < edges; e++) {
             if (chosen[e] < 0) continue;
-            int[] edge = base.clone();
-            edge[chosen[e]] = edges;
 
-            System.out.printf("%n-- edge %d: %d edges + 1 split state going in --%n", e, edges);
+            // S is the chosen state together with its partial unsteered forward tick. A single
+            // state occupies one phase of the step lattice, so E<S cannot cover the whole edge
+            // entrance and E>S cannot cover the whole exit: the split cuts finer than the grain
+            // the edge is made of, and refinement follows it down. The partial tick is the
+            // existing model of exactly that phase bleed -- `GLOSSARY.md`, and it is applied
+            // once for the same reason it is applied once there.
+            StateSet one = lattice.of(chosen[e]);
+            StateSet all = phaseBleed ? one.partialTick(StateSet.Steering.STRAIGHT) : one;
+            int[] members = all.toArray();
+            final int on = e;
+            int[] onEdge = Arrays.stream(members).filter(s -> base[s] == on).toArray();
+            if (onEdge.length != members.length) {
+                System.out.printf("   note: %d of S's %d states lie off edge %d and are left "
+                        + "alone; S has to be a sub-edge of E%n",
+                        members.length - onEdge.length, members.length, e);
+            }
+
+            int[] edge = base.clone();
+            for (int s : onEdge) edge[s] = edges;
+
+            System.out.printf("%n-- edge %d: %d edges + S (%d states) going in --%n", e, edges,
+                    onEdge.length);
             int after = SimTest.refine(live, liveCount, succ, degree, pred, predDegree, edge,
                     edges + 1);
             System.out.printf("   after refinement: %d edges%n", after);
 
-            Side[] side = sides(base, live, liveCount, e, chosen[e], succ, degree, pred,
-                    predDegree);
+            Side[] side = sides(base, live, liveCount, e, onEdge, succ, degree, pred, predDegree);
 
+            // Coverage, which is the question the pieces do not answer. A boid enters the edge at
+            // a state with a predecessor outside it and leaves from one with a successor outside
+            // it; the gate is crossed exactly once per traversal only if every entrance can reach
+            // S and every exit is reachable from it.
+            int entrances = 0, entrancesCovered = 0, exits = 0, exitsCovered = 0;
             Map<Integer, Map<Side, Integer>> byPiece = new LinkedHashMap<>();
+            Map<Side, Integer> totals = new LinkedHashMap<>();
             int states = 0;
             for (int i = 0; i < liveCount; i++) {
                 int s = live[i];
@@ -213,7 +250,62 @@ public final class GateSplit {
                 states++;
                 byPiece.computeIfAbsent(edge[s], k -> new LinkedHashMap<>())
                         .merge(side[s], 1, Integer::sum);
+                totals.merge(side[s], 1, Integer::sum);
+
+                boolean entrance = false;
+                for (int j = 0; j < predDegree[s]; j++) {
+                    if (base[pred[s * 3 + j]] != e) entrance = true;
+                }
+                boolean exit = false;
+                for (int j = 0; j < degree[s]; j++) {
+                    if (base[succ[s * 3 + j]] != e) exit = true;
+                }
+                if (entrance) {
+                    entrances++;
+                    if (side[s] == Side.BEFORE || side[s] == Side.AT) entrancesCovered++;
+                }
+                if (exit) {
+                    exits++;
+                    if (side[s] == Side.AFTER || side[s] == Side.AT) exitsCovered++;
+                }
             }
+            double inFront = entrances == 0 ? 1 : entrancesCovered / (double) entrances;
+            double behind = exits == 0 ? 1 : exitsCovered / (double) exits;
+            System.out.printf("   entrances %d, %.1f%% can reach S;  exits %d, %.1f%% reachable "
+                    + "from S%n", entrances, 100 * inFront, exits, 100 * behind);
+
+            // G, which is the proposed gate. S is not it and never was: S is a handful of states
+            // in a corridor hundreds of states wide, and a boid on another phase walks straight
+            // past it. G is the boundary of E<S — the states just outside it that a state inside
+            // it steps to.
+            //
+            // Two facts make G a gate. **E<S is never re-entered**: if s steps to s' and s' can
+            // reach S then s can reach S, so a state outside E<S has no successor inside it.
+            // Asserted below rather than taken on the argument. Given that, every traversal
+            // crosses out of E<S at most once, and exactly once when it entered inside E<S —
+            // which is what the entrance percentage above measures. **So G is a gate for this
+            // edge exactly when that percentage is 100.**
+            int gateSize = 0, leak = 0;
+            for (int i = 0; i < liveCount; i++) {
+                int t = live[i];
+                if (base[t] != e) continue;
+                boolean inFrontOf = side[t] == Side.BEFORE;
+                boolean fromFront = false;
+                for (int j = 0; j < predDegree[t]; j++) {
+                    int p = pred[t * 3 + j];
+                    if (base[p] == e && side[p] == Side.BEFORE) fromFront = true;
+                }
+                if (!inFrontOf && fromFront) gateSize++;
+                if (inFrontOf) {
+                    for (int j = 0; j < predDegree[t]; j++) {
+                        int p = pred[t * 3 + j];
+                        if (base[p] == e && side[p] != Side.BEFORE) leak++;
+                    }
+                }
+            }
+            System.out.printf("   G is %d states; E<S re-entered from outside %d times; "
+                    + "G is a gate here: %s%n", gateSize, leak,
+                    leak == 0 && inFront >= 1.0 ? "YES" : "no");
             List<Piece> pieces = new ArrayList<>();
             byPiece.forEach((id, counts) -> {
                 int total = 0;
@@ -221,8 +313,9 @@ public final class GateSplit {
                 pieces.add(new Piece(id, total, counts));
             });
             pieces.sort((a, b) -> Integer.compare(b.states(), a.states()));
-            out.add(new Split(e, m.length()[e], states, chosen[e], chosenTau[e], pieces));
-            draw(map, base, live, liveCount, e, edge, side, pieces);
+            out.add(new Split(e, m.length()[e], states, onEdge.length, chosenTau[e], pieces,
+                    totals, inFront, behind));
+            draw(map, base, live, liveCount, e, edge, side, pieces, phaseBleed);
         }
 
         report(out);
@@ -248,7 +341,8 @@ public final class GateSplit {
      * beyond whether it is speckled.
      */
     private static void draw(NavMap map, int[] base, int[] live, int liveCount, int e, int[] edge,
-                             Side[] side, List<Piece> pieces) throws IOException {
+                             Side[] side, List<Piece> pieces, boolean phaseBleed)
+            throws IOException {
         int w = map.width(), h = map.height(), turns = Params.TURNS, scale = 2;
         Map<Integer, Integer> rank = new LinkedHashMap<>();
         for (Piece p : pieces) rank.put(p.id(), rank.size());
@@ -288,7 +382,8 @@ public final class GateSplit {
                 }
             }
         }
-        java.nio.file.Path dir = java.nio.file.Path.of("render", "gate-split");
+        java.nio.file.Path dir = java.nio.file.Path.of("render",
+                phaseBleed ? "gate-split-bleed" : "gate-split");
         java.nio.file.Files.createDirectories(dir);
         javax.imageio.ImageIO.write(bySide, "png", dir.resolve("edge" + e + "-sides.png").toFile());
         javax.imageio.ImageIO.write(byPiece, "png",
@@ -299,29 +394,30 @@ public final class GateSplit {
      * Which side of {@code S} each state of edge {@code e} is on, by breadth-first search that
      * never leaves the edge.
      */
-    private static Side[] sides(int[] base, int[] live, int liveCount, int e, int s,
+    private static Side[] sides(int[] base, int[] live, int liveCount, int e, int[] s,
                                 int[] succ, byte[] degree, int[] pred, byte[] predDegree) {
         Side[] side = new Side[base.length];
         for (int i = 0; i < liveCount; i++) if (base[live[i]] == e) side[live[i]] = Side.APART;
 
         boolean[] forward = walk(base, e, s, succ, degree);
         boolean[] backward = walk(base, e, s, pred, predDegree);
+        boolean[] inS = new boolean[base.length];
+        for (int t : s) inS[t] = true;
         for (int i = 0; i < liveCount; i++) {
             int t = live[i];
-            if (base[t] != e || t == s) continue;
+            if (base[t] != e || inS[t]) continue;
             if (backward[t]) side[t] = Side.BEFORE;
             else if (forward[t]) side[t] = Side.AFTER;
         }
-        side[s] = Side.AT;
+        for (int t : s) side[t] = Side.AT;
         return side;
     }
 
-    /** Everything reachable from {@code s} over {@code adj}, without leaving edge {@code e}. */
-    private static boolean[] walk(int[] base, int e, int s, int[] adj, byte[] adjDegree) {
+    /** Everything reachable from any of {@code s} over {@code adj}, without leaving edge {@code e}. */
+    private static boolean[] walk(int[] base, int e, int[] s, int[] adj, byte[] adjDegree) {
         boolean[] seen = new boolean[base.length];
         ArrayDeque<Integer> queue = new ArrayDeque<>();
-        seen[s] = true;
-        queue.add(s);
+        for (int t : s) { seen[t] = true; queue.add(t); }
         while (!queue.isEmpty()) {
             int v = queue.poll();
             for (int j = 0; j < adjDegree[v]; j++) {
@@ -335,22 +431,27 @@ public final class GateSplit {
     }
 
     private static void report(List<Split> splits) {
-        System.out.printf("%n%-5s %8s %8s %6s  %s%n", "edge", "length", "states", "pieces",
-                "how it came apart");
-        int clean = 0;
+        System.out.printf("%n%-5s %8s %8s %6s %7s %7s %8s  %s%n", "edge", "length", "states",
+                "pieces", "in", "out", "apart", "how it came apart");
+        int clean = 0, covered = 0;
         for (Split s : splits) {
             if (s.clean()) clean++;
+            if (s.covers()) covered++;
             StringBuilder how = new StringBuilder();
             for (Piece p : s.pieces()) {
                 if (how.length() > 0) how.append("  ");
                 how.append(String.format("%s:%d", p.mixed() ? "MIXED" : p.dominant().label,
                         p.states()));
             }
-            System.out.printf("%-5d %8.2f %8d %6d  %s%s%n", s.edge(), s.length(), s.states(),
-                    s.pieces().size(), how, s.clean() ? "" : "   <-- not the predicted split");
+            System.out.printf("%-5d %8.2f %8d %6d %6.1f%% %6.1f%% %8d  %s%s%n", s.edge(),
+                    s.length(), s.states(), s.pieces().size(), 100 * s.inFront(),
+                    100 * s.behind(), s.totals().getOrDefault(Side.APART, 0), how,
+                    s.clean() ? "" : "   <-- more than four pieces");
         }
         System.out.printf("%n%d of %d edges came apart into exactly the four predicted pieces%n",
                 clean, splits.size());
+        System.out.printf("%d of %d have every entrance behind S and every exit ahead of it%n",
+                covered, splits.size());
 
         for (Split s : splits) {
             if (s.clean()) continue;

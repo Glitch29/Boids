@@ -1682,6 +1682,56 @@ returns the *veto-constrained* successor rather than skipping a turn the veto wo
 is what the decomposition itself does. The corrected graph is the one in `SimTest.label`, and with
 it the clean cases converge in two rounds.
 
+### The phase-bleed fix, and why `G` is the gate rather than `S`
+
+**2026-09-09, second pass.** The first pass split a single state off each edge and asked whether
+refinement produced exactly `{E<S, E⊥S, E>S, S}`. The user's reading of the result: a single state
+occupies one phase of the step lattice, so `E<S` cannot cover the whole edge entrance and `E>S`
+cannot cover the whole exit — full coverage needs phase bleed. Edge blowup is not a bug; it is
+what happens when a split cuts finer than the grain the edge is made of, and shattering to
+singleton edges is still a valid decomposition, merely a useless one.
+
+**The fix, as specified:** take `S` to be the chosen state **together with its partial unsteered
+forward tick** — `MapStates.of(s).partialTick(STRAIGHT)`, the existing model of exactly this
+phase alignment. That makes `S` four to seven states instead of one.
+
+**`S` is not the gate and never was.** A detour worth recording so it is not retried: `S` is a
+handful of states in a corridor hundreds wide, so a boid on another phase walks straight past it.
+Tested directly — **every exit of every edge is reachable from an entrance while avoiding `S`**,
+in both variants, all nine edges. The gate is `G`, the boundary of `E<S`.
+
+**The lemma `G` rests on, and it holds.** If `s` steps to `s'` and `s'` can reach `S`, then `s`
+can reach `S`; so a state outside `E<S` has no successor inside it and **`E<S` is never
+re-entered**. Measured rather than assumed: **0 violations across all 18 runs.** Given that, a
+traversal crosses out of `E<S` at most once, and exactly once when it entered inside `E<S`.
+
+> **So `G` is a gate for an edge exactly when every entrance of that edge can reach `S`.** That
+> is the whole test, and it is one number per edge.
+
+| | `S` = one state | `S` = state + partial tick |
+| --- | --- | --- |
+| **`G` is a gate** | **7 of 9** edges | **8 of 9** edges |
+| fails | edges 5 and 8 | edge 8 |
+| `E⊥S`, edge 0 | 2,304 states | 1,353 |
+| `E⊥S`, edge 5 | 6,778 | 2,082 |
+| exactly four pieces | 4 of 9 | 0 of 9 |
+
+**The phase bleed does what it was predicted to do.** Entrance coverage on edge 5 goes 92.0% to
+100%, on edge 4's exit 92.2% to 100%, and `E⊥S` roughly halves everywhere. `G` runs 292–502 states,
+a full corridor cross-section, against `S`'s four to seven.
+
+**Piece count moves the other way, and it does not matter.** Splitting a bigger `S` produces *more*
+pieces, not fewer — 0 of 9 edges now stop at four, against 4 of 9 before — because `S` spanning
+several phases puts a cut on each of them and refinement distinguishes states by which combination
+lies ahead. There is a real tension here: **coverage wants `S` to span phases, piece count wants it
+on one.** It is only a tension if the pieces are load-bearing, and they are not — `G` is built from
+`E<S`, which is a union of pieces however finely they are cut.
+
+**Edge 8 is the one failure and is worth a look.** dabeone's scoring edge: 89.9% of entrances reach
+`S`, and only 12% of exits are reachable from it, against 100% on six of the other eight. `S` sits
+at tau 36.38 of a 72.76-length edge, so the middle by the clock is not the middle by reachability
+there. Not diagnosed.
+
 ### The tear-out, 2026-09-08
 
 Deleted, all recoverable at `0f9b2b7`:

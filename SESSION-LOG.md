@@ -46,8 +46,25 @@ distinguishable from a real result, because both produced plausible-looking shat
 `SimTest.refine` package-private; `SimTest.main` runs the test. Renders in `render/gate-split/`,
 two per edge — states by side, and states by piece.
 
-**Open.** Why one direction of a corridor shatters and its inverse does not. Passed back to the
-user, who is better at the geometry than the aggregate is.
+**Second pass, same day: the phase-bleed fix.** The user read the shattering correctly — a single
+state is one phase of the step lattice, so `E<S` cannot cover a whole edge entrance, and edge
+blowup is a consequence of cutting finer than the grain rather than a bug. Taking `S` to be the
+state **plus its partial unsteered forward tick** (`MapStates.partialTick`, the existing helper)
+takes `G` from a gate on **7 of 9** edges to **8 of 9**, and roughly halves `E⊥S` everywhere.
+
+**A detour worth not repeating: `S` is not the gate.** Tested whether `S` itself is crossed once
+per traversal; every exit of every edge is reachable from an entrance while avoiding it, in both
+variants. `G`, the boundary of `E<S`, is the gate, and it rests on `E<S` never being re-entered —
+**0 violations in 18 runs**, so `G` is a gate for an edge exactly when every entrance can reach
+`S`. One number per edge.
+
+**Piece count moved the wrong way and it does not matter**: 4 of 9 edges stopped at four pieces
+with one state, 0 of 9 with the bigger `S`. Coverage wants `S` to span phases; piece count wants
+it on one. Only the coverage is load-bearing, since `G` is a union of pieces however finely cut.
+
+**Open.** Edge 8, dabeone's scoring edge, is the single remaining failure at 89.9% of entrances
+and 12% of exits. And why one direction of a corridor shatters and its inverse does not. Both
+passed back to the user, who is better at the geometry than the aggregate is.
 ---
 
 ## 2026-09-08 — gates get a definition, and the §0h era is torn out
