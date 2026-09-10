@@ -1913,40 +1913,55 @@ public final class SimTest {
                       int[] pred, byte[] predDegree, int[] edge, int edges) {
         for (int round = 1; round <= 12; round++) {
             if (edges > MASK_LIMIT) { System.out.println("  too many edges to mask"); return edges; }
-            long[] next = new long[edge.length], back = new long[edge.length];
-            boolean changed = true;
-            while (changed) {                       // fixed point: first different edge
-                changed = false;
-                for (int i = 0; i < liveCount; i++) {
-                    int s = live[i];
-                    long acc = 0;
-                    for (int j = 0; j < degree[s]; j++) {
-                        int u = succ[s * 3 + j];
-                        acc |= edge[u] != edge[s] ? 1L << edge[u] : next[u];
-                    }
-                    if (acc != next[s]) { next[s] = acc; changed = true; }
-                    long bcc = 0;
-                    for (int j = 0; j < predDegree[s]; j++) {
-                        int p = pred[s * 3 + j];
-                        bcc |= edge[p] != edge[s] ? 1L << edge[p] : back[p];
-                    }
-                    if (bcc != back[s]) { back[s] = bcc; changed = true; }
-                }
-            }
-            Map<String, Integer> groups = new java.util.HashMap<>();
-            int[] fresh = new int[liveCount];
-            for (int i = 0; i < liveCount; i++) {
-                fresh[i] = groups.computeIfAbsent(
-                        edge[live[i]] + "/" + next[live[i]] + "/" + back[live[i]],
-                        k -> groups.size());
-            }
-            int split = groups.size();
-            for (int i = 0; i < liveCount; i++) edge[live[i]] = fresh[i];
-            System.out.printf("  refinement round %d: %d -> %d edges%n", round, edges, split);
-            if (split == edges) return edges;
-            edges = split;
+            Refined r = refineOnce(live, liveCount, succ, degree, pred, predDegree, edge, edges);
+            System.out.printf("  refinement round %d: %d -> %d edges%n", round, edges, r.edges());
+            if (r.edges() == edges) return edges;
+            edges = r.edges();
         }
         return edges;
+    }
+
+    /**
+     * One round of refinement, with the masks it grouped on.
+     * <p>
+     * <b>The masks name the edges as they were on entry</b>, while {@code edge} comes back holding
+     * the new numbering — which is what makes them readable as an explanation. A split says "these
+     * states of edge X can reach Y and those cannot", and Y is only meaningful in the numbering
+     * that was in force when the question was asked.
+     */
+    record Refined(int edges, long[] next, long[] back) {}
+
+    static Refined refineOnce(int[] live, int liveCount, int[] succ, byte[] degree,
+                              int[] pred, byte[] predDegree, int[] edge, int edges) {
+        long[] next = new long[edge.length], back = new long[edge.length];
+        boolean changed = true;
+        while (changed) {                       // fixed point: first different edge
+            changed = false;
+            for (int i = 0; i < liveCount; i++) {
+                int s = live[i];
+                long acc = 0;
+                for (int j = 0; j < degree[s]; j++) {
+                    int u = succ[s * 3 + j];
+                    acc |= edge[u] != edge[s] ? 1L << edge[u] : next[u];
+                }
+                if (acc != next[s]) { next[s] = acc; changed = true; }
+                long bcc = 0;
+                for (int j = 0; j < predDegree[s]; j++) {
+                    int p = pred[s * 3 + j];
+                    bcc |= edge[p] != edge[s] ? 1L << edge[p] : back[p];
+                }
+                if (bcc != back[s]) { back[s] = bcc; changed = true; }
+            }
+        }
+        Map<String, Integer> groups = new java.util.HashMap<>();
+        int[] fresh = new int[liveCount];
+        for (int i = 0; i < liveCount; i++) {
+            fresh[i] = groups.computeIfAbsent(
+                    edge[live[i]] + "/" + next[live[i]] + "/" + back[live[i]],
+                    k -> groups.size());
+        }
+        for (int i = 0; i < liveCount; i++) edge[live[i]] = fresh[i];
+        return new Refined(groups.size(), next, back);
     }
 
     /**
@@ -3087,10 +3102,7 @@ picks, never in what is available to it.
     public static void main(String[] args) throws IOException {
         PresetScenarioParameter preset = PresetScenarioParameter.EDGE_TEST;
         SolverFacts.Gate gate = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        GateSplit.run(preset, gate, 50, false, false);
-        GateSplit.run(preset, gate, 50, false, true);
-        GateSplit.run(preset, gate, 50, true, false);
-        GateSplit.run(preset, gate, 50, true, true);
+        GateSplit.diagnose(preset, gate, 50);
     }
 
     /**

@@ -341,6 +341,159 @@ public final class GateSplit {
         return out;
     }
 
+    /**
+     * Two rounds of refinement and nothing more, to see what the second one objects to.
+     * <p>
+     * Round one should take 9 edges to 12: {@code E} becomes {@code E<S}, {@code E⊥S}, {@code E>S}
+     * and {@code S}. Anything round two does is a second thought about a piece round one already
+     * made, so it can only be a piece that is malformed — and the mask it splits on names exactly
+     * what the disagreement is.
+     * <p>
+     * Run on the partial-tick, both-ways-perfected {@code S} only, since that is the construction
+     * under test.
+     */
+    public static void diagnose(PresetScenarioParameter preset, SolverFacts.Gate gate,
+                                double minLength) throws IOException {
+        SimTest.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(), gate.lo(),
+                gate.hi(), gate.dir());
+        NavMap map = l.map();
+        int[] live = l.live(), base = l.edge();
+        int liveCount = l.liveCount(), edges = l.edges();
+        EdgeMetric.Metric m = EdgeMetricStore.of(SimTest.structure(preset, gate).at("metric"),
+                map, base, live, liveCount, edges, SimTest.SCHEME, SimTest.CHAIN);
+        MapStates lattice = MapStates.of(map, Flocking.of(preset.turningRadius()), live, liveCount);
+
+        int w = map.width(), turns = Params.TURNS;
+        int[][] adj = adjacency(map, base, live, liveCount);
+        int[] succ = adj[0], pred = adj[2];
+        byte[] degree = bytes(adj[1]), predDegree = bytes(adj[3]);
+
+        System.out.printf("%n=== %s @%s: two rounds only, S = partial tick perfected both ways ===%n",
+                preset.name(), preset.ingest().hash());
+
+        for (int e = 0; e < edges; e++) {
+            if (m.length()[e] < minLength) continue;
+            int chosen = -1;
+            double target = m.length()[e] / 2, best = Double.MAX_VALUE;
+            for (int i = 0; i < liveCount; i++) {
+                int s = live[i];
+                if (base[s] != e || Double.isNaN(m.tick()[s])) continue;
+                double d = Math.abs(m.tick()[s] - target);
+                if (d < best) { best = d; chosen = s; }
+            }
+            final int on = e;
+            int[] sMembers = Arrays.stream(lattice.of(chosen)
+                    .partialTick(StateSet.Steering.STRAIGHT)
+                    .backwardsPerfect().forwardsPerfect().toArray())
+                    .filter(s -> base[s] == on).toArray();
+
+            Side[] side = sides(base, live, liveCount, e, sMembers, succ, degree, pred, predDegree);
+
+            int[] edge = base.clone();
+            for (int s : sMembers) edge[s] = edges;
+
+            System.out.printf("%n---- edge %d, S = %d states ----%n", e, sMembers.length);
+
+            SimTest.Refined r1 = SimTest.refineOnce(live, liveCount, succ, degree, pred,
+                    predDegree, edge, edges + 1);
+            int[] afterOne = edge.clone();
+            System.out.printf("round 1: %d -> %d edges%s%n", edges + 1, r1.edges(),
+                    r1.edges() == edges + 3 ? "  (the expected 12)" : "  <-- not 9 + 3");
+
+            // Name every round-1 piece that came out of E, by which side its states are on.
+            Map<Integer, Map<Side, Integer>> named = new LinkedHashMap<>();
+            for (int i = 0; i < liveCount; i++) {
+                int s = live[i];
+                if (base[s] != e) continue;
+                named.computeIfAbsent(afterOne[s], k -> new LinkedHashMap<>())
+                        .merge(side[s], 1, Integer::sum);
+            }
+            Map<Integer, String> label = new LinkedHashMap<>();
+            named.forEach((id, counts) -> {
+                StringBuilder b = new StringBuilder();
+                counts.forEach((k, v) -> b.append(b.length() > 0 ? "+" : "").append(k.label));
+                label.put(id, b.toString());
+            });
+            System.out.printf("pieces of edge %d after round 1:%n", e);
+            named.forEach((id, counts) -> System.out.printf("   edge %-3d %-12s %s%n", id,
+                    label.get(id), counts));
+
+            SimTest.Refined r2 = SimTest.refineOnce(live, liveCount, succ, degree, pred,
+                    predDegree, edge, r1.edges());
+            System.out.printf("round 2: %d -> %d edges%n", r1.edges(), r2.edges());
+            if (r2.edges() == r1.edges()) { System.out.println("   settled."); continue; }
+
+            // Which round-1 edges split, and on what. Group each one's states by the (next, back)
+            // pair round 2 saw, then print the masks as edge lists.
+            Map<Integer, Map<String, int[]>> split = new LinkedHashMap<>();
+            for (int i = 0; i < liveCount; i++) {
+                int s = live[i];
+                int was = afterOne[s];
+                String key = r2.next()[s] + "/" + r2.back()[s];
+                split.computeIfAbsent(was, k -> new LinkedHashMap<>())
+                        .computeIfAbsent(key, k -> new int[]{0, s})[0]++;
+            }
+            for (Map.Entry<Integer, Map<String, int[]>> en : split.entrySet()) {
+                if (en.getValue().size() < 2) continue;
+                int was = en.getKey();
+                System.out.printf("   edge %d (%s) splits %d ways:%n", was,
+                        label.getOrDefault(was, "not part of edge " + e), en.getValue().size());
+                en.getValue().forEach((key, v) -> {
+                    int sample = v[1];
+                    System.out.printf("      %6d states  next=%-26s back=%-26s  eg (%d,%d,%d)%n",
+                            v[0], mask(r2.next()[sample], label), mask(r2.back()[sample], label),
+                            sample / turns % w, sample / turns / w, sample % turns);
+                });
+            }
+        }
+    }
+
+    /** A first-different-edge mask as a readable edge list. */
+    private static String mask(long bits, Map<Integer, String> label) {
+        StringBuilder b = new StringBuilder("{");
+        for (int i = 0; i < 64; i++) {
+            if ((bits & (1L << i)) == 0) continue;
+            if (b.length() > 1) b.append(',');
+            b.append(i);
+            String name = label.get(i);
+            if (name != null) b.append('=').append(name);
+        }
+        return b.append('}').toString();
+    }
+
+    private static byte[] bytes(int[] v) {
+        byte[] out = new byte[v.length];
+        for (int i = 0; i < v.length; i++) out[i] = (byte) v[i];
+        return out;
+    }
+
+    /** Successor and predecessor lists, exactly as {@code SimTest.label} builds them. */
+    private static int[][] adjacency(NavMap map, int[] base, int[] live, int liveCount) {
+        int n = base.length, turns = Params.TURNS, w = map.width();
+        int[] succ = new int[n * 3], degree = new int[n];
+        for (int i = 0; i < liveCount; i++) {
+            int s = live[i];
+            int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+            for (int t = -1; t <= 1; t++) {
+                if (map.constrainTurn(x, y, d, t) != t) continue;
+                int nd = Math.floorMod(d + t, turns);
+                int nx = x + map.stepX(nd), ny = y + map.stepY(nd);
+                if (nx < 0 || ny < 0 || nx >= w || ny >= map.height() || map.oob(nx, ny)) continue;
+                if (!map.alive(nx, ny, nd)) continue;
+                succ[s * 3 + degree[s]++] = (nx + ny * w) * turns + nd;
+            }
+        }
+        int[] pred = new int[n * 3], predDegree = new int[n];
+        for (int i = 0; i < liveCount; i++) {
+            int s = live[i];
+            for (int j = 0; j < degree[s]; j++) {
+                int u = succ[s * 3 + j];
+                pred[u * 3 + predDegree[u]++] = s;
+            }
+        }
+        return new int[][]{succ, degree, pred, predDegree};
+    }
+
     private static final int[] PALETTE = {
         0xE6194B, 0x3CB44B, 0xFFE119, 0x4363D8, 0xF58231, 0x911EB4, 0x46F0F0, 0xF032E6,
         0xBCF60C, 0xFABEBE, 0x008080, 0xE6BEFF, 0x9A6324, 0x800000, 0xAAFFC3, 0x808000,
