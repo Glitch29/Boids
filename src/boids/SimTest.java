@@ -1578,10 +1578,14 @@ public final class SimTest {
         int orbitCount = edges;
         edges = complementComponents(map, live, liveCount, succ, degree, edge, edges);
         System.out.printf("plus complement components: %d edges before refinement%n", edges);
-        int alongside = mergeAlongside(map, live, liveCount, edge, edges, orbitCount);
-        System.out.printf("after merging edges that run alongside: %d -> %d edges%n",
-                edges, alongside);
-        edges = alongside;
+        if (mergeAlongsideEdges) {
+            int alongside = mergeAlongside(map, live, liveCount, edge, edges, orbitCount);
+            System.out.printf("after merging edges that run alongside: %d -> %d edges%n",
+                    edges, alongside);
+            edges = alongside;
+        } else {
+            System.out.printf("alongside merge SKIPPED, %d edges%n", edges);
+        }
         edges = refine(live, liveCount, succ, degree, pred, predDegree, edge, edges);
         System.out.printf("after refinement: %d edges%n", edges);
         edges = splitOrbits(map, live, liveCount, succ, degree, pred, predDegree, edge, edges);
@@ -1942,6 +1946,16 @@ public final class SimTest {
      * recorded figure; on is the corrected rule.
      */
     static boolean absorbEquivalentMasks = true;
+
+    /**
+     * Whether edges running alongside one another are merged before refinement.
+     * <p>
+     * The step identifies headings mod 32, so it merges an edge with its own inverse — which is
+     * why dabeone edge 8 is two mutually inverse regions rather than two edges. It exists to head
+     * off a blowup seen on plait, and that blowup may since have been the absorb defect rather
+     * than anything this was needed for.
+     */
+    static boolean mergeAlongsideEdges = true;
 
     /**
      * Reduces a first-different-edge mask to its equivalence class.
@@ -3182,24 +3196,25 @@ picks, never in what is available to it.
                 PresetScenarioParameter.DABNT, PresetScenarioParameter.PLAIT);
 
         Map<String, String> seen = new java.util.LinkedHashMap<>();
-        for (boolean absorb : new boolean[]{false, true}) {
-            absorbEquivalentMasks = absorb;
+        for (boolean merge : new boolean[]{true, false}) {
+            mergeAlongsideEdges = merge;
             for (PresetScenarioParameter p : maps) {
                 SolverFacts.Gate g = p == PresetScenarioParameter.PLAIT ? pl : dab;
-                Labelling lab = labelFor(p, g.horizontal(), g.line(), g.lo(), g.hi(), g.dir());
-                seen.put(p.name() + " absorb=" + absorb,
-                        lab.edges() + " edges  labelling " + digest(lab));
+                try {
+                    Labelling lab = labelFor(p, g.horizontal(), g.line(), g.lo(), g.hi(), g.dir());
+                    seen.put(p.name() + " alongside=" + merge,
+                            lab.edges() + " edges  labelling " + digest(lab));
+                } catch (RuntimeException ex) {
+                    seen.put(p.name() + " alongside=" + merge, "FAILED: " + ex.getMessage());
+                }
             }
         }
+        mergeAlongsideEdges = true;
         System.out.println();
-        seen.forEach((k, v) -> System.out.printf("  %-24s %s%n", k, v));
+        seen.forEach((k, v) -> System.out.printf("  %-26s %s%n", k, v));
 
         absorbEquivalentMasks = true;
-        GateSplit.mode = GateSplit.Perfection.BOTH;
-        for (boolean inv : new boolean[]{false, true}) {
-            GateSplit.unionInverse = inv;
-            GateSplit.diagnose(PresetScenarioParameter.EDGE_TEST, dab, 50);
-        }
+
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */
