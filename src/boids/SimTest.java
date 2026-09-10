@@ -1928,8 +1928,61 @@ public final class SimTest {
      * the new numbering — which is what makes them readable as an explanation. A split says "these
      * states of edge X can reach Y and those cannot", and Y is only meaningful in the numbering
      * that was in force when the question was asked.
+     * <p>
+     * They are the masks as {@link #absorb} left them, which is what the grouping actually saw.
+     * Reporting the raw ones would show disagreements the refinement had already forgiven.
      */
     record Refined(int edges, long[] next, long[] back) {}
+
+    /**
+     * Whether a mask is reduced before it is grouped on. See {@link #absorb}.
+     * <p>
+     * A flag rather than a straight change because it alters the decomposition algorithm itself,
+     * and every artifact in the tree is addressed by a decomposition. Off reproduces every
+     * recorded figure; on is the corrected rule.
+     */
+    static boolean absorbEquivalentMasks = true;
+
+    /**
+     * Reduces a first-different-edge mask to its equivalence class.
+     * <p>
+     * <b>The rule.</b> Reaching {@code X} and reaching {@code X}'s successors are not different
+     * facts: {@code {X}}, {@code {all of X's successors}} and {@code {X} + any of X's successors}
+     * all say the same thing about where a state can get to. So a mask holding both {@code X} and
+     * something {@code X} steps to is reduced by dropping the latter, repeatedly, until nothing
+     * more can go.
+     * <p>
+     * <b>What it fixes.</b> Without it, two states of one edge that agree about everything except
+     * whether they can slip directly into an edge already downstream of one they both reach are
+     * split apart, and refinement follows that down. Observed on dabeone as {@code E<S} disagreeing
+     * over {@code E>S} while agreeing that both reach {@code S} — and {@code E>S} is downstream of
+     * {@code S}, so the disagreement was never real. The rule was known to be needed when the
+     * algorithm was specified and deferred, because it can only bite on edges shorter than one
+     * tick and there were none.
+     * <p>
+     * <b>The antisymmetry guard is load-bearing.</b> {@code Y} is dropped for being downstream of
+     * {@code X} only when {@code X} is not also downstream of {@code Y}: two edges that step to
+     * each other are each other's successors, and without the guard a mask holding both would
+     * empty itself.
+     */
+    static long absorb(long mask, long[] arcs, int edges) {
+        long out = mask;
+        for (boolean changed = true; changed; ) {
+            changed = false;
+            long keep = out;
+            for (int x = 0; x < edges; x++) {
+                if ((out & (1L << x)) == 0) continue;
+                for (int y = 0; y < edges; y++) {
+                    if (x == y || (out & (1L << y)) == 0) continue;
+                    boolean forward = (arcs[x] & (1L << y)) != 0;
+                    boolean backward = (arcs[y] & (1L << x)) != 0;
+                    if (forward && !backward) keep &= ~(1L << y);
+                }
+            }
+            if (keep != out) { out = keep; changed = true; }
+        }
+        return out;
+    }
 
     static Refined refineOnce(int[] live, int liveCount, int[] succ, byte[] degree,
                               int[] pred, byte[] predDegree, int[] edge, int edges) {
@@ -1953,12 +2006,35 @@ public final class SimTest {
                 if (bcc != back[s]) { back[s] = bcc; changed = true; }
             }
         }
+
+        // Which edges each edge steps to, and is stepped to from, at the current labelling. The
+        // masks are reduced against these before anything is grouped on them.
+        long[] outArcs = new long[edges], inArcs = new long[edges];
+        if (absorbEquivalentMasks) {
+            for (int i = 0; i < liveCount; i++) {
+                int s = live[i];
+                for (int j = 0; j < degree[s]; j++) {
+                    int u = succ[s * 3 + j];
+                    if (edge[u] == edge[s]) continue;
+                    outArcs[edge[s]] |= 1L << edge[u];
+                    inArcs[edge[u]] |= 1L << edge[s];
+                }
+            }
+        }
+
         Map<String, Integer> groups = new java.util.HashMap<>();
         int[] fresh = new int[liveCount];
         for (int i = 0; i < liveCount; i++) {
-            fresh[i] = groups.computeIfAbsent(
-                    edge[live[i]] + "/" + next[live[i]] + "/" + back[live[i]],
-                    k -> groups.size());
+            int s = live[i];
+            long f = next[s], b = back[s];
+            if (absorbEquivalentMasks) {
+                f = absorb(f, outArcs, edges);
+                b = absorb(b, inArcs, edges);
+            }
+            next[s] = f;
+            back[s] = b;
+            final long ff = f, bb = b;
+            fresh[i] = groups.computeIfAbsent(edge[s] + "/" + ff + "/" + bb, k -> groups.size());
         }
         for (int i = 0; i < liveCount; i++) edge[live[i]] = fresh[i];
         return new Refined(groups.size(), next, back);
@@ -3100,9 +3176,44 @@ picks, never in what is available to it.
      * invariant checked, which is the cheapest thing that exercises the whole structure tier.
      */
     public static void main(String[] args) throws IOException {
-        PresetScenarioParameter preset = PresetScenarioParameter.EDGE_TEST;
-        SolverFacts.Gate gate = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        GateSplit.diagnose(preset, gate, 50);
+        SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
+        SolverFacts.Gate pl = new SolverFacts.Gate(true, 360, 335, 350, 0);
+        List<PresetScenarioParameter> maps = List.of(PresetScenarioParameter.DABEONE,
+                PresetScenarioParameter.DABNT, PresetScenarioParameter.PLAIT);
+
+        Map<String, String> seen = new java.util.LinkedHashMap<>();
+        for (boolean absorb : new boolean[]{false, true}) {
+            absorbEquivalentMasks = absorb;
+            for (PresetScenarioParameter p : maps) {
+                SolverFacts.Gate g = p == PresetScenarioParameter.PLAIT ? pl : dab;
+                Labelling lab = labelFor(p, g.horizontal(), g.line(), g.lo(), g.hi(), g.dir());
+                seen.put(p.name() + " absorb=" + absorb,
+                        lab.edges() + " edges  labelling " + digest(lab));
+            }
+        }
+        System.out.println();
+        seen.forEach((k, v) -> System.out.printf("  %-24s %s%n", k, v));
+
+        absorbEquivalentMasks = true;
+        GateSplit.diagnose(PresetScenarioParameter.EDGE_TEST, dab, 50);
+    }
+
+    /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */
+    private static String digest(Labelling lab) {
+        java.security.MessageDigest md;
+        try {
+            md = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+        for (int i = 0; i < lab.liveCount(); i++) {
+            int v = lab.edge()[lab.live()[i]];
+            md.update((byte) v);
+            md.update((byte) (v >> 8));
+        }
+        StringBuilder h = new StringBuilder();
+        for (byte b : md.digest()) h.append(String.format("%02x", b));
+        return h.substring(0, 16);
     }
 
     /**
