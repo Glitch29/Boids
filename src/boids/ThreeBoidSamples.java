@@ -545,7 +545,7 @@ public final class ThreeBoidSamples {
      * clump whose exits split their explanation between two boids is not a near miss at any
      * constants, because a pairwise table holds one leader for a whole history.
      */
-    public static List<Approach> classify(PresetScenarioParameter preset, SimTest.Labelling l,
+    public static List<Approach> classify(PresetScenarioParameter preset, EdgeDecomposition.Labelling l,
                                           SolverFacts f, ExitAudit.Tables tables, int from,
                                           List<Feature> features, Path plain, Path replays,
                                           double resolution, Flocking normal, Flocking alt,
@@ -599,7 +599,7 @@ public final class ThreeBoidSamples {
 
     /** The per-tick accounting for one shot, without printing it. Shared with {@link #explain}. */
     private static Approach approach(Boids2DEngine engine, SolverFacts f, NavMap map,
-                                     SimTest.Labelling l, boolean[] settled, StateSet ground,
+                                     EdgeDecomposition.Labelling l, boolean[] settled, StateSet ground,
                                      int from, Shot s, Flocking normal, Flocking alt) {
         Row row = s.row();
         PsyboidOverride[] overrides = row.overridden()
@@ -977,7 +977,7 @@ public final class ThreeBoidSamples {
      * If a single neighbour reproduces every tick from the last settled state to the entry, the
      * pairwise tables ought to have admitted it, and the reason they did not is the finding.
      */
-    public static void explain(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
+    public static void explain(PresetScenarioParameter preset, EdgeDecomposition.Labelling l, SolverFacts f,
                                ExitAudit.Tables tables, int from, int keep, int route,
                                int otherRoute, int cellX, int cellY, Path replays,
                                Flocking normal, Flocking alt, StateSet ground, Path out)

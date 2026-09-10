@@ -55,7 +55,7 @@ public final class MapStates {
     }
 
     /**
-     * @param live      the viability kernel, as {@code SimTest.Labelling} carries it
+     * @param live      the viability kernel, as {@code EdgeDecomposition.Labelling} carries it
      * @param liveCount how many of {@code live} are real
      */
     public static MapStates of(NavMap map, Flocking flock, int[] live, int liveCount) {

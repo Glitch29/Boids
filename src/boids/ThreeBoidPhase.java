@@ -115,7 +115,7 @@ public final class ThreeBoidPhase {
      *                   one, since a permanently right-steering psyboid does not coast
      * @param targetFill desired saturation of the reachable grid, in [0, 1)
      */
-    public static void run(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
+    public static void run(PresetScenarioParameter preset, EdgeDecomposition.Labelling l, SolverFacts f,
                            ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
                            int kPsy, double resolution, double targetFill, long seed, Path out)
             throws IOException {
@@ -138,7 +138,7 @@ public final class ThreeBoidPhase {
      *
      * @param suspectStarts states the suspect may begin on, or null for the settled band
      */
-    public static void run(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
+    public static void run(PresetScenarioParameter preset, EdgeDecomposition.Labelling l, SolverFacts f,
                            ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
                            int kPsy, double resolution, double targetFill, long seed,
                            StateSet suspectStarts, Path out) throws IOException {
@@ -155,7 +155,7 @@ public final class ThreeBoidPhase {
      * trajectories move. That is what makes this an honest comparison rather than two pictures of
      * two different projects.
      */
-    public static void run(PresetScenarioParameter preset, SimTest.Labelling l, SolverFacts f,
+    public static void run(PresetScenarioParameter preset, EdgeDecomposition.Labelling l, SolverFacts f,
                            ExitAudit.Tables tables, int from, int keep, double band, int kBoid,
                            int kPsy, double resolution, double targetFill, long seed,
                            StateSet suspectStarts, Aggregation aggregation, Path out)

@@ -75,7 +75,7 @@ public final class Pipeline {
         Derived.Behaviour where = structure.behaviour(flock, Aggregation.SIMULATION);
         System.out.printf("structure %s%nbehaviour %s%n", structure.dir(), where.dir());
 
-        SimTest.Labelling lab = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
+        EdgeDecomposition.Labelling lab = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
                 gate.lo(), gate.hi(), gate.dir());
         Labelling labelling = new Labelling(lab.map(), lab.live(), lab.liveCount(), lab.edge(),
                 lab.edges());

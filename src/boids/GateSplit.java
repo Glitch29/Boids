@@ -119,7 +119,7 @@ public final class GateSplit {
     public static List<Split> run(PresetScenarioParameter preset, SolverFacts.Gate gate,
                                   double minLength, boolean phaseBleed, boolean perfect)
             throws IOException {
-        SimTest.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(), gate.lo(),
+        EdgeDecomposition.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(), gate.lo(),
                 gate.hi(), gate.dir());
         NavMap map = l.map();
         int[] live = l.live(), base = l.edge();
@@ -198,7 +198,7 @@ public final class GateSplit {
         // not what is being measured.
         int[] control = base.clone();
         System.out.printf("%ncontrol: refining the decomposition unchanged, %d edges in%n", edges);
-        int settled = SimTest.refine(live, liveCount, succ, degree, pred, predDegree, control,
+        int settled = EdgeDecomposition.refine(live, liveCount, succ, degree, pred, predDegree, control,
                 edges);
         System.out.printf("   %d edges out -- %s%n", settled, settled == edges
                 ? "a fixed point, so any change below is the split"
@@ -249,7 +249,7 @@ public final class GateSplit {
                 System.out.printf("   ** %d predecessor link(s) inside S under the decomposition's "
                         + "own graph **%n", inSet);
             }
-            int after = SimTest.refine(live, liveCount, succ, degree, pred, predDegree, edge,
+            int after = EdgeDecomposition.refine(live, liveCount, succ, degree, pred, predDegree, edge,
                     edges + 1);
             System.out.printf("   after refinement: %d edges%n", after);
 
@@ -354,7 +354,7 @@ public final class GateSplit {
      */
     public static void diagnose(PresetScenarioParameter preset, SolverFacts.Gate gate,
                                 double minLength) throws IOException {
-        SimTest.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(), gate.lo(),
+        EdgeDecomposition.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(), gate.lo(),
                 gate.hi(), gate.dir());
         NavMap map = l.map();
         int[] live = l.live(), base = l.edge();
@@ -438,7 +438,7 @@ public final class GateSplit {
                             && bfb.size() == bf.size() && bfbf.size() == bf.size()
                             ? "all settled" : "<-- NOT SETTLED", perfected(seed).size());
 
-            SimTest.Refined r1 = SimTest.refineOnce(live, liveCount, succ, degree, pred,
+            EdgeDecomposition.Refined r1 = EdgeDecomposition.refineOnce(live, liveCount, succ, degree, pred,
                     predDegree, edge, edges + 1);
             int[] afterOne = edge.clone();
             System.out.printf("round 1: %d -> %d edges%s%n", edges + 1, r1.edges(),
@@ -462,7 +462,7 @@ public final class GateSplit {
             named.forEach((id, counts) -> System.out.printf("   edge %-3d %-12s %s%n", id,
                     label.get(id), counts));
 
-            SimTest.Refined r2 = SimTest.refineOnce(live, liveCount, succ, degree, pred,
+            EdgeDecomposition.Refined r2 = EdgeDecomposition.refineOnce(live, liveCount, succ, degree, pred,
                     predDegree, edge, r1.edges());
             System.out.printf("round 2: %d -> %d edges%n", r1.edges(), r2.edges());
             if (r2.edges() == r1.edges()) { System.out.println("   settled."); continue; }

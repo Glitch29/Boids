@@ -77,6 +77,19 @@ than overshooting slightly. Unioning `S` with `S.inverted()` settles it at twelv
 nothing on the other eight. `StateSet.inverted()` is new; the convention it uses was verified as an
 exact involution over all 136,276 live states.
 
+**Extracted `EdgeDecomposition`.** The algorithm moved out of `SimTest` — 822 lines holding the
+axiom and all six construction steps, with `SimTest` keeping the driver and the reporting.
+Verified a pure move: all three maps produce byte-identical labelling fingerprints and the gate
+split still settles nine of nine. It had been a `ROADMAP.md` item for weeks and was the
+hardest-to-find code in the project.
+
+**Also measured: the alongside merge is plait-only.** On dabeone and dabnt it merges nothing —
+two edges in, two out, identical fingerprints with it skipped — so edge 8 being two mutually
+inverse regions is not an artifact of it but what the axiom produces. Plait still needs it; without
+it orbit 0 refines 7, 12, 14, 19, 45, 296 and `splitOrbits` throws. That blowup is in orbit
+cutting rather than refinement, which is the stage `EDGES.md` §3 already flags as missing
+revert-on-invalid-merge.
+
 **Open.** Why one direction of a corridor shatters and its inverse does not — a curiosity now
 rather than a blocker.
 ---

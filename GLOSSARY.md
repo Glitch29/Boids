@@ -671,7 +671,7 @@ anything not listed.
 | --- | --- | --- |
 | ingest | `MapStore` | `ingests/<hash>/` |
 | viability kernel / navmap | `NavMapBuilder` → `NavMap` | in memory |
-| edge decomposition | `SimTest.labelFor` / `decompose` | `<ingest>/edges/` |
+| edge decomposition | `EdgeDecomposition`, driven by `SimTest.decompose` | `<ingest>/edges/` |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

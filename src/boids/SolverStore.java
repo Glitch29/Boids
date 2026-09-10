@@ -107,7 +107,7 @@ public final class SolverStore {
                                     EdgeWeights.Scheme scheme, double[][] chain,
                                     Flocking flock) throws IOException {
         long began = System.nanoTime();
-        SimTest.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
+        EdgeDecomposition.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
                 gate.lo(), gate.hi(), gate.dir());
         SolverFacts.checkEdges(l.edges());
 
@@ -171,7 +171,7 @@ public final class SolverStore {
      * which is the same three the exhaustive two-boid census found — so the cheap test agrees
      * with the expensive one.
      */
-    private static SolverFacts.Window[] windows(SimTest.Labelling l, EdgeMetric.Metric metric,
+    private static SolverFacts.Window[] windows(EdgeDecomposition.Labelling l, EdgeMetric.Metric metric,
                                                 int[] straightTo, long[] arcs, Flocking flock) {
         List<SolverFacts.Window> out = new ArrayList<>();
         for (int from = 0; from < l.edges(); from++) {
@@ -184,7 +184,7 @@ public final class SolverStore {
         return out.toArray(new SolverFacts.Window[0]);
     }
 
-    private static SolverFacts.Window window(SimTest.Labelling l, EdgeMetric.Metric metric,
+    private static SolverFacts.Window window(EdgeDecomposition.Labelling l, EdgeMetric.Metric metric,
                                              int from, int keep, Flocking flock) {
         EdgeInfluence.Envelope env = EdgeInfluence.envelope(l.map(), l.edge(), l.live(),
                 l.liveCount(), from, keep);

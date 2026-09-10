@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-08. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-10. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
@@ -139,7 +139,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 55 files.
+One package, `src/boids`, 57 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -149,6 +149,8 @@ everywhere) · `Boids2DEngine` (one tick in index order,
 with the `Trace` tap) · `MovementControl`, `BoidArray`, `Engine` (the decision interface) ·
 `PsyboidOverride` · `Sim` (the state container) · `ScenarioParameter`,
 `PresetScenarioParameter` (registered maps).
+
+**Structure** — `EdgeDecomposition` (the axiom and the six-step construction; `EDGES.md` §1 and §3).
 
 **Maps and storage** — `MapStore` (content-addressed ingests) · `Derived` (the structure and
 behaviour tiers: an artifact is addressed by everything it is a function of) · `NavMap`,
@@ -201,7 +203,7 @@ a corpus is addressed by the settings that produced it). See `CORPUS.md`.
 `StateSetRender` (state sets projected to `(x, y)`, several to a sheet) ·
 `SceneRender` · `TwoBoidRender` · `TwoBoidRouteSheet`.
 
-**Driver** — `SimTest`, 3,096 lines. Holds every entry point below *and* the whole
+**Driver** — `SimTest`, 2,501 lines. Holds every entry point below *and* the whole
 decomposition algorithm. Splitting the algorithm out is an open item in `ROADMAP.md`.
 
 ## Entry points
@@ -212,7 +214,7 @@ ways → 6 edges.
 
 | call | answers |
 | --- | --- |
-| `decompose` | cut the map into edges; writes the decomposition and graph renders |
+| `decompose` | cut the map into edges; writes the decomposition and graph renders. The algorithm is `EdgeDecomposition` |
 | `labelFor` | the same, as a `Labelling`, without the reports |
 | `metric` | edge lengths and tau ranges |
 | `corpus` | does the clock match ticks actually flown (`sd/mean`, `rms-100`) |

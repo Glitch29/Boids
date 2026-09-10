@@ -2283,10 +2283,12 @@ Open questions inside this goal:
 
 ## Non-landmark work
 
-**Extract the decomposition algorithm from `SimTest`.** `SimTest` is 2,573 lines holding 15
-entry points *and* the whole decomposition. The algorithm should be its own class with a
-descriptive name; `SimTest` should be the driver. More generally: **descriptive class names,
-and a canonical name in `GLOSSARY.md` for any analysis expected to be reused.**
+**Extract the decomposition algorithm from `SimTest`.** ~~Done 2026-09-10~~ — `EdgeDecomposition`,
+822 lines, holding the axiom and all six construction steps; `SimTest` keeps the driver and the
+reporting. Verified a pure move: all three maps produce byte-identical labelling fingerprints, and
+the gate split still settles nine of nine. `SimTest` is 2,501 lines and still holds fourteen entry
+points. More generally: **descriptive class names, and a canonical name in `GLOSSARY.md` for any
+analysis expected to be reused.**
 
 **Rename `tick` → `tau` for position along an edge.** Agreed 2026-08-27. Affects
 `EdgeMetric.Metric.tick()`, `SolverFacts.tickAt/tickOf/tickLo/tickHi`,
