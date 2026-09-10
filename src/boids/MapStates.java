@@ -298,21 +298,17 @@ public final class MapStates {
             int[] preds = new int[3];
             for (boolean changed = true; changed; ) {
                 changed = false;
-                // A candidate need not be a predecessor of a member: if every one of its
-                // successors is a successor of the set rather than in it, it qualifies while
-                // touching no member at all. So the frontier is the predecessors of the members
-                // and of the members' successors both.
+                // Candidates are the predecessors of members, and only those. The widened
+                // admission rule means a state could in principle qualify while touching no
+                // member at all — every successor one step past the set rather than in it — but
+                // reaching for those admits more than it should, so the frontier stays narrow.
                 for (int s : b.toArray()) {
-                    for (int t = -2; t <= 1; t++) {
-                        int at = t < -1 ? s : map.successor(s, t);
-                        if (at < 0) continue;
-                        int n = map.steeredPredecessors(at, preds);
-                        for (int j = 0; j < n; j++) {
-                            int p = preds[j];
-                            if (b.get(p) || !trapped(b, allowed, p)) continue;
-                            b.set(p);
-                            changed = true;
-                        }
+                    int n = map.steeredPredecessors(s, preds);
+                    for (int j = 0; j < n; j++) {
+                        int p = preds[j];
+                        if (b.get(p) || !trapped(b, allowed, p)) continue;
+                        b.set(p);
+                        changed = true;
                     }
                 }
             }
@@ -340,17 +336,14 @@ public final class MapStates {
             int[] succs = new int[3], preds = new int[3];
             for (boolean changed = true; changed; ) {
                 changed = false;
+                // The mirror of the frontier in backwardsPerfect, and narrow for the same reason.
                 for (int s : b.toArray()) {
-                    int back = map.steeredPredecessors(s, preds);
-                    for (int t = -1; t < back; t++) {
-                        int at = t < 0 ? s : preds[t];
-                        int n = map.steeredSuccessors(at, succs);
-                        for (int j = 0; j < n; j++) {
-                            int u = succs[j];
-                            if (b.get(u) || !only(b, allowed, u)) continue;
-                            b.set(u);
-                            changed = true;
-                        }
+                    int n = map.steeredSuccessors(s, succs);
+                    for (int j = 0; j < n; j++) {
+                        int u = succs[j];
+                        if (b.get(u) || !only(b, allowed, u)) continue;
+                        b.set(u);
+                        changed = true;
                     }
                 }
             }

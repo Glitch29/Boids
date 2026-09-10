@@ -483,7 +483,7 @@ public final class GateSplit {
      * the previous call already grew. Measured on dabeone edge 0 — backwards alone reaches 27
      * states, forwards alone 18, and alternating reaches all 17,028.
      */
-    static Perfection mode = Perfection.BACKWARDS;
+    static Perfection mode = Perfection.BOTH;
 
     private static StateSet perfected(StateSet s) {
         if (mode == Perfection.NONE) return s;

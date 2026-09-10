@@ -62,9 +62,18 @@ variants. `G`, the boundary of `E<S`, is the gate, and it rests on `E<S` never b
 with one state, 0 of 9 with the bigger `S`. Coverage wants `S` to span phases; piece count wants
 it on one. Only the coverage is load-bearing, since `G` is a union of pieces however finely cut.
 
-**Open.** Edge 8, dabeone's scoring edge, is the single remaining failure at 89.9% of entrances
-and 12% of exits. And why one direction of a corridor shatters and its inverse does not. Both
-passed back to the user, who is better at the geometry than the aggregate is.
+**Third pass: two real bugs, and eight of nine.** The shattering was a defect in the decomposition
+algorithm, not in the construction — refinement split on masks that differ only by an edge already
+downstream of one both sides reach, which is not a difference. `SimTest.absorb` fixes it and every
+existing labelling is byte-identical with it on. The perfection operators had the same bug and take
+the same fix; the candidate set has to stay narrow or dabeone edge 0 swallows itself whole. With
+both in, **8 of 9 edges split into exactly the predicted four and settle**, against 1 of 9 with no
+perfection. Independence of the two directions is restored, measured. Full account in `ROADMAP.md`
+§0i.
+
+**Open.** Edge 8, dabeone's scoring edge, is the lone holdout and has been the outlier at every
+stage: never a gate, the only edge whose split splits other edges, and the only `S` that swells to
+52 states. And why one direction of a corridor shatters and its inverse does not.
 ---
 
 ## 2026-09-08 — gates get a definition, and the §0h era is torn out

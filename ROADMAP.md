@@ -1732,6 +1732,55 @@ on one.** It is only a tension if the pieces are load-bearing, and they are not 
 at tau 36.38 of a 72.76-length edge, so the middle by the clock is not the middle by reachability
 there. Not diagnosed.
 
+### Where the construction stands: eight of nine, and a decomposition bug fixed
+
+**2026-09-09, third pass.** The construction is `S = ` seed state, partial tick, perfected both
+ways; split it off `E`; refine. **Eight of nine edges now come apart into exactly the predicted
+four and settle there after two rounds.** Edge 8 is the lone holdout.
+
+Two fixes got it there, and the first is a defect in the decomposition itself.
+
+**1. Refinement was splitting on a distinction that was never real.** Reaching `X` and reaching
+`X`'s successors are the same fact: `{X}`, `{all of X's successors}` and `{X}` plus any of its
+successors are one equivalence class. The algorithm applied that once, implicitly — what stays in
+`E` is what paths to all of `E`'s successors — but never reduced a mask holding both an edge and
+something already downstream of it. So `E<S` splitting over whether it could slip into `E>S`, while
+both sides agreed they reach `S`, was read as a real difference when `E>S` is downstream of `S`.
+`SimTest.absorb` reduces a mask to its class before anything is grouped on it, with an antisymmetry
+guard so two edges that step to each other do not cancel out. **Known to be needed when the
+algorithm was specified and deferred then, because it can only bite on edges shorter than one
+tick.** Behind `SimTest.absorbEquivalentMasks`.
+
+> **It costs nothing.** dabeone, dabnt and plait all produce the same edge count *and the same
+> labelling fingerprint* with it on — `5d1ff610…`, `c9ca9029…`, `c68de7a7…`. No artifact
+> re-derives and no recorded figure moves.
+
+**2. The perfection operators had the same bug.** A candidate was rejected for having a successor
+outside `S` when that successor was merely one step *past* `S`. Admission now reads `S` union
+`S`'s successors, with the allowance frozen at the receiver.
+
+**The candidate set must stay narrow, and that is the whole difference.** Widening the admission
+rule invites widening the frontier to match — a state could in principle qualify while touching no
+member at all — and that admits far too much: on dabeone edge 0 it swallowed the entire 17,028-state
+edge and the split stopped splitting anything. Keeping candidates to the predecessors of members
+(and successors, going forwards) kills the runaway, restores independence, and is what takes the
+result from six of nine to eight.
+
+| perfection | edges settling at exactly 12 |
+| --- | --- |
+| none | 1 of 9 |
+| forwards only | 1 of 9 |
+| backwards only | 7 of 9 |
+| **both** | **8 of 9** |
+
+Backwards does nearly all the work; forwards alone is worth almost nothing but is what settles
+edge 3, which backwards cannot. **Independence is restored** — no edge needs more than one pass of
+each, measured, so the alternation is a formality again.
+
+**Edge 8, dabeone's scoring edge, is the holdout** at 12 -> 15, and has been the outlier at every
+stage: the only edge that is never a gate, the only one whose split splits *other* edges, and the
+one whose `S` swells to 52 states under perfection against 5–14 elsewhere. Not diagnosed.
+
 ### The tear-out, 2026-09-08
 
 Deleted, all recoverable at `0f9b2b7`:
