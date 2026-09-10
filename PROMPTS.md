@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-327 prompts across 11 sessions.
+330 prompts across 12 sessions.
 
 ---
 
@@ -10169,3 +10169,145 @@ Don't spend too much time. If you try something and it doesn't work, just pass b
 ### 12
 
 About to close this thread. Just double checking that everything's wrapped up. If you've got any notes to hand off to the next thread, now's the time to make them.
+
+---
+
+## Session 12 - 2026-09-08
+
+*Log `f088cd7e-837d-454b-97cb-72ac40260363`, 3 prompts.*
+
+### 1
+
+Go ahead and take some time just to familiarize yourself with the project.
+
+### 2
+
+Okay, so the last session was a bit of a disaster. Not in an unexpected way. I gave a lot of leeway to see if you could solve a very difficult task, and it just didn't happen.
+
+Ultimately, that's not a bad thing. The whole goal of this project is to produce a task difficult for SOTA models.
+
+So anyway, we're going to be looking to tear out a lot of the specific implementations created in the last session, in favor of ones that I'm explicitly specifying. As you noted, there's quite a bit of bloat in SimTest. Part of that is to be expected, but I'd also like to get some cleanup going. As and when you see methods that have been superseded, or otherwise relate to deprecated content, let me know and I'll confirm the deletion.
+
+I think many of the things tinkered with last session were abstracted away from existing methods, so it should be pretty easy to delete those. You don't need to ask my approval when deleting anything in SimTest from last session, or anything in the code base that no longer has callers as a result. You also don't need to ask if you solidly believe that the code is no longer in use.
+
+The strategy going forward is to reduce the map into a series of binary decision points that work in a system parallel to and heavily over lapping with edge decomposition.
+
+From the tree search side, each of these actions is just a binary decision. Take this exit? Take this shortcut? Take this longcut? Do some exit-inducing wiggle?
+
+Those decisions make it into the override.
+
+From the simulation perspective, overrides are just a black box that steers the psyboid.
+
+The override itself references precomputed tables that translate the decision within the search tree into specific actions at specific nodes.
+
+So our project in steps:
+
+* Define decision points: invocation, decision, execution
+   * Edge exits - done? might have become borked in the last session. Needs manual review.
+   * Shortcuts/longcuts - done sloppily, will be replacing
+   * Wiggles - deferred for now
+* Figure out control flow and data flow structure for overrides and search
+* Create tables for override implementation
+* Define search structure
+* Define comparator for pruning, and commit mechanism
+   * Test heuristics for endpoint evaluation
+
+
+Before going any further, I want to define a new concept called a gate. This is a formalized version of something that already exists. The linguistic clash is fine, because all existing gate under the previous definition are also gates under the new definition going forward.
+
+A gate is a set of trigger conditions that is guaranteed to be trigged exactly once as a boid traverses an edge. There are two useful and obvious implementations that are functionally extremely similar. Both are gates, and either can be used depending on the need.
+
+* State-based: A set of (x,y,d) that trigger if a boid lands on them
+* Transition-based: A set of transitions ((x,y,d), (x,y,d)), or alternately ((x,y,d), {LEFT,STRAIGHT,RIGHT}) that trigger if a boid paths through them
+
+
+Transition-based is a slightly more versatile set.
+
+Ultimately, gates are going to be stored as sets. Sets of either states or transitions. They're just sets with a particular guarantee associated with them.
+
+Notably, edge transitions are gates by construction.
+
+Gates are going to be our primary way of tick-advancing for the new psyboid evaluation. And probably the way we'll traverse through states when doing most other analysis.
+
+Generically, this would mean Sim having functions of the form:
+
+State nextGate(State state, Filter filter)
+Decision nextDecision(State state, Filter filter)
+
+Note: Filter might not be part of the actual implementation. It could be a stand-in for having some variants of the function that advance to specific features.
+
+Where Decision is an object that implements the functions:
+
+Set<Decision.Option> getOptions()
+State decide(Decision.Option option)
+
+This turn would be a good time to ask clarifying questions, tear out some of the half-baked stuff from last session, and talk about control flow.
+
+I'm still open to input on control flow. And it would be good to have that discussion before implementing stubs for the rest of the work we're about to do.
+
+### 3
+
+"Gates are a bootstrap, not an analysis tool" applied to the specific implementation of gates that existed before. It was a rule to prevent a regular regression where you would forget that edge definitions imply commitment to an edge, and start measuring commitment to an edge via some nearby gate.
+
+You can scrap that requirement from the doc now. My hope is that the widespread disappearance of old gates from the codebase will do the heavy lifting.
+
+For the moment, I'm going to refer to the state-based version of gates only.
+
+1. If an edge has a gate associated with it, for any state on that edge, exactly one of the following is true:
+   1. The state is in the gate
+   2. Any infinite backwards navigation will be in the gate for exactly one tick*
+   3. Any infinite forwards navigation will be in the gate for exactly one tick*
+
+Note: *Assuming the infinite path never visits the edge again
+Note: Generally (always?) the gate will be physically located on the edge it's associated with, but that doesn't have to be the case. There might be a reason to have a gate several ticks before the start of an edge, in which case it would be placed near the end of all the edges that feed into it.
+Note: This precludes entirely precludes gates from being placed on edges where infinite stalling is possible. None currently exist, but some certainly will in the future.
+
+2. There's no such thing as being "pushed out early" from an edge. While on an edge it's physically impossible to do anything but continue on that edge until eventually landing on a successor edge. The edge axiom is a critical thing to understand. And if there was a way to make it more memorable, it would save a whole lot of trouble.
+3. Gates are collections of states or state transitions that have the gate property. The gate property is based on the edge property. Because of this, they will generally be tied to a specific edge. That said, while edge decomposition is fairly rigid, there are generally more than one valid decompositions.
+4. A Decision object contains some options and a State that's in need of an Override being applied to it. Which override is applied is the result of how decide() is called. I don't think exits and shortcuts are fundamentally different at all. An exit decision gives an override to a boid that started anywhere in the gate that makes it take certain precomputed navigation decisions in some of its upcoming states. The end result is forcing the correct edge exit A shortcut decision gives a boid that started anywhere in the gate an override that makes  it take certain precomputed navigation decisions in some of its upcoming states. The result advancing/regressing relative phase in tau-space.
+
+
+Right now "Gates" are just a way to describe the such a set. They're essentially an abstract class with a contract. Which is nothing, code-wise. We will undoubtedly be implementing multiple types of gates. Whether they need to be abstracted is yet to be seen. But we'll at least have a class for gate helper methods.
+
+Bench.piloted was a useful artifact from last run. We'll be incidentally reconstructing it in the new structure, so we can hold off on deleting it until then.
+
+HeldTurn is part of some nonsense. The corpuses we currently have are nonsense. All of that can go.
+
+Herding can go.
+
+PsyboidBits is an old map-specific algorithm for dabeone. We should trash it. I didn't realize bench was build of it too, but that explains one of the last bugs of the session. I changed my mind on Bench - get rid of it as well.
+
+stablePlusSweep can go.
+
+EdgeReach, I'll trust you on for now. I'm not sure I know what it is. But it sounds like if we don't need it, that will become apparent later this session.
+
+Re: Control Flow:
+My idea was for decide to return the state the decision took place on, with the appropriate override installed. For the layer calling decide, exactly how and when that decision is implemented is a black box. It might not have any effect on the next tick, so advancing a single tick wasn't a meaningful option in the first place.
+
+So something like
+stateWithOverride = state.nextDecision(Decision.Gate.PSYBOID_EXIT).decide(Decision.Option.EXIT);
+
+There could be helper methods to shorten that to state.exit() and state.continue() if the exit is not taken.
+
+
+Ideally, search tree expansion would look something like:
+
+List<State> getChildren(State state) {
+List<State> states = new ArrayList<>();
+List<Decision.Gate> gates = new ArrayList<>(Decision.Gate.PSYBOID_EXIT);
+
+if (Windows.inPhase(state)) gates.add(Decision.Gate.SHORTCUT);
+
+Decision decision = state.nextDecision(gates);
+
+if (decision.hasGateType(Decision.Gate.SHORTCUT)) {
+  states.add(decision.decide(Decision.Option.FAST));
+  states.add(decision.decide(Decision.Option.SLOW));
+  states.add(decision.decide(Decision.Option.NONE));
+} else {
+  states.add(decision.decide(Decision.Option.EXIT));
+  states.add(decision.decide(Decision.Option.NONE));
+}
+}
+
+Regarding putting more info into Decision. That seems like a very reasonable place to access it. Functionally it's the same as accessing it from state, but it can be accessed before creating a State from a Decision.

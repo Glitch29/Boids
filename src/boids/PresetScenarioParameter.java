@@ -18,7 +18,16 @@ public enum PresetScenarioParameter implements ScenarioParameter{
     DABEONE ("dabeone.png", 40f, 4),
     PLAIT ("plait.png", 40f, 4),
     DAISY ("daisy.png", 40f, 10),
-    BLOSSOM ("blossom.png", 40f, 10);
+    BLOSSOM ("blossom.png", 40f, 10),
+
+    /**
+     * A map for testing the decomposition itself, not for flying flocks on.
+     * <p>
+     * 379x407 at radius 40, the dab family's geometry, drawn so that edges are long and plainly
+     * separated — which is what makes it useful for checking that a construction over edges
+     * behaves the way its derivation says it should.
+     */
+    EDGE_TEST ("edge_test.png", 40f, 4);
 
     private final String filename;
     private final float r;

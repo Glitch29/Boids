@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-09-08. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-09. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it. **§0i is the live thread — read that first.** §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
@@ -1638,6 +1638,49 @@ List<State> getChildren(State state) {
 **Evaluation data belongs on the `Decision`.** Functionally the same as reading it off the state,
 but it can be read *before* a `State` is made from a `Decision` — which is the cheap place to
 prune, since every child of a node is the same arrangement differing only in installed override.
+
+### Tested: a gate from one state, via the decomposition algorithm
+
+**Specified by the user 2026-09-08, tested 2026-09-09** by `GateSplit`, run by hand. Take an edge
+`E` and a state `S` on it; split `E` into `E \ S` and `{S}`; refine. The prediction is that
+`E \ S` comes apart into exactly `E<S` (can reach `S`), `E⊥S` (neither), and `E>S` (reachable
+from `S`), so `E` yields four edges and a gate follows from the pieces.
+
+Run on dabeone `609cffdb84be218c`, all nine edges, one state per edge nearest the middle in tau,
+one edge split at a time. **The control matters and passed**: refining the decomposition unchanged
+gives 9 edges out of 9 in, so it is a fixed point and any change is the split.
+
+| | |
+| --- | --- |
+| **The partition is never violated** | **0 pieces** out of 470 straddle two sides, on any edge |
+| Exactly four pieces | **4 of 9** edges — 0, 2, 6, 7 — converging in two rounds |
+| More than four | 5 of 9 — edges 1, 3, 4, 5, 8 — all of which then passed the 63-edge mask limit |
+
+**So the prediction is right about *where* the boundaries fall and wrong that there are only
+three.** Every piece refinement produces is wholly inside one of `E<S`, `E⊥S`, `E>S`; refinement
+simply does not stop there on five of the nine. The purity result is sound despite the truncation,
+because refinement only ever splits — a grouping that is pure at any round stays pure at the fixed
+point — but the *counts* for those five are lower bounds, not fixed points.
+
+**The extra pieces are phase, not structure.** `render/gate-split/edge<e>-pieces.png` against
+`-sides.png`: edge 0 is three clean regions, and edge 1 — the same corridor travelled the other
+way — is the same three regions plus a confetti speckle confined to one short diagonal stretch
+where the corridor crosses another. An evenly spread speckle rather than a region is the phase
+artifact of §8, so what shatters is `E⊥S` and the approach to `S`, subdividing by which phase
+trajectory a state is on.
+
+**Open, and geometric:** why one direction of a corridor shatters and the other does not. Edges 0
+and 1 are inverses of one edge, the same pixels, the same crossing, and their chosen states sit at
+tau 79.07 and 79.31 — yet edge 0 settles at four pieces and edge 1 runs past 170. Size is not it:
+the two largest edges are 0 and 1, and 6 and 7 are the second largest and both clean.
+
+**A trap worth not repeating.** The first two runs of this were void, in two different ways, and
+both looked like findings. Splitting all nine edges in one pass blew past `refine`'s 63-edge mask
+in a single round, so it returned a grouping that was never a fixed point. Then building adjacency
+from `NavMap.successor(s, t)` recorded the same successor up to three times, because that method
+returns the *veto-constrained* successor rather than skipping a turn the veto would alter — which
+is what the decomposition itself does. The corrected graph is the one in `SimTest.label`, and with
+it the clean cases converge in two rounds.
 
 ### The tear-out, 2026-09-08
 

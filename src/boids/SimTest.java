@@ -1909,8 +1909,8 @@ public final class SimTest {
      * since arriving from somewhere new creates no forward distinction â€” so an A loop with
      * two branches and two merges comes out as two segments instead of four.
      */
-    private static int refine(int[] live, int liveCount, int[] succ, byte[] degree,
-                              int[] pred, byte[] predDegree, int[] edge, int edges) {
+    static int refine(int[] live, int liveCount, int[] succ, byte[] degree,
+                      int[] pred, byte[] predDegree, int[] edge, int edges) {
         for (int round = 1; round <= 12; round++) {
             if (edges > MASK_LIMIT) { System.out.println("  too many edges to mask"); return edges; }
             long[] next = new long[edge.length], back = new long[edge.length];
@@ -3085,12 +3085,9 @@ picks, never in what is available to it.
      * invariant checked, which is the cheapest thing that exercises the whole structure tier.
      */
     public static void main(String[] args) throws IOException {
-        SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        SolverFacts.Gate plait = new SolverFacts.Gate(true, 360, 335, 350, 0);
-
-        Pipeline.build(PresetScenarioParameter.DABEONE, dab);
-        Pipeline.build(PresetScenarioParameter.DABNT, dab);
-        Pipeline.build(PresetScenarioParameter.PLAIT, plait);
+        PresetScenarioParameter preset = PresetScenarioParameter.EDGE_TEST;
+        SolverFacts.Gate gate = new SolverFacts.Gate(false, 202, 174, 191, -1);
+        GateSplit.run(preset, gate, 50);
     }
 
     /**

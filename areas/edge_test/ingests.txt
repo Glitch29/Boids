@@ -1,0 +1,10 @@
+# Ingest history for edge_test. Newest last; one line per distinct build.
+# Folders live in ingests/<hash>/. The options below all change what
+# gets ingested, so the hash already tells them apart; they are here
+# to say which is which, not to identify anything.
+#
+# 'dead' counts pixels no boid can occupy. They are wall in display.png
+# and untouched in map.png, which is what physics reads.
+#
+# hash             radius nav    trim phys  width height    oob scoring   open   dead
+609cffdb84be218c     40 both   yes  p3      379    407 137307    1649  15297   1541

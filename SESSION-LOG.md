@@ -11,6 +11,45 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-09 — a gate from one state: the boundaries are right, the count is not
+
+The user's construction, put to test: split a state `S` off edge `E`, refine, and see whether
+`E \ S` comes apart into exactly `E<S`, `E⊥S`, `E>S`. Built `GateSplit`, run by hand, nothing in
+the psyboid pipeline.
+
+**`areas/edge_test.png` is a byte-identical copy of `dabeone.png`** — same md5, untracked, dated
+16 August. Content addressing did its job and handed back dabeone's ingest `609cffdb84be218c`, so
+the run below is a dabeone run under the name EDGE_TEST. Registering the preset also caused
+`MapStore` to adopt the loose PNG into `areas/edge_test/`, which is where a replacement has to go.
+
+**Result: 0 of 470 pieces straddle a side; 4 of 9 edges give exactly four pieces.** Edges 0, 2, 6
+and 7 converge in two rounds at 9 - 1 + 4 = 12. Edges 1, 3, 4, 5 and 8 keep splitting and pass the
+63-edge mask limit. The purity result survives the truncation — refinement only splits, so pure at
+any round is pure at the fixed point — but those five counts are lower bounds. Full account and the
+open geometric question in `ROADMAP.md` §0i.
+
+**Two void runs before the real one, both of which looked like findings.**
+
+1. Splitting all nine edges in one pass: 18 edges in, past 63 in one round, `refine` returns a
+   grouping that was never a fixed point. The apparent shattering was the mask limit.
+2. Building adjacency from `NavMap.successor(s, t)` for `t` in -1..1. That method returns the
+   **veto-constrained** successor, so wherever the veto binds it reports the same state more than
+   once — `steeredSuccessors` exists precisely because of this and its javadoc says so.
+   `SimTest.label` instead *skips* a turn the veto would alter, and those are different graphs.
+   With the wrong one, every edge blew up; with the right one, four converge immediately.
+
+**The control that should have come first, and now does.** `GateSplit` refines the decomposition
+unchanged before splitting anything: 9 in, 9 out. Without it, neither of the above would have been
+distinguishable from a real result, because both produced plausible-looking shattering.
+
+**Changed on disk.** New `GateSplit`; `PresetScenarioParameter.EDGE_TEST` registered;
+`SimTest.refine` package-private; `SimTest.main` runs the test. Renders in `render/gate-split/`,
+two per edge — states by side, and states by piece.
+
+**Open.** Why one direction of a corridor shatters and its inverse does not. Passed back to the
+user, who is better at the geometry than the aggregate is.
+---
+
 ## 2026-09-08 — gates get a definition, and the §0h era is torn out
 
 The user's framing: the last session was given a lot of leeway on a very difficult task and did
