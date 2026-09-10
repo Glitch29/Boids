@@ -71,9 +71,14 @@ both in, **8 of 9 edges split into exactly the predicted four and settle**, agai
 perfection. Independence of the two directions is restored, measured. Full account in `ROADMAP.md`
 §0i.
 
-**Open.** Edge 8, dabeone's scoring edge, is the lone holdout and has been the outlier at every
-stage: never a gate, the only edge whose split splits other edges, and the only `S` that swells to
-52 states. And why one direction of a corridor shatters and its inverse does not.
+**Fourth pass: nine of nine.** Edge 8 is dabeone's only self-inverse edge — two mutually inverse
+regions — so a split reached only half of it, and left alone it blew past the 63-edge cap rather
+than overshooting slightly. Unioning `S` with `S.inverted()` settles it at twelve and changes
+nothing on the other eight. `StateSet.inverted()` is new; the convention it uses was verified as an
+exact involution over all 136,276 live states.
+
+**Open.** Why one direction of a corridor shatters and its inverse does not — a curiosity now
+rather than a blocker.
 ---
 
 ## 2026-09-08 — gates get a definition, and the §0h era is torn out

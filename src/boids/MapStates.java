@@ -324,6 +324,20 @@ public final class MapStates {
             return true;
         }
 
+        public StateSet inverted() {
+            Bits b = new Bits(cells);
+            int turns = Params.TURNS;
+            for (int s : toArray()) {
+                int d = s % turns, cell = s / turns, x = cell % width, y = cell / width;
+                int back = (d + turns / 2) % turns;
+                int rx = x + map.stepX(back), ry = y + map.stepY(back);
+                if (rx < 0 || ry < 0 || rx >= map.width() || ry >= map.height()) continue;
+                if (!map.alive(rx, ry, back)) continue;
+                b.set(map.index(rx, ry, back));
+            }
+            return new Set(b);
+        }
+
         public StateSet forwardsPerfect() {
             Bits allowed = new Bits(bits);
             int[] scratch = new int[3];

@@ -1777,9 +1777,20 @@ Backwards does nearly all the work; forwards alone is worth almost nothing but i
 edge 3, which backwards cannot. **Independence is restored** — no edge needs more than one pass of
 each, measured, so the alternation is a formality again.
 
-**Edge 8, dabeone's scoring edge, is the holdout** at 12 -> 15, and has been the outlier at every
-stage: the only edge that is never a gate, the only one whose split splits *other* edges, and the
-one whose `S` swells to 52 states under perfection against 5–14 elsewhere. Not diagnosed.
+**Edge 8 needed its inverse, and then it worked too: nine of nine.** It is dabeone's only
+self-inverse edge — `inverted()` maps all 14,280 of its states back onto itself, where every other
+edge pairs off 0-1, 2-3, 4-5, 6-7 — so it is two mutually inverse regions and splitting a state off
+reached only one of them. Left alone it does not merely overshoot but blows up completely:
+12, 15, 21, 33, 74, hitting the 63-edge mask cap. **Unioning `S` with `S.inverted()` before the
+split settles it at exactly 12**, with `S` going 52 to 104, precisely double. It costs nothing
+elsewhere: edges 0-7 come out identical, their inverses landing on the paired edge and dropping out
+of the split.
+
+**The inverse convention, confirmed rather than assumed.** `inverse(x, y, d)` is
+`(x - stepX(d), y - stepY(d), d + TURNS/2)` — one step back down the heading, then flipped, which
+is what `SimTest.renderEdges` already used to pair edges. Measured on dabeone: an exact involution
+over all 136,276 live states with none falling off the map, and a total edge pairing. Now
+`StateSet.inverted()`.
 
 ### The tear-out, 2026-09-08
 

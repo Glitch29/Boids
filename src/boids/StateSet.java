@@ -115,6 +115,25 @@ public interface StateSet {
     StateSet forwardsPerfect();
 
     /**
+     * The same states travelled the other way: this set's mirror image.
+     * <p>
+     * <b>The inverse of {@code (x, y, d)} is {@code (x - stepX(d), y - stepY(d), d + TURNS/2)}</b>
+     * — one step back down the heading, then flipped. Not the same pixel: a state is a position
+     * <em>and</em> the step it is about to take, and reversing the step moves the position by one.
+     * Pairing at the same pixel is off by exactly that step, which is the note
+     * {@code SimTest.renderEdges} carries where it pairs edges with their inverses.
+     * <p>
+     * It is an involution because the step table is antipodally exact — {@code step(d + TURNS/2)}
+     * is precisely {@code -step(d)} — so the position offset cancels on the second application
+     * rather than drifting.
+     * <p>
+     * <b>A member whose inverse is not live is dropped</b>, so the result can be smaller than the
+     * receiver. That is not a defect: a one-way stretch of corridor has states whose reverse no
+     * boid could occupy.
+     */
+    StateSet inverted();
+
+    /**
      * Everywhere a quorum of {@code influencers} could push a boid in this set, and where it
      * would end up.
      * <p>

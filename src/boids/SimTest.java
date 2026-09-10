@@ -3195,8 +3195,9 @@ picks, never in what is available to it.
         seen.forEach((k, v) -> System.out.printf("  %-24s %s%n", k, v));
 
         absorbEquivalentMasks = true;
-        for (GateSplit.Perfection p : GateSplit.Perfection.values()) {
-            GateSplit.mode = p;
+        GateSplit.mode = GateSplit.Perfection.BOTH;
+        for (boolean inv : new boolean[]{false, true}) {
+            GateSplit.unionInverse = inv;
             GateSplit.diagnose(PresetScenarioParameter.EDGE_TEST, dab, 50);
         }
     }

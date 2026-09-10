@@ -368,8 +368,34 @@ public final class GateSplit {
         int[] succ = adj[0], pred = adj[2];
         byte[] degree = bytes(adj[1]), predDegree = bytes(adj[3]);
 
-        System.out.printf("%n=== %s @%s: two rounds only, S = partial tick, perfection %s ===%n",
-                preset.name(), preset.ingest().hash(), mode);
+        System.out.printf("%n=== %s @%s: two rounds only, S = partial tick, perfection %s%s ===%n",
+                preset.name(), preset.ingest().hash(), mode, unionInverse ? ", + inverse" : "");
+
+        // The inverse convention is taken from SimTest.renderEdges, which uses it to pair edges.
+        // Checked here rather than assumed: it has to be an involution, and if edge 8 really is
+        // two mutually inverse regions then inverting it must land back on edge 8.
+        StateSet all = lattice.of(Arrays.copyOf(live, liveCount));
+        StateSet once = all.inverted(), twice = once.inverted();
+        System.out.printf("inverse: %d live -> %d -> %d, involution %s%n", all.size(),
+                once.size(), twice.size(), twice.size() == all.size() ? "holds" : "FAILS");
+        for (int e = 0; e < edges; e++) {
+            int[] onE = new int[liveCount];
+            int n = 0;
+            for (int i = 0; i < liveCount; i++) if (base[live[i]] == e) onE[n++] = live[i];
+            StateSet inv = lattice.of(Arrays.copyOf(onE, n)).inverted();
+            int[] landed = new int[edges];
+            int lost = 0;
+            for (int s : inv.toArray()) {
+                if (base[s] >= 0) landed[base[s]]++; else lost++;
+            }
+            StringBuilder where = new StringBuilder();
+            for (int f = 0; f < edges; f++) {
+                if (landed[f] > 0) where.append(where.length() > 0 ? " " : "")
+                        .append(f).append(':').append(landed[f]);
+            }
+            System.out.printf("   edge %d (%d states) inverts to %s%s%n", e, n, where,
+                    lost > 0 ? "  (" + lost + " off-map)" : "");
+        }
 
         for (int e = 0; e < edges; e++) {
             if (m.length()[e] < minLength) continue;
@@ -382,9 +408,9 @@ public final class GateSplit {
                 if (d < best) { best = d; chosen = s; }
             }
             final int on = e;
-            int[] sMembers = Arrays.stream(perfected(lattice.of(chosen)
-                    .partialTick(StateSet.Steering.STRAIGHT)).toArray())
-                    .filter(s -> base[s] == on).toArray();
+            StateSet core = perfected(lattice.of(chosen).partialTick(StateSet.Steering.STRAIGHT));
+            if (unionInverse) core = perfected(core.union(core.inverted()));
+            int[] sMembers = Arrays.stream(core.toArray()).filter(s -> base[s] == on).toArray();
 
             Side[] side = sides(base, live, liveCount, e, sMembers, succ, degree, pred, predDegree);
 
@@ -484,6 +510,9 @@ public final class GateSplit {
      * states, forwards alone 18, and alternating reaches all 17,028.
      */
     static Perfection mode = Perfection.BOTH;
+
+    /** Whether S is unioned with its own inverse before the split. */
+    static boolean unionInverse = false;
 
     private static StateSet perfected(StateSet s) {
         if (mode == Perfection.NONE) return s;
