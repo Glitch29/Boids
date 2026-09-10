@@ -2438,6 +2438,13 @@ picks, never in what is available to it.
                     cut.length() == 0 ? "" : "   | split across pieces: " + cut);
         }
 
+        int turns = Params.TURNS, w = l.map().width();
+        System.out.printf("%nthe orbit cuts, and which final edge each landed on:%n");
+        for (int[] c : new int[][]{{21, 83, 23}, {14, 104, 48}}) {
+            int s = (c[0] + c[1] * w) * turns + c[2];
+            System.out.printf("   (%d,%d,%d) -> final edge %d%n", c[0], c[1], c[2], fin[s]);
+        }
+
         System.out.printf("%nsizes of the final edges: ");
         int[] size = new int[edges];
         for (int i = 0; i < liveCount; i++) size[fin[live[i]]]++;

@@ -426,6 +426,7 @@ public final class EdgeDecomposition {
             if (edges > MASK_LIMIT) { System.out.println("  too many edges to mask"); return edges; }
             Refined r = refineOnce(live, liveCount, succ, degree, pred, predDegree, edge, edges);
             System.out.printf("  refinement round %d: %d -> %d edges%n", round, edges, r.edges());
+            snap("    refine round " + round, edge);
             if (r.edges() == edges) return edges;
             edges = r.edges();
         }
