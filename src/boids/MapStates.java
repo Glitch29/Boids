@@ -283,45 +283,90 @@ public final class MapStates {
         }
 
         public StateSet backwardsPerfect() {
+            // The allowance is frozen at the seed: a successor counts as accounted for if it is
+            // in the set this was called on, or one step past it. Letting it track the growing
+            // set instead makes the condition easier every time it is met, and on dabeone that
+            // swallowed a whole 17,028-state edge.
+            Bits allowed = new Bits(bits);
+            int[] scratch = new int[3];
+            for (int s : toArray()) {
+                int n = map.steeredSuccessors(s, scratch);
+                for (int j = 0; j < n; j++) allowed.set(scratch[j]);
+            }
+
             Bits b = new Bits(bits);
-            ArrayList<Integer> queue = new ArrayList<>();
-            for (int s : toArray()) queue.add(s);
             int[] preds = new int[3];
-            for (int i = 0; i < queue.size(); i++) {
-                int n = map.steeredPredecessors(queue.get(i), preds);
-                for (int j = 0; j < n; j++) {
-                    int p = preds[j];
-                    if (b.get(p)) continue;
-                    boolean trapped = true;
-                    for (int t = -1; t <= 1 && trapped; t++) {
-                        int u = map.successor(p, t);
-                        if (u >= 0 && !b.get(u)) trapped = false;
+            for (boolean changed = true; changed; ) {
+                changed = false;
+                // A candidate need not be a predecessor of a member: if every one of its
+                // successors is a successor of the set rather than in it, it qualifies while
+                // touching no member at all. So the frontier is the predecessors of the members
+                // and of the members' successors both.
+                for (int s : b.toArray()) {
+                    for (int t = -2; t <= 1; t++) {
+                        int at = t < -1 ? s : map.successor(s, t);
+                        if (at < 0) continue;
+                        int n = map.steeredPredecessors(at, preds);
+                        for (int j = 0; j < n; j++) {
+                            int p = preds[j];
+                            if (b.get(p) || !trapped(b, allowed, p)) continue;
+                            b.set(p);
+                            changed = true;
+                        }
                     }
-                    if (trapped) { b.set(p); queue.add(p); }
                 }
             }
             return new Set(b);
         }
 
+        /** Whether every successor of {@code p} is in the set or in the frozen allowance. */
+        private boolean trapped(Bits b, Bits allowed, int p) {
+            for (int t = -1; t <= 1; t++) {
+                int u = map.successor(p, t);
+                if (u >= 0 && !b.get(u) && !allowed.get(u)) return false;
+            }
+            return true;
+        }
+
         public StateSet forwardsPerfect() {
+            Bits allowed = new Bits(bits);
+            int[] scratch = new int[3];
+            for (int s : toArray()) {
+                int n = map.steeredPredecessors(s, scratch);
+                for (int j = 0; j < n; j++) allowed.set(scratch[j]);
+            }
+
             Bits b = new Bits(bits);
-            ArrayList<Integer> queue = new ArrayList<>();
-            for (int s : toArray()) queue.add(s);
-            int[] preds = new int[3];
-            for (int i = 0; i < queue.size(); i++) {
-                int v = queue.get(i);
-                for (int t = -1; t <= 1; t++) {
-                    int u = map.successor(v, t);
-                    if (u < 0 || b.get(u)) continue;
-                    // A live state on a bidirectionally-navigable map always has a predecessor,
-                    // so an empty list means something is wrong rather than vacuously true.
-                    int n = map.steeredPredecessors(u, preds);
-                    boolean only = n > 0;
-                    for (int j = 0; j < n && only; j++) only = b.get(preds[j]);
-                    if (only) { b.set(u); queue.add(u); }
+            int[] succs = new int[3], preds = new int[3];
+            for (boolean changed = true; changed; ) {
+                changed = false;
+                for (int s : b.toArray()) {
+                    int back = map.steeredPredecessors(s, preds);
+                    for (int t = -1; t < back; t++) {
+                        int at = t < 0 ? s : preds[t];
+                        int n = map.steeredSuccessors(at, succs);
+                        for (int j = 0; j < n; j++) {
+                            int u = succs[j];
+                            if (b.get(u) || !only(b, allowed, u)) continue;
+                            b.set(u);
+                            changed = true;
+                        }
+                    }
                 }
             }
             return new Set(b);
+        }
+
+        /** Whether every predecessor of {@code u} is in the set or in the frozen allowance. */
+        private boolean only(Bits b, Bits allowed, int u) {
+            int[] scratch = new int[3];
+            int n = map.steeredPredecessors(u, scratch);
+            if (n == 0) return false;
+            for (int k = 0; k < n; k++) {
+                int p = scratch[k];
+                if (!b.get(p) && !allowed.get(p)) return false;
+            }
+            return true;
         }
 
         public StateSet closed(Steering how) {

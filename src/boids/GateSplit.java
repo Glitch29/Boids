@@ -220,7 +220,7 @@ public final class GateSplit {
             StateSet spread = phaseBleed ? one.partialTick(StateSet.Steering.STRAIGHT) : one;
             // One pass of each is a joint fixed point; neither direction can create candidates for
             // the other. See StateSet.forwardsPerfect.
-            StateSet all = perfect ? spread.backwardsPerfect().forwardsPerfect() : spread;
+            StateSet all = perfect ? perfected(spread) : spread;
             int[] members = all.toArray();
             final int on = e;
             int[] onEdge = Arrays.stream(members).filter(s -> base[s] == on).toArray();
@@ -368,8 +368,8 @@ public final class GateSplit {
         int[] succ = adj[0], pred = adj[2];
         byte[] degree = bytes(adj[1]), predDegree = bytes(adj[3]);
 
-        System.out.printf("%n=== %s @%s: two rounds only, S = partial tick perfected both ways ===%n",
-                preset.name(), preset.ingest().hash());
+        System.out.printf("%n=== %s @%s: two rounds only, S = partial tick, perfection %s ===%n",
+                preset.name(), preset.ingest().hash(), mode);
 
         for (int e = 0; e < edges; e++) {
             if (m.length()[e] < minLength) continue;
@@ -382,9 +382,8 @@ public final class GateSplit {
                 if (d < best) { best = d; chosen = s; }
             }
             final int on = e;
-            int[] sMembers = Arrays.stream(lattice.of(chosen)
-                    .partialTick(StateSet.Steering.STRAIGHT)
-                    .backwardsPerfect().forwardsPerfect().toArray())
+            int[] sMembers = Arrays.stream(perfected(lattice.of(chosen)
+                    .partialTick(StateSet.Steering.STRAIGHT)).toArray())
                     .filter(s -> base[s] == on).toArray();
 
             Side[] side = sides(base, live, liveCount, e, sMembers, succ, degree, pred, predDegree);
@@ -392,7 +391,26 @@ public final class GateSplit {
             int[] edge = base.clone();
             for (int s : sMembers) edge[s] = edges;
 
+            // Is each operator actually a fixed point on its own, and is the pair one together?
+            // Both are worklist loops, but that is a claim about the code rather than a
+            // measurement of it, and the outer alternation was removed on the strength of an
+            // argument. Re-apply and see whether anything moves.
+            StateSet seed = lattice.of(chosen).partialTick(StateSet.Steering.STRAIGHT);
+            StateSet b1 = seed.backwardsPerfect();
+            StateSet b2 = b1.backwardsPerfect();
+            StateSet f1 = seed.forwardsPerfect();
+            StateSet f2 = f1.forwardsPerfect();
+            StateSet bf = b1.forwardsPerfect();
+            StateSet bfb = bf.backwardsPerfect();
+            StateSet bfbf = bfb.forwardsPerfect();
             System.out.printf("%n---- edge %d, S = %d states ----%n", e, sMembers.length);
+            System.out.printf("settling: seed %d | back %d -> %d | fwd %d -> %d | "
+                            + "back.fwd %d -> back %d -> fwd %d  %s | alternated %d%n",
+                    seed.size(), b1.size(), b2.size(), f1.size(), f2.size(),
+                    bf.size(), bfb.size(), bfbf.size(),
+                    b2.size() == b1.size() && f2.size() == f1.size()
+                            && bfb.size() == bf.size() && bfbf.size() == bf.size()
+                            ? "all settled" : "<-- NOT SETTLED", perfected(seed).size());
 
             SimTest.Refined r1 = SimTest.refineOnce(live, liveCount, succ, degree, pred,
                     predDegree, edge, edges + 1);
@@ -446,6 +464,40 @@ public final class GateSplit {
                 });
             }
         }
+    }
+
+    /**
+     * Perfected in both directions, alternating to a joint fixed point.
+     * <p>
+     * <b>Alternating rather than one pass of each.</b> Before the rule counted a successor already
+     * in the set's own successors, neither direction could create work for the other and one pass
+     * of each was provably enough. It is no longer obvious that it is, so this loops and reports
+     * when the loop earns its keep.
+     */
+    /** Which directions {@link #perfected} applies. */
+    enum Perfection { NONE, BACKWARDS, FORWARDS, BOTH }
+
+    /**
+     * Which directions are applied. <b>Defaults to BACKWARDS, not BOTH</b>: alternating the two
+     * under the widened rule runs away, because each call freezes its allowance against a receiver
+     * the previous call already grew. Measured on dabeone edge 0 — backwards alone reaches 27
+     * states, forwards alone 18, and alternating reaches all 17,028.
+     */
+    static Perfection mode = Perfection.BACKWARDS;
+
+    private static StateSet perfected(StateSet s) {
+        if (mode == Perfection.NONE) return s;
+        StateSet at = s;
+        int rounds = 0;
+        for (int was = -1; was != at.size(); rounds++) {
+            was = at.size();
+            if (mode != Perfection.FORWARDS) at = at.backwardsPerfect();
+            if (mode != Perfection.BACKWARDS) at = at.forwardsPerfect();
+        }
+        if (rounds > 2) {
+            System.out.printf("   note: %s took %d rounds to settle%n", mode, rounds);
+        }
+        return at;
     }
 
     /** A first-different-edge mask as a readable edge list. */

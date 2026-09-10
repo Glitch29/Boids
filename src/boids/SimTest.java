@@ -3195,7 +3195,10 @@ picks, never in what is available to it.
         seen.forEach((k, v) -> System.out.printf("  %-24s %s%n", k, v));
 
         absorbEquivalentMasks = true;
-        GateSplit.diagnose(PresetScenarioParameter.EDGE_TEST, dab, 50);
+        for (GateSplit.Perfection p : GateSplit.Perfection.values()) {
+            GateSplit.mode = p;
+            GateSplit.diagnose(PresetScenarioParameter.EDGE_TEST, dab, 50);
+        }
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */
