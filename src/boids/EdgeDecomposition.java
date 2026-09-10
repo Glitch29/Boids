@@ -40,6 +40,22 @@ import java.util.Set;
 public final class EdgeDecomposition {
     private EdgeDecomposition() {}
 
+    /**
+     * Stage-by-stage snapshots of the labelling, for asking when two edges parted company.
+     * <p>
+     * Null unless someone is tracing. Set both lists, run {@link #of}, and each stage appends its
+     * name and a copy of the labels as they stood after it.
+     */
+    static List<String> traceNames;
+
+    static List<int[]> traceSnaps;
+
+    private static void snap(String name, int[] edge) {
+        if (traceSnaps == null) return;
+        traceNames.add(name);
+        traceSnaps.add(edge.clone());
+    }
+
     /** A decomposition's result, for analyses that want to run on top of one. */
     record Labelling(NavMap map, int[] live, int liveCount, int[] edge, int edges) {}
 
@@ -113,24 +129,30 @@ public final class EdgeDecomposition {
 
         int edges = orbits(live, liveCount, succ, degree, cuts, edge);
         System.out.printf("orbits (SCCs of the gate-cut graph): %d%n", edges);
+        snap("orbits", edge);
         int distinct = mergePhases(map, live, liveCount, edge, edges);
         System.out.printf("after collapsing orbit phases: %d -> %d orbits%n", edges, distinct);
         edges = distinct;
+        snap("mergePhases", edge);
         int orbitCount = edges;
         edges = complementComponents(map, live, liveCount, succ, degree, edge, edges);
         System.out.printf("plus complement components: %d edges before refinement%n", edges);
+        snap("complementComponents", edge);
         if (mergeAlongsideEdges) {
             int alongside = mergeAlongside(map, live, liveCount, edge, edges, orbitCount);
             System.out.printf("after merging edges that run alongside: %d -> %d edges%n",
                     edges, alongside);
             edges = alongside;
+            snap("mergeAlongside", edge);
         } else {
             System.out.printf("alongside merge SKIPPED, %d edges%n", edges);
         }
         edges = refine(live, liveCount, succ, degree, pred, predDegree, edge, edges);
         System.out.printf("after refinement: %d edges%n", edges);
+        snap("refine", edge);
         edges = splitOrbits(map, live, liveCount, succ, degree, pred, predDegree, edge, edges);
         System.out.printf("%nafter cutting orbits: %d edges%n", edges);
+        snap("splitOrbits", edge);
         return new Labelling(map, live, liveCount, edge, edges);
     }
 
@@ -655,6 +677,7 @@ public final class EdgeDecomposition {
             int gPrime = edges++;
             for (int s : states) if (arrival[s]) edge[s] = gPrime;
             edges = refine(live, liveCount, succ, degree, pred, predDegree, edge, edges);
+            snap("splitOrbits pass " + pass + " after cut+refine", edge);
 
             int cut = chosen;
 
@@ -699,6 +722,7 @@ public final class EdgeDecomposition {
                                 MASK_LIMIT));
             }
             edges = refine(live, liveCount, succ, degree, pred, predDegree, edge, edges);
+            snap("splitOrbits pass " + pass + " after heal+refine", edge);
             skip.add(rep);
         }
         return edges;
