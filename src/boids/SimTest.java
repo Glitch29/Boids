@@ -1950,10 +1950,18 @@ public final class SimTest {
     /**
      * Whether edges running alongside one another are merged before refinement.
      * <p>
-     * The step identifies headings mod 32, so it merges an edge with its own inverse — which is
-     * why dabeone edge 8 is two mutually inverse regions rather than two edges. It exists to head
-     * off a blowup seen on plait, and that blowup may since have been the absorb defect rather
-     * than anything this was needed for.
+     * The step identifies headings mod 32, so it can merge an edge with its own inverse. Measured
+     * 2026-09-10 by running every map with it off:
+     * <ul>
+     *   <li><b>dabeone and dabnt: it merges nothing at all</b> — two edges in, two out, and the
+     *       labelling comes back byte-identical with it skipped. So dabeone edge 8 being two
+     *       mutually inverse regions is <em>not</em> this step's doing. It is what the axiom
+     *       produces: the scoring corridor has the same predecessor and successor edges travelled
+     *       either way, so it is one edge.</li>
+     *   <li><b>plait still needs it</b>, six edges to four. Skipped there, orbit 0 refines 7, 12,
+     *       14, 19, 45, 296, runs past the 63-edge mask and {@link #splitOrbits} throws. The
+     *       {@link #absorb} fix did not remove the need for it.</li>
+     * </ul>
      */
     static boolean mergeAlongsideEdges = true;
 
