@@ -836,6 +836,186 @@ public final class GateSplit {
         return chosen;
     }
 
+    /** Taus to try, as fractions of an edge's length. Weighted towards the ends. */
+    private static final double[] FRACTIONS =
+            {0.01, 0.03, 0.06, 0.12, 0.25, 0.50, 0.75, 0.88, 0.94, 0.97, 0.99};
+
+    /**
+     * Inserts a minimal {@code S} at a spread of taus along each edge, to see whether choosing one
+     * near an existing boundary always blows up.
+     * <p>
+     * <b>Fully conditioned</b>: partial tick, perfected both ways, unioned with its inverse and
+     * perfected again — the chain that settles nine of nine at the midpoint. That is deliberate.
+     * With a raw partial tick almost every placement blows up, midpoints included, so the
+     * conditioning has to be held fixed for the placement to be what is being measured.
+     */
+    public static void sweep(PresetScenarioParameter preset, SolverFacts.Gate gate,
+                             double minLength, int skipEdge) throws IOException {
+        Ground g = ground(preset, gate);
+        System.out.printf("%n=== %s @%s: near-edge sweep, S = one state + partial tick ===%n",
+                preset.name(), preset.ingest().hash());
+        System.out.printf("%-5s %7s %6s %5s %7s %7s  %s%n", "edge", "length", "tau", "|S|",
+                "to end", "pieces", "");
+
+        for (int e = 0; e < g.edges(); e++) {
+            if (g.m().length()[e] < minLength || e == skipEdge) continue;
+            for (double f : FRACTIONS) {
+                double want = g.m().length()[e] * f;
+                int chosen = nearestTau(g, e, want);
+                if (chosen < 0) continue;
+                final int on = e;
+                StateSet p = g.lattice().of(chosen).partialTick(StateSet.Steering.STRAIGHT)
+                        .backwardsPerfect().forwardsPerfect();
+                StateSet core = p.union(p.inverted()).backwardsPerfect().forwardsPerfect();
+                int[] sOn = Arrays.stream(core.toArray()).filter(s -> g.base()[s] == on).toArray();
+
+                int[] edge = g.base().clone();
+                for (int s : sOn) edge[s] = g.edges();
+                int after = EdgeDecomposition.refine(g.live(), g.liveCount(), g.succ(), g.degree(),
+                        g.pred(), g.predDegree(), edge, g.edges() + 1);
+
+                double tau = g.m().tick()[chosen];
+                double toEnd = Math.min(tau, g.m().length()[e] - tau);
+                System.out.printf("%-5d %7.1f %6.1f %5d %7.1f %7d  %s%n", e, g.m().length()[e],
+                        tau, sOn.length, toEnd, after,
+                        after == g.edges() + 3 ? "settles" : "blows up");
+            }
+        }
+    }
+
+    /**
+     * Inserts a minimal {@code S} at the most open point of each edge, to try to make {@code E⊥S}
+     * come apart into a piece on either side.
+     * <p>
+     * <b>Most open</b> means the largest {@code r} for which every {@code (x±r, y±r, d)} is a live
+     * state at the same heading — a square of clearance at fixed heading, which is a cheap stand-in
+     * for how far the state sits from a wall. A state in the middle of the corridor's width leaves
+     * room on both sides of it; one against a wall does not, and then {@code E⊥S} has only one
+     * side to be on.
+     */
+    public static void centred(PresetScenarioParameter preset, SolverFacts.Gate gate,
+                               double minLength, int skipEdge) throws IOException {
+        Ground g = ground(preset, gate);
+        System.out.printf("%n=== %s @%s: S at the most open point of each edge ===%n",
+                preset.name(), preset.ingest().hash());
+        System.out.printf("%-5s %10s %5s %6s %5s %7s  %s%n", "edge", "state", "clear", "tau",
+                "|S|", "pieces", "E_|_S components, tau range");
+
+        for (int e = 0; e < g.edges(); e++) {
+            if (g.m().length()[e] < minLength || e == skipEdge) continue;
+            int best = -1, bestR = -1;
+            for (int i = 0; i < g.liveCount(); i++) {
+                int s = g.live()[i];
+                if (g.base()[s] != e || Double.isNaN(g.m().tick()[s])) continue;
+                // Mid-edge only. The largest clearance anywhere on an edge is at a junction,
+                // where corridors cross and four edges share the pixels - the worst place to put
+                // S, and not what "room on either side" was asking for.
+                double t = g.m().tick()[s], len = g.m().length()[e];
+                if (t < 0.3 * len || t > 0.7 * len) continue;
+                int r = clearance(g.map(), s);
+                if (r > bestR) { bestR = r; best = s; }
+            }
+            if (best < 0) continue;
+
+            final int on = e;
+            StateSet core = g.lattice().of(best).partialTick(StateSet.Steering.STRAIGHT);
+            int[] sOn = Arrays.stream(core.toArray()).filter(s -> g.base()[s] == on).toArray();
+
+            int[] edge = g.base().clone();
+            for (int s : sOn) edge[s] = g.edges();
+            int after = EdgeDecomposition.refine(g.live(), g.liveCount(), g.succ(), g.degree(),
+                    g.pred(), g.predDegree(), edge, g.edges() + 1);
+
+            Side[] side = sides(g.base(), g.live(), g.liveCount(), e, sOn, g.succ(), g.degree(),
+                    g.pred(), g.predDegree());
+            int[] perp = new int[g.liveCount()];
+            int np = 0;
+            for (int i = 0; i < g.liveCount(); i++) {
+                int s = g.live()[i];
+                if (g.base()[s] == e && side[s] == Side.APART) perp[np++] = s;
+            }
+            int[] perpStates = Arrays.copyOf(perp, np);
+            int[] own = componentOf(perpStates, g.succ(), g.degree());
+            int comps = 0;
+            for (int c : own) comps = Math.max(comps, c + 1);
+
+            double sLo = Double.MAX_VALUE, sHi = -Double.MAX_VALUE;
+            for (int s : sOn) {
+                if (Double.isNaN(g.m().tick()[s])) continue;
+                sLo = Math.min(sLo, g.m().tick()[s]);
+                sHi = Math.max(sHi, g.m().tick()[s]);
+            }
+            double[] lo = new double[comps], hi = new double[comps];
+            int[] cnt = new int[comps];
+            Arrays.fill(lo, Double.MAX_VALUE);
+            Arrays.fill(hi, -Double.MAX_VALUE);
+            for (int i = 0; i < perpStates.length; i++) {
+                double t = g.m().tick()[perpStates[i]];
+                if (Double.isNaN(t)) continue;
+                lo[own[i]] = Math.min(lo[own[i]], t);
+                hi[own[i]] = Math.max(hi[own[i]], t);
+                cnt[own[i]]++;
+            }
+            StringBuilder where = new StringBuilder();
+            for (int c = 0; c < comps; c++) {
+                where.append(String.format(" [%.0f-%.0f]x%d%s", lo[c], hi[c], cnt[c],
+                        hi[c] < sLo ? "bef" : lo[c] > sHi ? "aft" : "spans"));
+            }
+            int turns = Params.TURNS, w = g.map().width();
+            System.out.printf("%-5d %10s %5d %6.1f %5d %7d  %d:%s%n", e,
+                    "(" + best / turns % w + "," + best / turns / w + "," + best % turns + ")",
+                    bestR, g.m().tick()[best], sOn.length, after, comps, where);
+        }
+    }
+
+    /** Largest {@code r} with every {@code (x±r, y±r, d)} alive at this state's own heading. */
+    private static int clearance(NavMap map, int s) {
+        int turns = Params.TURNS, w = map.width();
+        int d = s % turns, cell = s / turns, x = cell % w, y = cell / w;
+        for (int r = 1; r <= 8; r++) {
+            for (int dy = -r; dy <= r; dy++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= map.height()
+                            || !map.alive(nx, ny, d)) {
+                        return r - 1;
+                    }
+                }
+            }
+        }
+        return 8;
+    }
+
+    private static int nearestTau(Ground g, int e, double want) {
+        int chosen = -1;
+        double best = Double.MAX_VALUE;
+        for (int i = 0; i < g.liveCount(); i++) {
+            int s = g.live()[i];
+            if (g.base()[s] != e || Double.isNaN(g.m().tick()[s])) continue;
+            double d = Math.abs(g.m().tick()[s] - want);
+            if (d < best) { best = d; chosen = s; }
+        }
+        return chosen;
+    }
+
+    /** The decomposition, the clock and the adjacency, built once and shared by both sweeps. */
+    private record Ground(NavMap map, int[] live, int[] base, int liveCount, int edges,
+                          EdgeMetric.Metric m, MapStates lattice, int[] succ, byte[] degree,
+                          int[] pred, byte[] predDegree) {}
+
+    private static Ground ground(PresetScenarioParameter preset, SolverFacts.Gate gate)
+            throws IOException {
+        EdgeDecomposition.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
+                gate.lo(), gate.hi(), gate.dir());
+        EdgeMetric.Metric m = EdgeMetricStore.of(SimTest.structure(preset, gate).at("metric"),
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), SimTest.SCHEME,
+                SimTest.CHAIN);
+        int[][] adj = adjacency(l.map(), l.edge(), l.live(), l.liveCount());
+        return new Ground(l.map(), l.live(), l.edge(), l.liveCount(), l.edges(), m,
+                MapStates.of(l.map(), Flocking.of(preset.turningRadius()), l.live(), l.liveCount()),
+                adj[0], bytes(adj[1]), adj[2], bytes(adj[3]));
+    }
+
     private static final int[] PALETTE = {
         0xE6194B, 0x3CB44B, 0xFFE119, 0x4363D8, 0xF58231, 0x911EB4, 0x46F0F0, 0xF032E6,
         0xBCF60C, 0xFABEBE, 0x008080, 0xE6BEFF, 0x9A6324, 0x800000, 0xAAFFC3, 0x808000,

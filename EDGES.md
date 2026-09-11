@@ -239,6 +239,36 @@ Component counts seen on dabeone: **1** where the partial tick covered every pha
 did not, and **2** on edge 8 — two halves of 1,910 states apiece, which are its two mutually
 inverse regions. All merge to one.
 
+
+### Where `S` may be placed, measured
+
+**2026-09-11, dabeone, edge 8 excluded.** Eleven taus per edge across eight edges, `S` fully
+conditioned each time — partial tick, perfected both ways, unioned with its inverse, perfected
+again — so that placement is the only thing varying. **15 of 88 settle at twelve.**
+
+**There is a floor.** No placement closer than about **12 ticks** to an edge boundary settles
+anywhere, on any edge. The closest that does are edge 2 and edge 3 at 12.1.
+
+**Above the floor it is neither monotone nor symmetric.** Distance to the nearest boundary does
+not predict the outcome: dabeone edge 0 **blows up at tau 39.5 and settles at tau 118.6**, both of
+which are 39.5 ticks from an end. Edges 4 and 5 settle at their midpoint and nowhere else; edge 2
+settles at three of eleven taus.
+
+**Conditioning matters more than placement.** The same sweep with a raw partial tick and no
+perfection settles **1 of 88** — the midpoint of edge 2 — where the conditioned sweep settles 15.
+Midpoints included: an unconditioned `S` at the middle of edge 0 gives 297 pieces.
+
+**A swollen `S` predicts a blowup.** Conditioning a badly placed seed grows it — 82, 102, 78, 65
+states against the 5 to 14 typical of a good one. Not a clean rule (a 36-state `S` settles on edge
+7) but a strong hint, and free to check before spending a refinement.
+
+**Trap: maximising clearance finds junctions.** Picking the state with the largest square of live
+states at its own heading — the obvious reading of "room on either side" — lands on taus 1.5, 3.5
+and 7.3 on edges whose lengths are 100, 81 and 102, because the widest part of a map is where
+corridors cross and four edges share the pixels. Every one blew up. Constrained to the middle 40%
+of an edge, the same rule picks well: **four of eight settle on a minimal `S` with no conditioning
+at all**, which is the placement doing work the perfection chain otherwise has to.
+
 ### Navigation gates: gates that are not part of the decomposition
 
 The insertion above yields gates at **near-arbitrary precision**, and they do not have to be kept
