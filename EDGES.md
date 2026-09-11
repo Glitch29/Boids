@@ -276,6 +276,20 @@ corridors cross and four edges share the pixels. Every one blew up. Constrained 
 of an edge, the same rule picks well: **four of eight settle on a minimal `S` with no conditioning
 at all**, which is the placement doing work the perfection chain otherwise has to.
 
+
+**Seeing it: the cross-section, sliced by tau.** A map view cannot answer whether `S` divides an
+edge, because it collapses `d` and paints over every state sharing a pixel. The cross-section is
+two-dimensional — one axis across the corridor, and `d` — and `GateSplit.drawCrossSections` draws
+it, one tile per tick of tau, taken **perpendicular to travel** since an edge bends. Written to
+`render/gate-split/edge<e>-cross.png` and `-cross-zoom.png`.
+
+**What it shows on dabeone edge 4 is why `E⊥S` cannot bifurcate there.** The cross-section is a
+blob about ten states across and ten headings tall, and `S` — the state plus its partial tick — is
+**a single white pixel near the middle of it**. It touches no side at all. `E⊥S` therefore runs
+right around `S` and is connected, whatever its phase structure. **To split `E⊥S` into sides, `S`
+must reach two edges of that blob**, which nothing built so far attempts: the partial tick spreads
+`S` along the direction of travel, which is the one direction that does not help.
+
 ### Navigation gates: gates that are not part of the decomposition
 
 The insertion above yields gates at **near-arbitrary precision**, and they do not have to be kept

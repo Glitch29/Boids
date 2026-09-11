@@ -964,6 +964,10 @@ public final class GateSplit {
             if (comps > 1) {
                 drawComponents(g.map(), g.base(), g.live(), g.liveCount(), e, sOn, side,
                         perpStates, own, comps, "edge" + e);
+                drawCrossSections(g.map(), g.base(), g.live(), g.liveCount(), e, sOn, side,
+                        perpStates, own, g.m(), "edge" + e, 12, 4, "-cross");
+                drawCrossSections(g.map(), g.base(), g.live(), g.liveCount(), e, sOn, side,
+                        perpStates, own, g.m(), "edge" + e, 3, 16, "-cross-zoom");
             }
             int turns = Params.TURNS, w = g.map().width();
             System.out.printf("%-5d %10s %5d %6.1f %5d %7d  %d:%s%n", e,
@@ -1039,12 +1043,14 @@ public final class GateSplit {
         boolean[] inS = new boolean[base.length];
         for (int s : sOn) inS[s] = true;
 
-        // Roles first, components over the top of them.
+        // E<S and E>S first, components over them, and S last of all. S is a handful of states
+        // sharing pixels with hundreds of others, so anything painted after it hides it - which
+        // it was, until 2026-09-11.
         for (int i = 0; i < liveCount; i++) {
             int s = live[i];
-            if (base[s] != e) continue;
+            if (base[s] != e || inS[s]) continue;
             int cell = s / turns;
-            int role = inS[s] ? 0 : side[s] == Side.BEFORE ? 1 : side[s] == Side.AFTER ? 2 : -1;
+            int role = side[s] == Side.BEFORE ? 1 : side[s] == Side.AFTER ? 2 : -1;
             if (role >= 0 && paint[cell] < 0) paint[cell] = role;
         }
         for (int i = 0; i < perpStates.length; i++) {
@@ -1052,6 +1058,7 @@ public final class GateSplit {
             int c = 3 + own[i];
             if (paint[cell] < 3 || c < paint[cell]) paint[cell] = c;
         }
+        for (int s : sOn) paint[s / turns] = 0;
 
         int[] roleColour = {0xFFFFFF, 0x25408F, 0x8F2525};
         int[] compColour = {0x3CB44B, 0xFFE119, 0xF032E6, 0x46F0F0, 0xF58231, 0x911EB4,
@@ -1098,6 +1105,108 @@ public final class GateSplit {
             }
         }
         javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
+    /**
+     * The edge's cross-section, sliced by tau and taken perpendicular to travel.
+     * <p>
+     * <b>A corridor's cross-section is two-dimensional</b> — one axis across it, and {@code d}.
+     * That is the shape {@code S} has to cut in two for {@code E⊥S} to come apart into sides, and
+     * it cannot be seen in a map view, where {@code d} is collapsed and every state at a pixel is
+     * painted over by whichever is drawn last.
+     * <p>
+     * <b>Perpendicular, because an edge bends.</b> Slicing on a fixed screen axis gives tiles as
+     * wide as the edge's whole bounding box, nearly all of it empty. So each slice is a band of
+     * tau, and within it the across-coordinate is the offset perpendicular to the band's mean
+     * heading: {@code -(x-x̄) sin θ + (y-ȳ) cos θ}. Headings are averaged as angles rather than as
+     * numbers, since 0 and 63 are neighbours.
+     * <p>
+     * One tile per band, left to right in travel order; horizontal is across, vertical is all 64
+     * headings with 0 at the top. A tile is the parallelogram. <b>If {@code S} — white — does not
+     * reach two sides of it, {@code E⊥S} can get around {@code S} and will not split.</b>
+     */
+    private static void drawCrossSections(NavMap map, int[] base, int[] live, int liveCount, int e,
+                                          int[] sOn, Side[] side, int[] perpStates, int[] own,
+                                          EdgeMetric.Metric m, String name, int SPAN, int SCALE,
+                                          String SUFFIX) throws IOException {
+        int w = map.width(), turns = Params.TURNS;
+        boolean[] inS = new boolean[base.length];
+        for (int s : sOn) inS[s] = true;
+        int[] comp = new int[base.length];
+        Arrays.fill(comp, -1);
+        for (int i = 0; i < perpStates.length; i++) comp[perpStates[i]] = own[i];
+
+        double sMid = 0;
+        int sn = 0;
+        for (int s : sOn) if (!Double.isNaN(m.tick()[s])) { sMid += m.tick()[s]; sn++; }
+        sMid = sn == 0 ? 0 : sMid / sn;
+
+        // A band per tick of tau, for a dozen either side of S.
+        int span = SPAN;
+        List<List<Integer>> bands = new ArrayList<>();
+        for (int k = -span; k <= span; k++) bands.add(new ArrayList<>());
+        for (int i = 0; i < liveCount; i++) {
+            int s = live[i];
+            if (base[s] != e || Double.isNaN(m.tick()[s])) continue;
+            int k = (int) Math.round(m.tick()[s] - sMid);
+            if (k >= -span && k <= span) bands.get(k + span).add(s);
+        }
+
+        int scale = SCALE, gap = 3, across = 15, tileW = across * scale, tileH = turns * scale;
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
+                bands.size() * (tileW + gap), tileH + 14, 1);
+        int[] roleColour = {0xFFFFFF, 0x25408F, 0x8F2525};
+        int[] compColour = {0x3CB44B, 0xFFE119, 0xF032E6, 0x46F0F0, 0xF58231, 0x911EB4,
+                            0xBCF60C, 0xAAFFC3};
+        for (int p = 0; p < img.getWidth(); p++) {
+            for (int q = 0; q < img.getHeight(); q++) img.setRGB(p, q, 0x000000);
+        }
+
+        for (int b = 0; b < bands.size(); b++) {
+            List<Integer> band = bands.get(b);
+            if (band.isEmpty()) continue;
+            double cx = 0, cy = 0, sinSum = 0, cosSum = 0;
+            for (int s : band) {
+                int cell = s / turns;
+                cx += cell % w;
+                cy += cell / w;
+                double a = 2 * Math.PI * (s % turns) / turns;
+                sinSum += Math.sin(a);
+                cosSum += Math.cos(a);
+            }
+            cx /= band.size();
+            cy /= band.size();
+            double th = Math.atan2(sinSum, cosSum);
+            double nx = -Math.sin(th), ny = Math.cos(th);
+
+            int col = b * (tileW + gap);
+            boolean hasS = false;
+            for (int s : band) {
+                int cell = s / turns, d = s % turns;
+                double off = (cell % w - cx) * nx + (cell / w - cy) * ny;
+                int u = (int) Math.round(off) + across / 2;
+                if (u < 0 || u >= across) continue;
+                int rgb = inS[s] ? roleColour[0]
+                        : comp[s] >= 0 ? compColour[comp[s] % compColour.length]
+                        : side[s] == Side.BEFORE ? roleColour[1] : roleColour[2];
+                if (inS[s]) hasS = true;
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        img.setRGB(col + u * scale + sx, d * scale + sy, rgb);
+                    }
+                }
+            }
+            if (hasS) {
+                for (int sy = tileH + 4; sy < tileH + 10; sy++) {
+                    for (int sx = 0; sx < tileW; sx++) img.setRGB(col + sx, sy, 0xFFFFFF);
+                }
+            }
+        }
+        java.nio.file.Path dir = java.nio.file.Path.of("render", "gate-split");
+        java.nio.file.Files.createDirectories(dir);
+        javax.imageio.ImageIO.write(img, "png", dir.resolve(name + SUFFIX + ".png").toFile());
+        System.out.printf("        wrote %s%s.png: %d tau bands around %.1f, %d across x %d "
+                + "headings%n", name, SUFFIX, bands.size(), sMid, across, turns);
     }
 
     private static final int[] PALETTE = {
