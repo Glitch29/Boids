@@ -654,14 +654,55 @@ public final class GateSplit {
                 int s = live[i];
                 if (base[s] == e && side[s] == Side.APART) perp[np++] = s;
             }
-            int[] comps = components(Arrays.copyOf(perp, np), succ, degree, base, e, side);
+            int[] perpStates = Arrays.copyOf(perp, np);
+            int[] comps = components(perpStates, succ, degree, base, e, side);
+
+            // Give every component of E perp S an edge of its own, then let mergeAlongside put
+            // back together whatever its looser rule says belongs together. The hope is that what
+            // survives is one edge per side of S, so one or two.
+            int[] edge2 = edge.clone();
+            int[] own = componentOf(perpStates, succ, degree);
+            int first = after;
+            for (int i = 0; i < perpStates.length; i++) edge2[perpStates[i]] = first + own[i];
+            int total = first + comps.length;
+            EdgeDecomposition.mergeAlongside(map, live, liveCount, edge2, total, first);
+            java.util.TreeSet<Integer> left = new java.util.TreeSet<>();
+            for (int s : perpStates) left.add(edge2[s]);
 
             System.out.printf("%-5d %4d>%-4d %5s %6d %8s %8s %7s  %s%n", e, raw.size(), sOn.length,
                     wall ? "wall" : "-", after,
                     a.entrances() + (a.entrancesOk() ? " ok" : " BAD"),
                     a.exits() + (a.exitsOk() ? " ok" : " BAD"),
-                    np + "/" + comps.length,
+                    np + "/" + comps.length + ">" + left.size(),
                     after == edges + 3 ? "" : "<-- not 9 + 3");
+
+            // Where each component sits in tau against S. Components on both sides that merge into
+            // one mean the merge reached across S, which is a different thing from one side
+            // being empty.
+            double sLo = Double.MAX_VALUE, sHi = -Double.MAX_VALUE;
+            for (int s : sOn) {
+                if (Double.isNaN(m.tick()[s])) continue;
+                sLo = Math.min(sLo, m.tick()[s]);
+                sHi = Math.max(sHi, m.tick()[s]);
+            }
+            double[] lo = new double[comps.length], hi = new double[comps.length];
+            Arrays.fill(lo, Double.MAX_VALUE);
+            Arrays.fill(hi, -Double.MAX_VALUE);
+            int[] cnt = new int[comps.length];
+            for (int i = 0; i < perpStates.length; i++) {
+                int c = own[i];
+                double t = m.tick()[perpStates[i]];
+                if (Double.isNaN(t)) continue;
+                lo[c] = Math.min(lo[c], t);
+                hi[c] = Math.max(hi[c], t);
+                cnt[c]++;
+            }
+            StringBuilder where = new StringBuilder();
+            for (int c = 0; c < comps.length; c++) {
+                where.append(String.format("  [%.0f-%.0f]x%d%s", lo[c], hi[c], cnt[c],
+                        hi[c] < sLo ? "before" : lo[c] > sHi ? "after" : "SPANS"));
+            }
+            System.out.printf("        S tau %.0f-%.0f;%s%n", sLo, sHi, where);
         }
     }
 
@@ -726,6 +767,28 @@ public final class GateSplit {
         int k = 0;
         for (int v : size.values()) out[k++] = v;
         Arrays.sort(out);
+        return out;
+    }
+
+    /** Which component each state belongs to, numbered from zero in first-seen order. */
+    private static int[] componentOf(int[] states, int[] succ, byte[] degree) {
+        Map<Integer, Integer> index = new LinkedHashMap<>();
+        for (int i = 0; i < states.length; i++) index.put(states[i], i);
+        int[] parent = new int[states.length];
+        for (int i = 0; i < parent.length; i++) parent[i] = i;
+        for (int s : states) {
+            for (int j = 0; j < degree[s]; j++) {
+                Integer to = index.get(succ[s * 3 + j]);
+                if (to == null) continue;
+                int a = find(parent, index.get(s)), b = find(parent, to);
+                if (a != b) parent[a] = b;
+            }
+        }
+        Map<Integer, Integer> label = new LinkedHashMap<>();
+        int[] out = new int[states.length];
+        for (int i = 0; i < states.length; i++) {
+            out[i] = label.computeIfAbsent(find(parent, i), k -> label.size());
+        }
         return out;
     }
 

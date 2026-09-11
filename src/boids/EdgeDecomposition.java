@@ -327,8 +327,8 @@ public final class EdgeDecomposition {
      * and anything wrongly joined is separated again by refinement, which stops seeing the
      * two halves as agreeing about where they can go next.
      */
-    private static int mergeAlongside(NavMap map, int[] live, int liveCount, int[] edge,
-                                      int edges, int firstComplement) {
+    static int mergeAlongside(NavMap map, int[] live, int liveCount, int[] edge,
+                              int edges, int firstComplement) {
         int w = map.width(), turns = Params.TURNS, half = turns / 2;
         double reach = Params.speed(map.radius());
         double reach2 = reach * reach;

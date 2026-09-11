@@ -201,8 +201,9 @@ around whatever states it is given. Three conditions govern it:
    gate, because a traversal can enter and leave without ever meeting it.
 2. **Closure, which the algorithm can and should fix**, as a further perfection step: any state
    that can navigate both **to** and **from** a state of `S` without leaving `E` belongs in `S`.
-3. **Phase completeness, optional.** Where `S` is phase-complete, `E⊥S` comes out as two
-   disconnected regions, which can then be separated into edges of their own.
+3. **Phase completeness, optional.** Where `S` is phase-complete, `E⊥S` comes out as fewer
+   disconnected regions — see below for what those regions actually are, which is not what this
+   condition was first written to expect.
 
 **Relationship to `splitOrbits`.** The cut-and-heal in §3 step 6 is the same operation, and the
 trace shows it plainly — during dabeone's first orbit cut, final edge 2 sits in three pieces at
@@ -223,6 +224,20 @@ refinement past the 63-edge mask; unioning the inverse settles it at once.
 > that step's doing; it is what the axiom produces, the scoring corridor having the same
 > predecessor and successor edges travelled either way. The requirement to check the inverse holds
 > regardless of which cause applies on a given map.
+
+
+**`E⊥S` has no sides — it is the phases that bypass `S`.** Splitting it into connected components
+and then merging with `mergeAlongside` was expected to leave one edge per side of `S`, so one or
+two. It leaves **exactly one, every time**, and the tau ranges say why: every component *spans*
+`S` rather than sitting before or after it. On dabeone edge 6, `S` is at tau 36-37 and the four
+components run [29-46], [28-46], [28-45] and [29-45], of 428, 428, 427 and 393 states — four
+phase offsets of one stretch of corridor, not four regions. `E<S` and `E>S` already take
+everything genuinely before and after; what is left over is only the parallel phases, and
+`mergeAlongside` rejoining them is exactly the job it was written for.
+
+Component counts seen on dabeone: **1** where the partial tick covered every phase, **4** where it
+did not, and **2** on edge 8 — two halves of 1,910 states apiece, which are its two mutually
+inverse regions. All merge to one.
 
 ### Navigation gates: gates that are not part of the decomposition
 
