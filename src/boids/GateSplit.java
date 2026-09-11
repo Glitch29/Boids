@@ -961,6 +961,10 @@ public final class GateSplit {
                 where.append(String.format(" [%.0f-%.0f]x%d%s", lo[c], hi[c], cnt[c],
                         hi[c] < sLo ? "bef" : lo[c] > sHi ? "aft" : "spans"));
             }
+            if (comps > 1) {
+                drawComponents(g.map(), g.base(), g.live(), g.liveCount(), e, sOn, side,
+                        perpStates, own, comps, "edge" + e);
+            }
             int turns = Params.TURNS, w = g.map().width();
             System.out.printf("%-5d %10s %5d %6.1f %5d %7d  %d:%s%n", e,
                     "(" + best / turns % w + "," + best / turns / w + "," + best % turns + ")",
@@ -1014,6 +1018,86 @@ public final class GateSplit {
         return new Ground(l.map(), l.live(), l.edge(), l.liveCount(), l.edges(), m,
                 MapStates.of(l.map(), Flocking.of(preset.turningRadius()), l.live(), l.liveCount()),
                 adj[0], bytes(adj[1]), adj[2], bytes(adj[3]));
+    }
+
+    /**
+     * Draws one edge coloured by what the insertion made of it, with {@code E⊥S}'s connected
+     * components each in their own colour.
+     * <p>
+     * <b>Two pictures, because the question is whether the components are phases.</b> The whole
+     * map at 2x says where they lie; a crop at 8x says whether they interleave pixel by pixel — an
+     * evenly spread speckle is phase and not structure, §8. A pixel carries up to 64 headings, so
+     * where several states of the edge share one the component with the lowest index wins; nothing
+     * may be read from the shadow beyond whether it is speckled.
+     */
+    private static void drawComponents(NavMap map, int[] base, int[] live, int liveCount, int e,
+                                       int[] sOn, Side[] side, int[] perpStates, int[] own,
+                                       int comps, String name) throws IOException {
+        int w = map.width(), h = map.height(), turns = Params.TURNS;
+        int[] paint = new int[w * h];
+        Arrays.fill(paint, -1);
+        boolean[] inS = new boolean[base.length];
+        for (int s : sOn) inS[s] = true;
+
+        // Roles first, components over the top of them.
+        for (int i = 0; i < liveCount; i++) {
+            int s = live[i];
+            if (base[s] != e) continue;
+            int cell = s / turns;
+            int role = inS[s] ? 0 : side[s] == Side.BEFORE ? 1 : side[s] == Side.AFTER ? 2 : -1;
+            if (role >= 0 && paint[cell] < 0) paint[cell] = role;
+        }
+        for (int i = 0; i < perpStates.length; i++) {
+            int cell = perpStates[i] / turns;
+            int c = 3 + own[i];
+            if (paint[cell] < 3 || c < paint[cell]) paint[cell] = c;
+        }
+
+        int[] roleColour = {0xFFFFFF, 0x25408F, 0x8F2525};
+        int[] compColour = {0x3CB44B, 0xFFE119, 0xF032E6, 0x46F0F0, 0xF58231, 0x911EB4,
+                            0xBCF60C, 0xAAFFC3};
+
+        // The crop follows the components, since that is what is being looked at.
+        int lx = w, hx = 0, ly = h, hy = 0;
+        for (int s : perpStates) {
+            int cell = s / turns, x = cell % w, y = cell / w;
+            lx = Math.min(lx, x); hx = Math.max(hx, x);
+            ly = Math.min(ly, y); hy = Math.max(hy, y);
+        }
+
+        java.nio.file.Path dir = java.nio.file.Path.of("render", "gate-split");
+        java.nio.file.Files.createDirectories(dir);
+        write(map, paint, roleColour, compColour, 0, 0, w, h, 2,
+                dir.resolve(name + "-components.png"));
+        int pad = 6;
+        write(map, paint, roleColour, compColour, Math.max(0, lx - pad), Math.max(0, ly - pad),
+                Math.min(w, hx + pad + 1), Math.min(h, hy + pad + 1), 8,
+                dir.resolve(name + "-components-zoom.png"));
+        System.out.printf("        wrote %s-components.png and -zoom.png (crop %d,%d to %d,%d)%n",
+                name, lx, ly, hx, hy);
+    }
+
+    private static void write(NavMap map, int[] paint, int[] roleColour, int[] compColour,
+                              int x0, int y0, int x1, int y1, int scale,
+                              java.nio.file.Path out) throws IOException {
+        int w = map.width();
+        java.awt.image.BufferedImage img =
+                new java.awt.image.BufferedImage((x1 - x0) * scale, (y1 - y0) * scale, 1);
+        for (int y = y0; y < y1; y++) {
+            for (int x = x0; x < x1; x++) {
+                int p = paint[x + y * w];
+                int rgb = map.oob(x, y) ? 0x000000
+                        : p < 0 ? 0x191C22
+                        : p < 3 ? roleColour[p]
+                        : compColour[(p - 3) % compColour.length];
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        img.setRGB((x - x0) * scale + sx, (y - y0) * scale + sy, rgb);
+                    }
+                }
+            }
+        }
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
     }
 
     private static final int[] PALETTE = {

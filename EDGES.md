@@ -239,6 +239,13 @@ Component counts seen on dabeone: **1** where the partial tick covered every pha
 did not, and **2** on edge 8 — two halves of 1,910 states apiece, which are its two mutually
 inverse regions. All merge to one.
 
+**Rendered, and it is unambiguous.** `render/gate-split/edge4-components-zoom.png` draws edge 4 at
+8x with each component in its own colour: the four come out as **interleaved one-pixel stripes
+repeating on a four-pixel cycle** down the middle of the corridor, bracketed by `E<S` at one end
+and `E>S` at the other. Four phase offsets of a single trajectory, sampled a tick apart — not four
+regions, and nothing lateral about them. The step is ~3.925 px, which is the period on the
+picture.
+
 
 ### Where `S` may be placed, measured
 
