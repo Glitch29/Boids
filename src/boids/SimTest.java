@@ -2398,11 +2398,9 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        SolverFacts.Gate plait = new SolverFacts.Gate(true, 360, 335, 350, 0);
-
-        Pipeline.build(PresetScenarioParameter.DABEONE, dab);
-        Pipeline.build(PresetScenarioParameter.DABNT, dab);
-        Pipeline.build(PresetScenarioParameter.PLAIT, plait);
+        for (GateSplit.Shape s : GateSplit.Shape.values()) {
+            GateSplit.insert(PresetScenarioParameter.EDGE_TEST, dab, 50, s);
+        }
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

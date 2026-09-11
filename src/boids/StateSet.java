@@ -115,6 +115,26 @@ public interface StateSet {
     StateSet forwardsPerfect();
 
     /**
+     * Everything trapped between two members, added to this set: any state of {@code within} that
+     * can navigate <em>both</em> to and from a member without leaving {@code within}.
+     * <p>
+     * <b>The condition an inserted edge has to satisfy, and the one the caller cannot be asked to
+     * supply.</b> A set with a dent in it — reachable from one member and reaching another, but
+     * not itself included — is not a well-formed edge, because the states in the dent have the
+     * same futures and pasts as the members around them and the axiom will not keep them apart.
+     * Filling the dent is what makes an arbitrary set insertable. `EDGES.md` §2a.
+     * <p>
+     * <b>One pass is enough.</b> A state added here is already reachable from the set and already
+     * reaches it, so admitting it enlarges neither the forward nor the backward reachable set, and
+     * nothing new can qualify on a second look. Unlike {@link #backwardsPerfect} and
+     * {@link #forwardsPerfect} this needs no fixed point — and it runs <b>before</b> both of them,
+     * since it is about the set's own shape rather than about what surrounds it.
+     *
+     * @param within the edge the set is being inserted into; reachability never leaves it
+     */
+    StateSet interiorPerfect(StateSet within);
+
+    /**
      * The same states travelled the other way: this set's mirror image.
      * <p>
      * <b>The inverse of {@code (x, y, d)} is {@code (x - stepX(d), y - stepY(d), d + TURNS/2)}</b>

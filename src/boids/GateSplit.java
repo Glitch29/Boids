@@ -575,6 +575,204 @@ public final class GateSplit {
         return new int[][]{succ, degree, pred, predDegree};
     }
 
+    /** How a seed state is grown into the set that gets inserted. */
+    public enum Shape {
+        /** The construction that reaches nine of nine: partial tick, perfected, plus its inverse. */
+        GOOD,
+        /**
+         * Deliberately concave: the state and its unsteered successor, partial-ticked together,
+         * then the successor taken back out. That leaves a dent — a state reachable from one
+         * member and reaching another, but not itself a member — which is exactly what
+         * {@link StateSet#interiorPerfect} exists to fill.
+         */
+        CONCAVE,
+        /** The same dent, with interior perfection applied. Should behave like {@link #GOOD}. */
+        CONCAVE_FIXED,
+    }
+
+    /**
+     * Inserts one set into one edge and checks everything the insertion is supposed to guarantee.
+     * <p>
+     * Reports, per edge: whether the reachability <b>assertion</b> holds on the supplied set, how
+     * many pieces refinement produced, and how many connected components {@code E⊥S} falls into.
+     * That last is the open question — the axiom splits on predecessor and successor edges and
+     * never on connectivity, so two regions with identical neighbours stay one edge however
+     * disconnected they are.
+     */
+    public static void insert(PresetScenarioParameter preset, SolverFacts.Gate gate,
+                              double minLength, Shape shape) throws IOException {
+        EdgeDecomposition.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
+                gate.lo(), gate.hi(), gate.dir());
+        NavMap map = l.map();
+        int[] live = l.live(), base = l.edge();
+        int liveCount = l.liveCount(), edges = l.edges();
+        EdgeMetric.Metric m = EdgeMetricStore.of(SimTest.structure(preset, gate).at("metric"),
+                map, base, live, liveCount, edges, SimTest.SCHEME, SimTest.CHAIN);
+        MapStates lattice = MapStates.of(map, Flocking.of(preset.turningRadius()), live, liveCount);
+
+        int[][] adj = adjacency(map, base, live, liveCount);
+        int[] succ = adj[0], pred = adj[2];
+        byte[] degree = bytes(adj[1]), predDegree = bytes(adj[3]);
+
+        System.out.printf("%n=== %s @%s: edge insertion, S = %s ===%n", preset.name(),
+                preset.ingest().hash(), shape);
+        System.out.printf("%-5s %9s %5s %6s %8s %8s %7s  %s%n", "edge", "|S| dent>fix", "OOB",
+                "pieces", "entrances", "exits", "perp", "notes");
+
+        for (int e = 0; e < edges; e++) {
+            if (m.length()[e] < minLength) continue;
+            final int on = e;
+            StateSet within = lattice.of(statesOf(base, live, liveCount, e));
+            int chosen = middleOf(base, live, liveCount, m, e);
+
+            StateSet raw = grow(map, lattice, within, chosen, Shape.CONCAVE);
+            StateSet core = grow(map, lattice, within, chosen, shape);
+            int[] sOn = Arrays.stream(core.toArray()).filter(s -> base[s] == on).toArray();
+
+            // Does S touch a wall? A state with fewer than three predecessors or successors has
+            // had turns taken away by the veto, which only happens next to out of bounds.
+            boolean wall = false;
+            for (int s : sOn) if (degree[s] < 3 || predDegree[s] < 3) wall = true;
+
+            // The assertion. An entrance is an on-edge state with an off-edge predecessor; an
+            // exit is an OFF-edge state with an on-edge predecessor. Every entrance must reach S
+            // and every exit be reachable from it, or the result is not a gate.
+            Assertion a = assertReach(base, live, liveCount, e, sOn, succ, degree, pred,
+                    predDegree);
+
+            int[] edge = base.clone();
+            for (int s : sOn) edge[s] = edges;
+            int after = EdgeDecomposition.refine(live, liveCount, succ, degree, pred, predDegree, edge,
+                    edges + 1);
+
+            // E perp S: on E, not in S, neither reaching S nor reached by it. Split it into
+            // connected components of the transition graph, ignoring direction.
+            Side[] side = sides(base, live, liveCount, e, sOn, succ, degree, pred, predDegree);
+            int[] perp = new int[liveCount];
+            int np = 0;
+            for (int i = 0; i < liveCount; i++) {
+                int s = live[i];
+                if (base[s] == e && side[s] == Side.APART) perp[np++] = s;
+            }
+            int[] comps = components(Arrays.copyOf(perp, np), succ, degree, base, e, side);
+
+            System.out.printf("%-5d %4d>%-4d %5s %6d %8s %8s %7s  %s%n", e, raw.size(), sOn.length,
+                    wall ? "wall" : "-", after,
+                    a.entrances() + (a.entrancesOk() ? " ok" : " BAD"),
+                    a.exits() + (a.exitsOk() ? " ok" : " BAD"),
+                    np + "/" + comps.length,
+                    after == edges + 3 ? "" : "<-- not 9 + 3");
+        }
+    }
+
+    /** What the reachability assertion found. */
+    private record Assertion(int entrances, boolean entrancesOk, int exits, boolean exitsOk) {}
+
+    private static Assertion assertReach(int[] base, int[] live, int liveCount, int e, int[] s,
+                                         int[] succ, byte[] degree, int[] pred, byte[] predDegree) {
+        boolean[] reachesS = walk(base, e, s, pred, predDegree);   // can get to S
+        boolean[] fromS = walk(base, e, s, succ, degree);          // S can get to
+        boolean[] inS = new boolean[base.length];
+        for (int t : s) inS[t] = true;
+
+        int entrances = 0, entrancesOk = 0, exits = 0, exitsOk = 0;
+        for (int i = 0; i < liveCount; i++) {
+            int t = live[i];
+            if (base[t] == e) {
+                boolean entrance = false;
+                for (int j = 0; j < predDegree[t]; j++) {
+                    if (base[pred[t * 3 + j]] != e) entrance = true;
+                }
+                if (entrance) {
+                    entrances++;
+                    if (reachesS[t] || inS[t]) entrancesOk++;
+                }
+            } else {
+                // An exit is off the edge, with a predecessor on it.
+                boolean exit = false, from = false;
+                for (int j = 0; j < predDegree[t]; j++) {
+                    int p = pred[t * 3 + j];
+                    if (base[p] != e) continue;
+                    exit = true;
+                    if (fromS[p] || inS[p]) from = true;
+                }
+                if (exit) {
+                    exits++;
+                    if (from) exitsOk++;
+                }
+            }
+        }
+        return new Assertion(entrances, entrancesOk == entrances, exits, exitsOk == exits);
+    }
+
+    /** Connected components of a state set, ignoring the direction of travel. */
+    private static int[] components(int[] states, int[] succ, byte[] degree, int[] base, int e,
+                                    Side[] side) {
+        Map<Integer, Integer> index = new LinkedHashMap<>();
+        for (int i = 0; i < states.length; i++) index.put(states[i], i);
+        int[] parent = new int[states.length];
+        for (int i = 0; i < parent.length; i++) parent[i] = i;
+        for (int s : states) {
+            for (int j = 0; j < degree[s]; j++) {
+                Integer to = index.get(succ[s * 3 + j]);
+                if (to == null) continue;
+                int a = find(parent, index.get(s)), b = find(parent, to);
+                if (a != b) parent[a] = b;
+            }
+        }
+        Map<Integer, Integer> size = new LinkedHashMap<>();
+        for (int i = 0; i < parent.length; i++) size.merge(find(parent, i), 1, Integer::sum);
+        int[] out = new int[size.size()];
+        int k = 0;
+        for (int v : size.values()) out[k++] = v;
+        Arrays.sort(out);
+        return out;
+    }
+
+    private static int find(int[] parent, int x) {
+        while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+    }
+
+    private static StateSet grow(NavMap map, MapStates lattice, StateSet within, int chosen,
+                                 Shape shape) {
+        if (shape == Shape.GOOD) {
+            StateSet p = lattice.of(chosen).partialTick(StateSet.Steering.STRAIGHT)
+                    .backwardsPerfect().forwardsPerfect();
+            return p.union(p.inverted()).backwardsPerfect().forwardsPerfect();
+        }
+        // The state and its unsteered successor, partial-ticked together, then the successor
+        // taken back out. The hole it leaves is reachable from one member and reaches another,
+        // which is exactly the dent interiorPerfect is for.
+        int straight = map.successor(chosen, 0);
+        StateSet dented = lattice.of(chosen, straight)
+                .partialTick(StateSet.Steering.STRAIGHT).minus(lattice.of(straight));
+        if (shape == Shape.CONCAVE) return dented;
+        // Interior perfection first, then exactly the chain GOOD gets, so the only difference
+        // between the two rows is the dent and whether it was filled.
+        StateSet p = dented.interiorPerfect(within).backwardsPerfect().forwardsPerfect();
+        return p.union(p.inverted()).backwardsPerfect().forwardsPerfect();
+    }
+
+    private static int[] statesOf(int[] base, int[] live, int liveCount, int e) {
+        int[] out = new int[liveCount];
+        int n = 0;
+        for (int i = 0; i < liveCount; i++) if (base[live[i]] == e) out[n++] = live[i];
+        return Arrays.copyOf(out, n);
+    }
+
+    private static int middleOf(int[] base, int[] live, int liveCount, EdgeMetric.Metric m, int e) {
+        double target = m.length()[e] / 2, best = Double.MAX_VALUE;
+        int chosen = -1;
+        for (int i = 0; i < liveCount; i++) {
+            int s = live[i];
+            if (base[s] != e || Double.isNaN(m.tick()[s])) continue;
+            double d = Math.abs(m.tick()[s] - target);
+            if (d < best) { best = d; chosen = s; }
+        }
+        return chosen;
+    }
+
     private static final int[] PALETTE = {
         0xE6194B, 0x3CB44B, 0xFFE119, 0x4363D8, 0xF58231, 0x911EB4, 0x46F0F0, 0xF032E6,
         0xBCF60C, 0xFABEBE, 0x008080, 0xE6BEFF, 0x9A6324, 0x800000, 0xAAFFC3, 0x808000,

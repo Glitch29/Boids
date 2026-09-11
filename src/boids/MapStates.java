@@ -324,6 +324,32 @@ public final class MapStates {
             return true;
         }
 
+        public StateSet interiorPerfect(StateSet within) {
+            Bits ahead = spread(within, true), behind = spread(within, false);
+            Bits b = new Bits(bits);
+            for (int s : within.toArray()) if (ahead.get(s) && behind.get(s)) b.set(s);
+            return new Set(b);
+        }
+
+        /** Everything the set reaches, or is reached by, without leaving {@code within}. */
+        private Bits spread(StateSet within, boolean forward) {
+            Bits seen = new Bits(cells);
+            ArrayList<Integer> queue = new ArrayList<>();
+            for (int s : toArray()) { seen.set(s); queue.add(s); }
+            int[] out = new int[3];
+            for (int i = 0; i < queue.size(); i++) {
+                int v = queue.get(i);
+                int n = forward ? map.steeredSuccessors(v, out) : map.steeredPredecessors(v, out);
+                for (int j = 0; j < n; j++) {
+                    int u = out[j];
+                    if (seen.get(u) || !within.contains(u)) continue;
+                    seen.set(u);
+                    queue.add(u);
+                }
+            }
+            return seen;
+        }
+
         public StateSet inverted() {
             Bits b = new Bits(cells);
             int turns = Params.TURNS;
