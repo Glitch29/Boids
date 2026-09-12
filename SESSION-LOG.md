@@ -11,6 +11,39 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-11 — the cross-section view, and what a cut across it has to be
+
+**The cross-section view is the tool of the day.** `GateSplit.drawCrossSections`: one tile per
+tick of tau, taken perpendicular to travel, across × `d`. It showed at once why `E⊥S` could not
+bifurcate on dabeone edge 4 — `S` was a single pixel in the middle of a ten-by-ten blob, touching
+no side — and it is kept as the standing way to look at a constricted stretch when diagnosing a
+decomposition. Named in `GLOSSARY.md`.
+
+**Tested what shape a cut across the cross-section has to be**, on edge 4 at x=222, straight,
+axis-aligned, no phase bleed. Ten lines through the 52-state diamond, phase-completed, `E⊥S` split
+into components and merged back, each survivor called by the sign of the line at its states.
+**Only a line at constant `d` bifurcates `E⊥S`** — into 250 and 250, none straddling. Every other
+orientation, thin or thick, leaves one piece that straddles. Exactly the prediction from the step
+geometry: `d` changes by at most one per tick and cannot be skipped; `y` moves by `stepY(d)`,
+which is 2 at the diamond's top and bottom, so any line with a `y` component has a hole there.
+
+**Phase completeness turned out to be essential for the opposite reason to the one expected.** A
+step is 4 px, so a line at one `x` is reachable by one phase in four; the other three formed a
+5,883-state `E⊥S` spanning the whole edge on every line. "No phase bleed" does not mean the
+partial tick can be skipped — it means nothing else will bring those phases onto `S`. Once it did,
+exit coverage went 94% to 100% everywhere.
+
+**Two dead ends before the answer, both now documented.** The map renderer was painting
+components over `S`, so `S` was invisible; and a cross-section sliced on a fixed screen axis gives
+tiles as wide as the edge's bounding box, since an edge bends — it has to be perpendicular to the
+local heading. Also: refinement's piece count is not the test for whether a line cuts, since a
+bifurcated `E⊥S` is two edges and the pockets beside a line are fragmentary. Capped at two rounds.
+
+**Open.** The user's sketch for constructing a cut on a map that is not phase-locked — score a
+one-tick band of tunnel −1 to 1 per state and find the removal that maximises the sum of squared
+sums over the remaining connected pieces — is recorded in `EDGES.md` §2a as a definition, not an
+algorithm.
+
 ## 2026-09-10 — the decomposition moves out, and gates get a construction
 
 **`EdgeDecomposition` extracted from `SimTest`**, 822 lines holding the axiom and all six steps

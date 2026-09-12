@@ -3,7 +3,7 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-10. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-11. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
