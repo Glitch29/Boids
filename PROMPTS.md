@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-330 prompts across 12 sessions.
+355 prompts across 12 sessions.
 
 ---
 
@@ -10174,7 +10174,7 @@ About to close this thread. Just double checking that everything's wrapped up. I
 
 ## Session 12 - 2026-09-08
 
-*Log `f088cd7e-837d-454b-97cb-72ac40260363`, 3 prompts.*
+*Log `f088cd7e-837d-454b-97cb-72ac40260363`, 28 prompts.*
 
 ### 1
 
@@ -10311,3 +10311,212 @@ if (decision.hasGateType(Decision.Gate.SHORTCUT)) {
 }
 
 Regarding putting more info into Decision. That seems like a very reasonable place to access it. Functionally it's the same as accessing it from state, but it can be accessed before creating a State from a Decision.
+
+### 4
+
+I'll come back to those questions next turn. But first I need to quickly check something. It should be possible to define a gate using a single state and the edge decomposition algorithm. But I want to actually prove it.
+
+If we have an edge E, and choose a state S on it, somewhere far away from other interesting features. We then split the edge into two edges: E-S and S. Running edge refinement should then split E-S into three edges: E<S states that can reach S, E⊥S states that can neither reach nor be reached by S, E>S states that can be reached by S. Including S, that's the original edge E decomposed into 4 new edges that all satisfy the edge axiom.
+
+We then let gate G be the set of states not in E<S whose straight predecessors are in E.
+
+We chose S to be a single state, which is always a valid edge (although not necessarily part of a valid edge decomposition). But it should be possible in theory with any collection of states S*, where S* is a valid edge.
+
+I'd like to test this by running edge decomposition on edge_test.png, then choosing a state near the middle of edge in tau space for each edge at least 50 units in length
+
+To do this, first run edge decomposition as is on edge_test.png to make sure it still works. It's been a while since we've ingested a new map. Assuming it does, run whatever gets us tau measurements. Then pick a state in the center of each edge in tau space.
+
+Then rerun edge decomposition, split the chosen states off of their edges into new edges, and refine again. There should be an edge renderer of some sort to display the result. I'm not sure if it produces the render automatically or if it needs to be invoked separately.
+
+### 5
+
+Right, this makes sense. The issue is whether the entire edge entrance is part of E<S and the entire edge exit is part of E>S. Since S existed only in a single phase, full coverage required some phase bleed to be available.
+
+So the theory works, the only issue is edge blowup, which would eventually reduce the map into each state being an individual edge. Technically a valid edge decomposition, and in fact the only legal one that's consistent with the manual edge splitting. Edge blowup isn't a bug. It's just a consequence of edge splits that cut into too small of a grain size.
+
+Let's try this again, except instead of a single state on each edge, take the union of the state and its partial unsteered forward tick to be S. I think there's already a helper function to get the partial unsteered forward tick.
+
+### 6
+
+One potential cause of failure would be partialTick doing more than it says on the tin. Quick turn, but could you just report the number of states returned by partialTick?
+
+Where it's used elsewhere in the code, partialTick is usually part of a larger operation. Checking the resulting number of states will tell me if partialTick is doing anything else.
+
+### 7
+
+I figured out the reason for blow-up. It starts because some states are capable of reaching both S and E>S. Those become their own edges.
+
+Funnily enough, this is cured iff S is a gate for some theoretical edge. The only reason that S is not a gate in the previous construction was that partialTick contains at least one (probably exactly one) state and its successor.
+
+There's an operation that cures this that should be made into a helper if it isn't already.  It's for some collection of states S*, return all elements of S* with no predecessors in S*.
+
+### 8
+
+What I said last turn was a fix for something that wasn't a problem. Some states would be capable of reaching both S and E>S, that was correct. But that wasn't the cause of the blow up. Those wouldn't cause a split since all of those states were already in E>S.
+
+Actual issue is that some states in E>S couldn't reach E⊥S while others could. This has a different fix. Such states should be part of S.
+
+Forget front(). Instead we need to backwards perfect S*, so that states which can't avoid S* are part of S*.
+
+After partial tick is applied, the next operation needs to be applied recursively until it settles. For each predecessor P of S*, check if all its successors are in S*. If so, add P to S*.
+
+If this fixes the problem, I'd be curious to see whether partialTick was even fixing any blow up. While phasing issues absolutely can be the cause of blow up, lack of backwards-perfection with only a single source edge absolutely will.
+
+### 9
+
+I should have thought about this, but forward perfection is also a thing. Exactly what you'd think. States that can only be reached from S should be part of S. Hopefully that's the only other issue in the multiple issues.
+
+### 10
+
+Okay. New approach to diagnosis. Rather than running the refine() until it settles, let's just run it twice and report on the splits. The first split I think should always produce 2 additional edges, getting us to the desired 12. The split after that will only take place if one or more edges at that point is malformed.
+
+Only using partial tick perfected:
+
+Can you identify the edges E<S, E>S, E⊥S, S by edge number after the first refine, then check which edge(s) (E<S, E>S, E⊥S, S, or some other edge) split in the second refinement, and what the disagreement between successors/predecessors is that causes that split?
+
+### 11
+
+Okay, this is the best possible news! This is actually a bug in the edge decomposition algorithm that once fixed will never trouble us again. It may have been a cause of earlier strife as well.
+
+I realized when spec'ing the original edge decomposition algorithm that this could theoretically be an issue down the line. But I deferred it because it would only affect edges less than 1 tick in length, which weren't a thing at the time.
+
+The answer is that being able to path to any of {all of E's successors, E and zero or more of E's successors} should be treated as an equivalence class. Likewise, the ability to be pathed to from {all of E's predecessors, E and zero or more of E's predecessors}.
+
+The current algorithm basically applies this equivalence class once, to see if an edge E paths to something the equivalent of itself, and from something the equivalent of itself. But this could theoretically be done recursively, any number of times.
+
+So for E<S on edge zero, its successors {E⊥S, S, E>S} are equivalent to {E⊥S, S} since {S} and {S, E>S} are both "S and zero or more of its successors" which are part of an equivalence class. {E⊥S, S} is equivalent to {E<S} as "All of E<S's successors ({E⊥S, S}) is equivalent to E<S (and zero of its successors)."
+
+The second of those two conversions is implicitly done by the code. The things that get to remain in E are things that path to all of E's successors. But the first reduction is not accounted for.
+
+### 12
+
+backwardsPerfect and forwardsPerfect should each loop until they settle. Is it possible that when I told you they don't need to be in a combined loop, you made them not loop at all?
+
+### 13
+
+I think I figured it out. It's the same bug in the perfection code that existed in the base decomposition algorithm. And it makes sense why it would affect an exceedingly small number of states.
+
+Some of the candidates for backwards perfection have successors that are successors of S, rather than being in S themselves.
+
+The fix is easy, but I'm not entirely sure if it will have side effects. Rather than checking whether all successors are in S, check if all successors are in S union S's successors when doing backwards perfection. Vice-versa for forwards perfection.
+
+Once that fix is in place, I'm not longer certain about the independence of backwards and forwards perfection. I feel like they're probably still independent. But the proof for it isn't trivial anymore and my brain is tired.
+
+### 14
+
+I was thinking freeze succ(S) at the seed, but I didn't specify because I think it's irrelevant (aside from wasted computation). By definition, anything that gets added during backwards perfection only has successors that are already in S+succ(S).
+
+Let's just focus on perfecting one direction at a time. So we can see if one causes the break. Or if it's alternation.
+
+### 15
+
+Oh. I see one problem. I can't guarantee it's the only problem, but widening the candidate set is going to admit things that shouldn't be admitted. Not widening it might also under-admit.
+
+I should probably get some sleep and come back tomorrow with a fresh mind. But let's try just not widening the candidate set. I'm not even going to make a prediction about what it will do.
+
+### 16
+
+Fantastic. I'm curious - does edge 8 blow up completely now? Or just create some small finite number of extra edges.
+
+### 17
+
+No need for further testing after anything blows past 64. I'm sure if it hit the cap of 64 it blew up completely. And it's certainly due to the split hitting the edge boundary.
+
+There are a couple other things I want to check before moving on, though. The first is if the edge 8 blowup is due to edge 8 containing two isolated segments. (Edge 8 is comprised of two regions which are inverses of one another.)
+
+In order to test that, union the contents of S with S' before running refine. The exact definition of the inverse of a point should be hiding somewhere. I think it involves offsetting d by 32 and then taking a step. Worth confirming though. There might already be a helper to invert a set.
+
+### 18
+
+Fantastic. The reason edge 8 was the union of two unconnected edges was because of a blowup problem we were having earlier on plait. But I'm wondering if that was entirely resolved with our last fix, and the edge-inverse merger step is no longer required. Try removing that step from the edge decomposition procedure and see if plait still decomposes. I think it should get 2 new edges as a result, and dabeone should get 1 new edge. If they blow past the 64 cap, there's no need to test any higher.
+
+### 19
+
+Where does edge decomposition live? I'm having a hard time finding it in the code.
+
+### 20
+
+Go ahead and do that.
+
+### 21
+
+Could you check where in the algorithm (what eventually becomes) edge 0 and edge 3 split apart from one another? I expected that that logic would also split edge 8 into two pieces at the same time.
+
+I'm wondering if we're using edge 8's scoring zone as a bootstrap. That's all I can think about that's different between 0 and 8.
+
+### 22
+
+Oh, shoot. I was naming the wrong edge pair. Edges 0 and 1 are the inverse pair, not 0 and 3.
+
+### 23
+
+A few things:
+
+Go ahead and do that cleanup you asked about a couple turns ago regarding Pipeline.
+
+Noted that the gate generation procedure and the cut-and-heal procedure are very similar. The difference is that the cut-and-heal procedure leads to a very specific cut, manufactured to work. And what we came up with this session inserts the minimal well-formed edge around a mostly arbitrary set of states into any decomposition.
+
+The only requirements for S to be inserted into E are:
+
+* All entrances on E (on-edge states with an off-edge predecessor) can navigate to S. All exit states from E (off-edge states with an on-edge predecessor) can be navigated to by some point on S.
+* Any state that can forwards- and backwards-navigate to a state on S without leaving E, is in S.
+* [Optional] S is phase-complete. If so, E⊥S will contain two disconnected regions that can be separated into their own edges.
+
+
+The first requirement needs to be an assertion about the provided S, and the second requirement can be handled by the algorithm as another perfection step.
+
+With the ability to do this arbitrary edge insertion, we also have the ability to create well-formed gates with near arbitrary precision. Any transition between edges is well-formed by the edge axiom.
+
+These gates can serve as additional edges in navigation logic despite not being part of the actual decomposition. This is how on-edge navigation can be handled for shortcuts/longcuts. Pick an S that bounds navigation along a wall, generate the gate that includes the edge transitions {E<S to E⊥S (left), E<S to S} and omits {E<S to E⊥S (right)} This gate can prevent psyboid from traveling through it using the same greedy lookahead algorithm that controls navigation across edges.
+
+I figured out the answer to my own question. mergeAlongside intentionally declines to separate edges from their inverses. This helped with a blowup in plait, and in most cases those edges would be separated at a later step unless both directions were functionally identical.
+
+That was fine at the time, and might still be fine. But it does add a slight hiccup to edge insertion. As long as it remains, arbitrary edge insertion will also need to check whether S' is same-edge.
+
+Could you update the relevant docs with these notes?
+
+### 24
+
+I'd like to test my all of my assertions, and verify that the interior perfection operation works as intended.
+
+We can continue using the same testing ground.
+
+I thought that checking whether E⊥S is separable can be done with the existing machinery. But I'm beginning to question whether that's something that I knew could be implemented but never actually was implemented. The fact that edge 8 never splits makes me think it wasn't implemented, perhaps because it was never needed because predecessor and successor edges caused all the splits without need for connectivity-based splits.
+
+Regardless, try splitting E⊥S into its separate graphs. This should normally be 2 if S is in the interior of E and there is sufficient phase bleed. But it may be up to 8 if there isn't phase bleed. These can be merged via mergeAlongside. If S abuts an OOB region (can be checked based on whether each state has 3 predecessors and 3 successors), E⊥S might not split.
+
+The second and third test are that this will fail if the input S's interior is not convex, and that it will succeed again if we apply a process to perfect its interior.
+
+One reasonable way to create a purposefully concave S is to take the starting state S, union its unsteered successor, partial forward tick, and then remove the unsteered successor of the original state.
+
+I think you can handle writing a procedure to perfect S's interior. It would go before forwards/backwards perfection.
+
+I'm also curious to validate whether edge decomposition always blows up if S is chosen too close to an existing edge. Or if there are circumstances where it can actually settle. No need for exhaustive testing on this. But trying a dozen or so points should make the results clear.
+
+### 25
+
+Ah. I failed to specify it. But my intention was that E⊥S be split into one edge for each connected component. mergeAlongside specifies looser rules for connectivity, and would hopefully rejoin those edges into exactly 1 or 2.
+
+Don't worry about OOB testing right now. A better option is to do visualization of the split of E⊥S, should it be necessary. If all of those merge into exactly 1 or 2 E⊥S edges, everything is good. If E⊥S remains split into 3+ pieces, lets visualize those edges.
+
+Ideally, the disjoint pieces will be 1-4 pieces (depending on phase bleed) on either side of S. Although sometimes one side of S will be an empty set with 0 pieces. Each side should merge back into a single edge.
+
+### 26
+
+Go ahead pick a few points we can use for both the near edge sweep and possibly manifesting the E⊥S split.
+
+We can ignore edge 8 because it's weird and I don't think it's worth spending thought on right now.
+
+For these tests, we'll want to have rather minimal S. Just a state and partial tick. The S tested for the near-edge sweep can be any motley collection of points. For the ones designed to see a bifurcated E⊥S, S and the straight successor of S should be roughly in the middle of an edge, width-wise. One way to do this would be to fix a d, and then find the largest (x-r,y-r,x+r,y+r) square where ever (x_i,y_i,d) is a state, and then have S be (x,y,d) and its partial tick. I'm also ambiened at this point, so feel free to do something better. Goal is just to have clearance around either side of S.
+
+### 27
+
+Render edge 4's four components so I can see them
+
+### 28
+
+I'm confused where S actually is in that map. I see E<S (red), E>S (blue) and E⊥S (green, turquoise, magenta, yellow) But I can't figure out the location and orientation of S.
+
+Although this has got me to thinking that E⊥S is much more heavily connected than I thought at first. The cross section is 2-dimensional, with a left-to-right axis and a d axis. In order for S to bifurcate E⊥S, it must contact 2 edges of that parallelogram-esque shape.
+
+I can't imagine being able to visualize this without the aid of something in 3d. You're the expert here for graphical implementations. So I'm not even going to offer a suggestion, for fear that you'll tunnel on a bad idea of mine. Just whatever sort of 3d visualization that you know how to do.

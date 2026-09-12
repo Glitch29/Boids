@@ -2398,7 +2398,7 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        GateSplit.centred(PresetScenarioParameter.EDGE_TEST, dab, 50, 8);
+        GateSplit.lines(PresetScenarioParameter.EDGE_TEST, dab, 4, 222);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

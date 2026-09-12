@@ -1209,6 +1209,151 @@ public final class GateSplit {
                 + "headings%n", name, SUFFIX, bands.size(), sMid, across, turns);
     }
 
+    /**
+     * Draws lines across one cross-section of a straight, axis-aligned edge and uses each as
+     * {@code S}, to see which shapes bifurcate {@code E⊥S}.
+     * <p>
+     * The cross-section is every state of the edge at one {@code x}, which on a corridor running
+     * along {@code x} with no phase bleed is one tau band exactly. Within it a state is
+     * {@code (y, d)}: {@code y} across the corridor, {@code d} the heading. A line is a set of those,
+     * and the question is what a line has to look like to cut the cross-section in two.
+     * <p>
+     * <b>What the step geometry says should happen.</b> A tick changes {@code d} by at most one,
+     * so a line at <em>constant {@code d}</em> spanning every {@code y} cannot be stepped over:
+     * any path from below it to above it lands on {@code d0} at some tick, and at the tau of the
+     * line that landing is in {@code S}. A line at <em>constant {@code y}</em> is different:
+     * {@code y} moves by {@code stepY(d)} per tick, which is 0 near the along-track heading and
+     * grows to 2 a few headings off it, so at the top and bottom of the cross-section a boid can
+     * jump {@code y0} without touching it. Diagonals sit in between. That is the prediction; the
+     * table is the test.
+     */
+    public static void lines(PresetScenarioParameter preset, SolverFacts.Gate gate, int e,
+                             int x) throws IOException {
+        Ground g = ground(preset, gate);
+        int turns = Params.TURNS, w = g.map().width();
+
+        // The cross-section, and its extent in y and d.
+        List<Integer> cross = new ArrayList<>();
+        int yLo = Integer.MAX_VALUE, yHi = -1, dLo = Integer.MAX_VALUE, dHi = -1;
+        for (int i = 0; i < g.liveCount(); i++) {
+            int s = g.live()[i];
+            if (g.base()[s] != e) continue;
+            int cell = s / turns;
+            if (cell % w != x) continue;
+            int y = cell / w, d = s % turns;
+            cross.add(s);
+            yLo = Math.min(yLo, y); yHi = Math.max(yHi, y);
+            dLo = Math.min(dLo, d); dHi = Math.max(dHi, d);
+        }
+        System.out.printf("%n=== %s: edge %d cross-section at x=%d: %d states, y %d-%d, d %d-%d "
+                + "===%n", preset.name(), e, x, cross.size(), yLo, yHi, dLo, dHi);
+        for (int d = dLo; d <= dHi; d++) {
+            StringBuilder row = new StringBuilder(String.format("   d=%-3d ", d));
+            for (int y = yLo; y <= yHi; y++) {
+                int s = (x + y * w) * turns + d;
+                row.append(g.base()[s] == e && g.map().alive(x, y, d) ? '#' : '.');
+            }
+            System.out.printf("%s   stepY=%d%n", row, g.map().stepY(d));
+        }
+        int y0 = (yLo + yHi) / 2, d0 = (dLo + dHi) / 2;
+
+        // A line is a signed function of (y, d): negative below, zero on, positive above. The
+        // thin form is where it is zero; the thick form adds one. Signing it is what lets each
+        // surviving piece of E_|_S be called above or below, which is the whole test.
+        record Line(String name, java.util.function.IntBinaryOperator f, boolean thick) {}
+        List<Line> specs = List.of(
+                new Line("horizontal d=" + d0, (y, d) -> d - d0, false),
+                new Line("horizontal 2 thick", (y, d) -> d - d0, true),
+                new Line("vertical y=" + y0, (y, d) -> y - y0, false),
+                new Line("vertical 2 thick", (y, d) -> y - y0, true),
+                new Line("diagonal y-y0 = d-d0", (y, d) -> (y - y0) - (d - d0), false),
+                new Line("diagonal 2 thick", (y, d) -> (y - y0) - (d - d0), true),
+                new Line("anti-diagonal y-y0 = d0-d", (y, d) -> (y - y0) + (d - d0), false),
+                new Line("anti-diagonal 2 thick", (y, d) -> (y - y0) + (d - d0), true),
+                new Line("shallow d-d0 = 2(y-y0)", (y, d) -> (d - d0) - 2 * (y - y0), false),
+                new Line("steep y-y0 = 2(d-d0)", (y, d) -> (y - y0) - 2 * (d - d0), false));
+
+        System.out.printf("%n%-28s %4s %5s %5s %9s  %s%n", "line", "|S|", "in", "out",
+                "2 rounds", "E_|_S after merge: below / straddling / above  (sizes)");
+        for (Line spec : specs) {
+            int[] raw = cross.stream().filter(s -> {
+                int cell = s / turns;
+                int v = spec.f().applyAsInt(cell / w, s % turns);
+                return v == 0 || (spec.thick() && v == 1);
+            }).mapToInt(Integer::intValue).toArray();
+            if (raw.length == 0) continue;
+            // Phase-complete the line. A step is 4 px, so a line at one x is reachable by one
+            // phase in four; the partial tick adds the intermediate samples of each state's own
+            // step, which on an axis-aligned stretch is the same (y, d) at the three other x's.
+            // "No phase bleed" means this is essential rather than unnecessary: nothing else
+            // will bring the other phases onto S.
+            StateSet set = g.lattice().of(raw).partialTick(StateSet.Steering.STRAIGHT);
+            final int on = e;
+            int[] sOn = Arrays.stream(set.toArray()).filter(s -> g.base()[s] == on).toArray();
+
+            Side[] side = sides(g.base(), g.live(), g.liveCount(), e, sOn, g.succ(), g.degree(),
+                    g.pred(), g.predDegree());
+
+            int entrances = 0, entrancesOk = 0, exits = 0, exitsOk = 0;
+            List<Integer> perp = new ArrayList<>();
+            for (int i = 0; i < g.liveCount(); i++) {
+                int s = g.live()[i];
+                if (g.base()[s] != e) continue;
+                if (side[s] == Side.APART) perp.add(s);
+                boolean entrance = false, exit = false;
+                for (int j = 0; j < g.predDegree()[s]; j++) {
+                    if (g.base()[g.pred()[s * 3 + j]] != e) entrance = true;
+                }
+                for (int j = 0; j < g.degree()[s]; j++) {
+                    if (g.base()[g.succ()[s * 3 + j]] != e) exit = true;
+                }
+                if (entrance) { entrances++; if (side[s] != Side.APART) entrancesOk++; }
+                if (exit) { exits++; if (side[s] == Side.AFTER || side[s] == Side.AT) exitsOk++; }
+            }
+            int[] perpStates = perp.stream().mapToInt(Integer::intValue).toArray();
+            int[] own = componentOf(perpStates, g.succ(), g.degree());
+            int comps = 0;
+            for (int c : own) comps = Math.max(comps, c + 1);
+
+            // Merge the phase copies the way the insertion does, then call each survivor by the
+            // sign of the line at its states: all negative is below, all positive is above, and
+            // any mix means the piece straddles the line - which is the line failing to cut.
+            int[] edge2 = g.base().clone();
+            int first = g.edges() + 1;
+            for (int i = 0; i < perpStates.length; i++) edge2[perpStates[i]] = first + own[i];
+            EdgeDecomposition.mergeAlongside(g.map(), g.live(), g.liveCount(), edge2,
+                    first + comps, first);
+            Map<Integer, int[]> tally = new LinkedHashMap<>();   // id -> {below, above, size}
+            for (int s : perpStates) {
+                int cell = s / turns;
+                int v = spec.f().applyAsInt(cell / w, s % turns);
+                int[] t = tally.computeIfAbsent(edge2[s], k -> new int[3]);
+                if (v < 0) t[0]++; else if (v > (spec.thick() ? 1 : 0)) t[1]++;
+                t[2]++;
+            }
+            int below = 0, above = 0, straddle = 0;
+            StringBuilder sizes = new StringBuilder();
+            for (int[] t : tally.values()) {
+                String tag;
+                if (t[0] > 0 && t[1] > 0) { straddle++; tag = "~"; }
+                else if (t[0] > 0) { below++; tag = "-"; }
+                else { above++; tag = "+"; }
+                sizes.append(' ').append(tag).append(t[2]);
+            }
+
+            int[] edge = g.base().clone();
+            for (int s : sOn) edge[s] = g.edges();
+            int r1 = EdgeDecomposition.refineOnce(g.live(), g.liveCount(), g.succ(), g.degree(),
+                    g.pred(), g.predDegree(), edge, g.edges() + 1).edges();
+            int r2 = EdgeDecomposition.refineOnce(g.live(), g.liveCount(), g.succ(), g.degree(),
+                    g.pred(), g.predDegree(), edge, r1).edges();
+
+            System.out.printf("%-28s %4d %4.0f%% %4.0f%% %4d->%-4d  %d / %d / %d %s%n",
+                    spec.name(), sOn.length, 100.0 * entrancesOk / Math.max(1, entrances),
+                    100.0 * exitsOk / Math.max(1, exits), r1, r2, below, straddle, above, sizes);
+        }
+    }
+
     private static final int[] PALETTE = {
         0xE6194B, 0x3CB44B, 0xFFE119, 0x4363D8, 0xF58231, 0x911EB4, 0x46F0F0, 0xF032E6,
         0xBCF60C, 0xFABEBE, 0x008080, 0xE6BEFF, 0x9A6324, 0x800000, 0xAAFFC3, 0x808000,

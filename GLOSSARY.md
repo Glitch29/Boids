@@ -687,6 +687,8 @@ anything not listed.
 | viability kernel / navmap | `NavMapBuilder` → `NavMap` | in memory |
 | edge decomposition | `EdgeDecomposition`, driven by `SimTest.decompose` | `<ingest>/edges/` |
 | edge insertion / gate construction | `GateSplit`, run by hand | printed; renders in `render/gate-split/` |
+| cross-section view | `GateSplit.drawCrossSections` — one tile per tick of tau, across x `d`, perpendicular to travel | `render/gate-split/edge<e>-cross.png`, `-cross-zoom.png` |
+| cut-line test | `GateSplit.lines` — lines across one cross-section, phase-completed, `E⊥S` sided | printed |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

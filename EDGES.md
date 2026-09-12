@@ -277,7 +277,8 @@ of an edge, the same rule picks well: **four of eight settle on a minimal `S` wi
 at all**, which is the placement doing work the perfection chain otherwise has to.
 
 
-**Seeing it: the cross-section, sliced by tau.** A map view cannot answer whether `S` divides an
+**Seeing it: the cross-section, sliced by tau — keep this; it is the way to look at a constricted
+stretch when diagnosing a decomposition.** A map view cannot answer whether `S` divides an
 edge, because it collapses `d` and paints over every state sharing a pixel. The cross-section is
 two-dimensional — one axis across the corridor, and `d` — and `GateSplit.drawCrossSections` draws
 it, one tile per tick of tau, taken **perpendicular to travel** since an edge bends. Written to
@@ -286,9 +287,68 @@ it, one tile per tick of tau, taken **perpendicular to travel** since an edge be
 **What it shows on dabeone edge 4 is why `E⊥S` cannot bifurcate there.** The cross-section is a
 blob about ten states across and ten headings tall, and `S` — the state plus its partial tick — is
 **a single white pixel near the middle of it**. It touches no side at all. `E⊥S` therefore runs
-right around `S` and is connected, whatever its phase structure. **To split `E⊥S` into sides, `S`
-must reach two edges of that blob**, which nothing built so far attempts: the partial tick spreads
-`S` along the direction of travel, which is the one direction that does not help.
+right around `S` and is connected, whatever its phase structure. **The actual requirement for
+`E⊥S` to split is a phase-complete bifurcation of this cross-section**, whose two axes are `d`
+and the `(x, y)` translation orthogonal to `d`'s step vector — and which shapes achieve that is
+measured directly below.
+
+
+### What a line across the cross-section has to be, tested
+
+**2026-09-11, dabeone edge 4 at x=222**, a straight axis-aligned stretch with no phase bleed. The
+cross-section there is 52 states in a diamond — 8 wide in `y` at the along-track headings 31–33,
+tapering to 2 at `d`=28 and 36 — and the thing that decides everything is the third column:
+
+```
+d=28  ....##..   stepY=2
+d=29  ..#####.   stepY=1
+d=30  .#######   stepY=1
+d=31  ########   stepY=0
+d=32  ########   stepY=0
+d=33  ########   stepY=0
+d=34  #######.   stepY=-1
+d=35  .#####..   stepY=-1
+d=36  ..##....   stepY=-2
+```
+
+**Prediction.** A tick changes `d` by at most one, so a line at constant `d` cannot be stepped over:
+any path from below it to above it lands on `d0`. But `y` moves by `stepY(d)` per tick, which is 0
+on the axis and **2** at the top and bottom of the diamond — so at `d`=28 or 36 a boid jumps a
+constant-`y` line without touching it, and any line with a `y` component has that hole.
+
+**Result.** Ten lines, each phase-completed, `E⊥S` split into components and merged back, each
+survivor called by the sign of the line at its states:
+
+| line | pieces of `E⊥S` below / straddling / above |
+| --- | --- |
+| **constant `d` (all `y`)** | **1 / 0 / 1** — 250 and 250 |
+| constant `d`, two thick | 1 / 0 / 1 |
+| constant `y` (all `d`) | 0 / **1** / 0 |
+| constant `y`, two thick | 0 / **1** / 0 |
+| both diagonals, thin and thick | 0 / **1** / 0 |
+| shallow and steep | 0 / **1** / 0 |
+
+**Only a constant-`d` line bifurcates `E⊥S`**, and it does so exactly, into two equal halves.
+Every other orientation leaves one piece that straddles the line — `E⊥S` gets round it at the
+`stepY`=2 headings. So the connectivity a cut needs is **one state per `y`, all at one `d`**: it is
+the `d` axis that cannot be skipped, not the spatial one.
+
+**Phase completeness is not optional here, and "no phase bleed" is the reason.** A step is 4 px,
+so a line drawn at one `x` is reachable by one phase in four, and the other three make a
+5,883-state `E⊥S` that spans the whole edge and swamps everything. With no bleed nothing else
+brings those phases onto `S`; the partial tick has to. Once it does, exit coverage goes 94% to 100%
+on every line and `E⊥S` collapses to the pockets beside `S`.
+
+**Refinement does not settle on any of these, and that is expected**, since a bifurcated `E⊥S` is
+two edges and the pockets beside a line are small and fragmentary. The piece count from
+`refine()` is not the test for this question; the component sides are. Runs are capped at two
+rounds accordingly.
+
+**On a map that is not phase-locked** the cut will need constructing rather than drawing, and the
+user's sketch of it is worth keeping: take a one-tick band of the tunnel, score each state −1 to 1
+for the side it should end up on, and find the set of removed states that maximises the total
+square of the sums over the remaining connected pieces. Whether an algorithm for that or something
+near it exists is open.
 
 ### Navigation gates: gates that are not part of the decomposition
 
