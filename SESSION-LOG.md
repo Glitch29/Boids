@@ -42,6 +42,14 @@ bifurcated `E⊥S` is two edges and the pockets beside a line are fragmentary. C
 **Open.** The user's sketch for constructing a cut on a map that is not phase-locked — score a
 one-tick band of tunnel −1 to 1 per state and find the removal that maximises the sum of squared
 sums over the remaining connected pieces — is recorded in `EDGES.md` §2a as a definition, not an
+
+**Close-out.** `HINTS.md` gains §3a — gates, edge insertion, and what a cut across a corridor has
+to be — as the transferable account; §11 gains the two ways a split looks like a blowup and is
+not; §13 gains the next question. `ROADMAP.md` §0i ends with where this stands and what the next
+session starts with: **whether a bifurcated `E⊥S`, properly merged, can be kept as two edges
+without the decomposition blowing up downstream.** The user expects not — that `E⊥S` can be in
+several parts for analysis or psyboid logic, but they cannot be made to satisfy the axiom — in
+which case a split `E⊥S` is a navigation-gate object rather than a decomposition object.
 algorithm.
 
 ## 2026-09-10 — the decomposition moves out, and gates get a construction

@@ -6,7 +6,8 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-06, physics 3. Figures taken under physics 2 are marked as such. This file is
+**Status:** 2026-09-11, physics 3. Figures taken under physics 2 are marked as such. §3a added
+2026-09-11: gates, edge insertion, and what a cut across a corridor has to be. This file is
 also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
@@ -276,6 +277,96 @@ Things that cost time:
   holds could never see).
 
 ---
+
+## 3a. Gates, and inserting an edge into a decomposition
+
+Written 2026-09-11 after three sessions on it. This is the physics of cutting an edge in two at
+a chosen place, which is what a gate is, and everything here transfers to any map with the same
+step geometry.
+
+**An edge is a corridor with no side doors.** The memorable form of the axiom, and the one that
+stops the recurring mistake. Edges are cut exactly where a boid's options change, so inside one
+they cannot: a boid on an edge *will* traverse it and leave by a successor, nothing can push it
+out early, and every state on it has the same exits ahead and entrances behind. Anyone reasoning
+about a boid being "displaced off" an edge mid-way has made a category error.
+
+**A gate is a set met exactly once per traversal**, and it does not need a separate proof. Split
+a chosen set `S` off an edge `E` and refine: `E` comes apart into `S`, `E<S` (can reach `S`),
+`E>S` (reachable from `S`) and `E⊥S` (neither). Every transition between two edges is well-formed
+by the axiom, so the boundary of `E<S` is a gate for free. `E<S` is never re-entered — if a state
+steps to somewhere that reaches `S`, it reaches `S` itself — so a traversal crosses out of it at
+most once, and exactly once when every entrance of `E` can reach `S`. **That reachability is an
+assertion about `S`, not something the algorithm can repair.** Measured: 0 violations in 18 runs.
+
+**`S` itself is not the gate.** A handful of states in a corridor hundreds wide is walked straight
+past on another phase. Every exit of every dabeone edge was reachable from an entrance while
+avoiding `S`, in every variant tried.
+
+**Refinement had a defect this exposed, and it is fixed.** Reaching `X` and reaching `X`'s
+successors are one fact, not two — `{X}`, `{all of X's successors}` and `{X} + some of them` are
+one equivalence class. The algorithm applied that once, implicitly, and never reduced a mask that
+held both an edge and something downstream of it, so `E<S` was split over whether it could slip
+into `E>S` while both sides agreed they reach `S`. Known to be needed when the algorithm was first
+specified and deferred because it only bites on sub-tick edges. Reducing masks to their class
+before grouping changes nothing on any existing map — byte-identical labellings on all three —
+and took the construction from four of nine edges to eight.
+
+**Seeding `S` needs three things, and their order is not the obvious one.**
+
+1. *Phase completeness.* A step is ~4 px, so a set at one `x` is reachable by **one phase in
+   four**; the other three form an `E⊥S` that spans the whole edge. The partial tick fills them
+   in. **This is essential precisely when there is no phase bleed** — with bleed, traffic does it
+   for you; without, nothing else will. The intuition runs the other way and is wrong.
+2. *Perfection, both directions.* A state whose every successor is in `S` or one step past it is
+   indistinguishable from a member by where it can get to, and belongs in; likewise a state whose
+   every predecessor is. Backwards does nearly all the work; forwards alone is worth little but is
+   what settles the one edge backwards cannot. **The candidate set must stay narrow** — the
+   predecessors of members and nothing further — even though the admission rule looks one step
+   past `S`. Widening it to match let dabeone edge 0 swallow itself whole, all 17,028 states.
+3. *The inverse.* A self-inverse edge is two mutually inverse regions in one edge, and a split
+   that reaches only one of them blows past the mask. Union `S` with its inverse. The inverse of
+   `(x, y, d)` is `(x − stepX(d), y − stepY(d), d + 32)` — one step back down the heading, then
+   flipped — and it is an exact involution over every live state.
+
+With all three, every edge of dabeone comes apart into exactly the predicted four.
+
+**Placement matters less than conditioning, and there is a floor.** Fully conditioned, 15 of 88
+placements settle; a raw partial tick settles one. Nothing within ~12 ticks of a boundary settles
+anywhere, and above that the outcome is neither monotone nor symmetric — dabeone edge 0 blows up
+at tau 39.5 and settles at 118.6, both 39.5 from an end. A swollen `S` after conditioning is a
+free warning that the placement is bad. And *maximising clearance finds junctions*: the widest
+square of live states at a heading is where corridors cross, the worst place to seed.
+
+**`E⊥S` has no sides; it is the phases that bypass `S`.** `E<S` and `E>S` already take everything
+genuinely before and after, so what is left is the parallel phase offsets — four where the seed
+was on one, rendered as one-pixel stripes on a four-pixel cycle down the corridor. The two
+regions a phase-complete `S` was expected to leave never appear on their own.
+
+**To split `E⊥S` you have to cut the cross-section, and only one orientation does.** The
+cross-section of a corridor is two-dimensional: one axis across it, and `d`. `d` changes by at
+most one per tick and **cannot be skipped**; the across-coordinate moves by `stepY(d)`, which is
+0 on the axis and **2** a few headings off it, so it can. Tested with ten lines through a 52-state
+cross-section on a straight, phase-locked stretch: a line at **constant `d` spanning every across
+value** bifurcates `E⊥S` into two equal halves with nothing straddling; every other orientation —
+constant across, either diagonal, thin or thick — leaves one piece that wraps around it. The cut
+that works is "one state per across-value, all at one `d`". `EDGES.md` §2a has the table.
+
+**Look at the cross-section, not the map.** A map view collapses `d` and paints every state at a
+pixel over the last, so it cannot show whether a set divides an edge. Slice by tau, take the
+cross-section perpendicular to the local heading, draw across × `d` per tick. It showed at a
+glance that the seed everyone had been reasoning about was a single pixel in the middle of a
+ten-by-ten blob, touching no side.
+
+**A directional cut is what separates an inverse pair.** The two directions of one corridor stay
+one piece through every stage of the decomposition until an orbit is cut with a set of states at
+one pixel and *one heading*. That set is inherently directional, and it is the first thing
+refinement can tell the two directions apart by. An edge that receives no such cut — dabeone's
+self-inverse scoring edge — comes out whole.
+
+**A gate kept out of the decomposition is how on-edge navigation is done.** Insert an edge, keep a
+chosen subset of the transitions it creates, and hand the result to navigation logic only: a boid
+under the ordinary one-step lookahead cannot cross a boundary it was not sent to, so a gate placed
+where a wall is bounds a shortcut without any new kind of steering.
 
 ## 4. The clock — tick values and edge lengths
 
@@ -998,6 +1089,13 @@ replacement throws instead.
 
 ## 11. Things that look like findings and are not
 
+0. **A shattered decomposition after a split.** Two ways to get one that are not findings: a
+   split with more than 63 edges going in, which the mask cannot hold, so `refine` returns a
+   grouping that was never a fixed point; and adjacency built from `NavMap.successor`, which
+   returns the veto-constrained successor and so reports one state up to three times. The
+   decomposition skips a vetoed turn. Both looked exactly like blowups. Refine the unchanged
+   decomposition first as a control: nine in, nine out, or nothing after it means anything.
+
 1. **Phase combs.** Anything that comes out as an evenly-spread speckle rather than a region.
 2. **A stale cache.** Identical numbers after a real fix means the cache key is wrong.
 3. **Extremes at edge crossings.** Usually the rounding of an edge length, not a bug in the clock.
@@ -1074,3 +1172,12 @@ Documents:
 - Whether the momentum lift survives conditioning on state: `P(turn | state, last)` against
   `P(turn | state)` was never measured, so the 2.4× unconditional lift may be map geometry
   the state-based weighting already has.
+- **Whether a bifurcated `E⊥S` can be kept as two edges without the decomposition blowing up
+  downstream.** The cut is known — constant `d` across the cross-section — and it produces two
+  clean halves; what is not known is whether those halves satisfy the axiom against everything
+  beyond them. The user's expectation is no: that `E⊥S` can be in several parts for analysis or
+  psyboid logic, but they cannot be made to follow the edge axiom. Next session starts here.
+- Constructing a cut on a map that is not phase-locked. Drawing one at constant `d` works where
+  the corridor is straight and locked; elsewhere the cut has to be found. One definition: score a
+  one-tick band of tunnel −1 to 1 per state and choose the removal maximising the sum of squared
+  sums over the remaining connected pieces. No algorithm yet.

@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-09-10. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-11. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it. **§0i is the live thread — read that first.** §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
@@ -1821,6 +1821,35 @@ Two conditions on `S` fall out of §2a and want building:
 - **The closure condition is another perfection step**: any state that can navigate both to and
   from `S` without leaving `E` belongs in `S`. This is a third operator alongside
   `backwardsPerfect` and `forwardsPerfect`, and does not exist yet.
+
+
+### Where this stands, and what the next session starts with — 2026-09-11
+
+**The construction works on dabeone, nine of nine**, and the machinery that makes it work is
+known and named: absorb in refinement, perfection in both directions with a narrow frontier, the
+partial tick for phase completeness, and the inverse for a self-inverse edge. `EDGES.md` §2a is
+canonical for all of it; `HINTS.md` §3a is the transferable version.
+
+**What a cut across a corridor has to be is now measured, not guessed**: constant `d`, spanning
+the across-axis, because `d` is the one axis a boid cannot skip. That bifurcates `E⊥S` exactly.
+The cross-section view that made it visible is a standing diagnostic.
+
+**The next session starts by asking whether that bifurcation survives.** With the constant-`d` cut
+and proper merging, `E⊥S` comes apart into two clean halves — but whether those two halves can be
+kept as separate edges *without the decomposition blowing up downstream of them* has not been
+tested. **The user expects the answer is no**: that `E⊥S` can have several parts for analysis or
+for psyboid logic, but they cannot be made to satisfy the edge axiom. If that holds, a split
+`E⊥S` is a navigation-gate object rather than a decomposition object, and the design should say so.
+
+**Two things not to redo.** Refinement's piece count is not the test for whether a line cuts —
+a bifurcated `E⊥S` is two edges by construction and the pockets beside a line are fragmentary, so
+a bare `refine()` will run past the mask and mean nothing. Use two rounds and read the component
+sides. And the map render cannot show whether a set divides an edge; use `drawCrossSections`.
+
+**Still open from earlier**: the reachability assertion and the interior-perfection operator as
+first-class checks in a real `insert`, rather than the test rig's; the cut-construction algorithm
+for a map that is not phase-locked; and edge 8, which is self-inverse and needs its inverse
+unioned in, which every other edge tolerates but does not need.
 
 ### The tear-out, 2026-09-08
 

@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-10. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-11. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
@@ -68,6 +68,9 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | pipeline from a map | all three maps run from PNG to solver facts, every invariant checked | `Pipeline` |
 | the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them. **Both figures are suspect** — see below | `EdgePrice` |
 | one-step navigability | from every state of an edge some turn stays on it or reaches the chosen exit. Holds on all three maps; **bad aim cannot explain a missed exit** | `Pipeline.checkNavigable` |
+| edge insertion | split a conditioned `S` off any edge and refine: exactly `{S, E<S, E⊥S, E>S}`, **nine of nine** on dabeone, settled in two rounds | `GateSplit`, `EDGES.md` §2a |
+| absorb in refinement | reducing masks to their equivalence class; **byte-identical labellings on all three maps** with it on | `EdgeDecomposition.absorb` |
+| what cuts a corridor | only a line at constant `d` bifurcates `E⊥S` — 250/250, none straddling; every other orientation leaves one straddling piece | `GateSplit.lines`, `HINTS.md` §3a |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -150,7 +153,9 @@ with the `Trace` tap) · `MovementControl`, `BoidArray`, `Engine` (the decision 
 `PsyboidOverride` · `Sim` (the state container) · `ScenarioParameter`,
 `PresetScenarioParameter` (registered maps).
 
-**Structure** — `EdgeDecomposition` (the axiom and the six-step construction; `EDGES.md` §1 and §3).
+**Structure** — `EdgeDecomposition` (the axiom and the six-step construction; `EDGES.md` §1 and §3)
+· `GateSplit` (edge insertion, the gate construction, the cross-section view and the cut-line test;
+run by hand, `EDGES.md` §2a).
 
 **Maps and storage** — `MapStore` (content-addressed ingests) · `Derived` (the structure and
 behaviour tiers: an artifact is addressed by everything it is a function of) · `NavMap`,
