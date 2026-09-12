@@ -476,11 +476,17 @@ public final class EdgeDecomposition {
     /**
      * Reduces a first-different-edge mask to its equivalence class.
      * <p>
-     * <b>The rule.</b> Reaching {@code X} and reaching {@code X}'s successors are not different
-     * facts: {@code {X}}, {@code {all of X's successors}} and {@code {X} + any of X's successors}
-     * all say the same thing about where a state can get to. So a mask holding both {@code X} and
-     * something {@code X} steps to is reduced by dropping the latter, repeatedly, until nothing
-     * more can go.
+     * <b>The rule.</b> A mask holding both {@code X} and something {@code X} steps to says no more
+     * than {@code {X}} — reaching {@code X} already means reaching its successors — so the latter
+     * is dropped, repeatedly, until nothing more can go.
+     * <p>
+     * <b>And no further.</b> {@code {all of X's successors}} is <em>not</em> reduced to {@code {X}},
+     * though the rule was first specified that way (2026-09-09). A state that can step into
+     * {@code A} and into {@code B} has a different menu from one that can step into {@code AB},
+     * and the axiom keeps them apart; collapsing them is the outcome reading, under which
+     * {@code {AB, C}}, {@code {A, BC}} and {@code {A, B, C}} would be one class and one-step
+     * navigability would fail. Braiding — {@code EDGES.md} §2a, {@link RefineToy} — is what that
+     * distinction costs at a one-to-three junction, and it is the axiom's price, not a defect here.
      * <p>
      * <b>What it fixes.</b> Without it, two states of one edge that agree about everything except
      * whether they can slip directly into an edge already downstream of one they both reach are

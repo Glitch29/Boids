@@ -1,8 +1,9 @@
 # What is being built now
 
-**Status:** 2026-09-11. `README.md` has the inventory; this file has the work in front of us
-and the specifications for it. **§0i is the live thread — read that first.** §0h is closed; its
-handoff is kept as the record of what the benchmark measured and why that search was abandoned.
+**Status:** 2026-09-12. `README.md` has the inventory; this file has the work in front of us
+and the specifications for it. **§0i is the live thread — read that first**; its last subsection
+records that braiding closed the `E⊥S` question. §0h is closed; its handoff is kept as the record
+of what the benchmark measured and why that search was abandoned.
 
 ---
 
@@ -1743,7 +1744,10 @@ Two fixes got it there, and the first is a defect in the decomposition itself.
 
 **1. Refinement was splitting on a distinction that was never real.** Reaching `X` and reaching
 `X`'s successors are the same fact: `{X}`, `{all of X's successors}` and `{X}` plus any of its
-successors are one equivalence class. The algorithm applied that once, implicitly — what stays in
+successors are one equivalence class. *(Retracted in part 2026-09-12: only the first and third
+are one class; `{all of X's successors}` is a different menu, and treating it as `{X}` is the
+outcome reading that braiding rules out — `EDGES.md` §2a. The code only ever implemented the
+first-and-third half.)* The algorithm applied that once, implicitly — what stays in
 `E` is what paths to all of `E`'s successors — but never reduced a mask holding both an edge and
 something already downstream of it. So `E<S` splitting over whether it could slip into `E>S`, while
 both sides agreed they reach `S`, was read as a real difference when `E>S` is downstream of `S`.
@@ -1850,6 +1854,32 @@ sides. And the map render cannot show whether a set divides an edge; use `drawCr
 first-class checks in a real `insert`, rather than the test rig's; the cut-construction algorithm
 for a map that is not phase-locked; and edge 8, which is self-inverse and needs its inverse
 unioned in, which every other edge tolerates but does not need.
+
+### Braiding closes the `E⊥S` question — 2026-09-12
+
+**Answered without touching a map.** The session was set to bug-hunt `refine()`, on the
+hypothesis that a one-to-three branch should never need more than thirteen edges — `O`, the three
+pairs, and three pieces per outcome — and that blowing past that was a defect. Feeding hand-built
+state graphs to the real `EdgeDecomposition.refine` (`RefineToy`) showed the thirteen come out
+exactly when the three-open layer has one menu, and that the axiom splits the layer the moment
+two of its states can peel options in a different order: `{AB, C}` against `{A, BC}`. Every such
+split is a new origin for the pieces below, and the count is unbounded in the number of outcomes.
+That is **braiding** — canonical in `EDGES.md` §1 and §2a, transferable in `HINTS.md` §3a. Binary
+joints have one menu and cannot braid, which is exactly the observed pattern: two-edge splits and
+merges settle, three-edge ones blow up. **`refine` has no defect on any of the toys.**
+
+**Consequences.** A bifurcated `E⊥S` cannot be kept in the decomposition: `E<S` would branch three
+ways and `E>S` merge three ways. It is a navigation object, as the user expected. The `absorb`
+rule's second half — `{all of X's successors}` ≡ `{X}` — was the outcome reading and is retracted;
+the code never implemented it. A one-to-three branch decomposes cleanly only when two of the three
+first peels are empty, i.e. it is really a chain of binary forks.
+
+**Parked, not planned:** an altered edge rule, or a sub-edge structure, that could carry a
+three-way joint. For now a joint where three edges meet is a dead end for the decomposition.
+
+**Frontier, unchanged otherwise.** Step 1's third decision point — shortcuts via navigation gates —
+is specified and not built; the reachability assertion and interior perfection want a real
+`insert`; the cut-construction for unlocked maps has a definition and no algorithm.
 
 ### The tear-out, 2026-09-08
 

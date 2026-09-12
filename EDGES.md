@@ -3,13 +3,15 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-11. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-12. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
 bootstrap, not an analysis tool" is retired. **§2a gained edge insertion and navigation gates on
 2026-09-10** — how a gate is actually built, and how the same machinery does on-edge navigation
-for shortcuts.
+for shortcuts. **§1 and §2a gained braiding on 2026-09-12** — the axiom groups by next edges, not
+by outcomes, so a one-to-three junction does not settle and a bifurcated `E⊥S` stays out of the
+decomposition.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -61,6 +63,14 @@ The same rule, read locally, is the intuition:
 
 **An edge boundary is where the set of reachable futures, or reachable pasts, changes.** It is
 a property of the graph. Nobody places it.
+
+**"Reachable futures" means the set of next edges, not the set of outcomes.** Two states that can
+both still reach `A`, `B` and `C` are on different edges if one leaves the three-open stretch by
+stepping into `{AB, C}` and the other into `{A, BC}` — their *menus* differ, so their futures as
+edges differ, even though their futures as outcomes are the same. With two successors there is
+only one possible menu, `{A, B}`, so a binary branch or merge always settles; with three there
+are eight, and every distinct menu is a distinct origin for the pieces below it, which split in
+turn. That is **braiding**, and it is why a one-to-three junction does not settle — §2a.
 
 ### Direction, not position
 
@@ -349,6 +359,55 @@ user's sketch of it is worth keeping: take a one-tick band of the tunnel, score 
 for the side it should end up on, and find the set of removed states that maximises the total
 square of the sums over the remaining connected pieces. Whether an algorithm for that or something
 near it exists is open.
+
+### Braiding: why a one-to-three junction does not settle
+
+**Found 2026-09-12, by feeding abstract state graphs to the real `EdgeDecomposition.refine`**
+(`RefineToy`, a dozen states apiece, coarse labels `W → O → {A, B, C}`). It closes the question
+the previous session left open, and it is the reason edge blowup is confined to junctions where
+three edges meet.
+
+The axiom groups states by the set of edges they can step into next — call it the **menu** — and
+not by the set of outcomes they can still reach. At a binary branch those coincide: a state with
+`A` and `B` open has the menu `{A, B}` and no other. At a three-way branch a three-open state can
+leave the three-open stretch by peeling one option — menu `{A, BC}`, `{B, AC}` or `{C, AB}` — or
+into pair-pieces, `{AB, AC, BC}` and its subsets; **eight menus after `absorb`**. Two three-open
+states with different menus are different edges. Each of those is then a different *origin* for
+the pair-pieces and tails below it, which split by origin; the merges below those split by which
+entrance pieces reach them, including partial merges; and every phase lattice is a strand of its
+own. Nested combinations — `{{AB,C},{A,BC}}` against `{{AB,C},{AC,B}}` against
+`{{AC,B},{A,BC}}` — are all distinct. There is no bound in the number of outcomes alone.
+
+| toy graph | shape of the three-open layer | pieces of `O` | settled in |
+| --- | --- | --- | --- |
+| FAN | one menu, `{AB, AC, BC}`; tails merge pairwise | **13** | 2 rounds |
+| PLAZA | two menus, `{AB, C}` and `{A, BC}`, under one entrance | **8** where 6 were predicted — the layer itself in three | 2 rounds |
+| BINARY control | the PLAZA shape with two outcomes | 3 | 1 round |
+| TRIDENT | a direct commit `O → A` alongside pair-pieces | 13, including an `A via O` tail and a split layer | 3 rounds |
+
+FAN is exactly the thirteen predicted by hand — `O, AB, AC, BC`, and for each outcome a tail per
+pair-piece plus the merge — so `refine` is doing what the axiom says on the case that settles.
+PLAZA is the same axiom on a layer with two menus, and it splits the layer. **No defect in
+`refine` was found on any of them**; the braiding is the axiom's own behaviour.
+
+**What settles.** A one-to-three branch comes apart cleanly only when every state of its
+three-open layer has the same menu. The simple case is a chain of binary forks: two of the three
+first peels `{A, BC}`, `{B, AC}`, `{C, AB}` empty. The empties could in principle sit deeper in
+the braid, but one menu at the top is the way to simple edges.
+
+**What it settles.** A bifurcated `E⊥S` cannot be kept in the decomposition: `E<S` would branch
+to `{S, E⊥S₁, E⊥S₂}` and `E>S` would merge from the same three, and both braid. So a split
+`E⊥S` is a navigation object — several parts for analysis or psyboid logic — and never a
+decomposition object, which is what the user expected. Whether an altered rule, or a sub-edge
+structure, can one day handle a three-way joint is open and parked.
+
+**One correction to the record.** The `absorb` rule as specified on 2026-09-09 said `{X}`,
+`{all of X's successors}` and `{X} + some of X's successors` are one class. The code implements
+the third-equals-first half only — it drops a successor from a mask that also holds the edge
+leading to it — and the second half is the outcome reading: under it `{AB, C}`, `{A, BC}` and
+`{A, B, C}` would be one class, the pieces so grouped would have different next edges, and
+one-step navigability would fail on them (from a `{AB, C}` state no single turn reaches `A`).
+Braiding retracts that half. `EdgeDecomposition.absorb`'s javadoc now says what it does.
 
 ### Navigation gates: gates that are not part of the decomposition
 
@@ -747,3 +806,7 @@ exited" only for edges lying wholly before the scoring event. Superseded by stab
 - **Freely navigable edges** — an edge where a boid at any state can turn around and come back.
   Nothing models this, and most of the machinery assumes monotone progress along an edge, so
   tau would not be monotone in time. Dabeone and plait have none, which is why it has not bitten.
+- **Three-way joints.** A one-to-three branch or three-to-one merge braids under the axiom
+  (§2a) unless its open layer has a single menu. A bifurcated `E⊥S` is therefore out of the
+  decomposition for good; whether an altered rule or a sub-edge structure can carry such a joint
+  is parked, not planned.

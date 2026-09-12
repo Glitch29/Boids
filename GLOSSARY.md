@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-11, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-12, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -335,6 +335,18 @@ test, not a constructor** — many decompositions satisfy it.
 
 **refinement** — the constructive consequence of the axiom: split any edge whose points
 disagree about their next-or-previous edge sets. Terminates.
+
+**menu** — the set of edges a state can step into next, closed over travel within its own edge:
+what `EdgeDecomposition.refineOnce` computes as `next[s]` and groups on. **The axiom groups by
+menu, not by outcome.** Two states with the same outcomes still open — `A`, `B` and `C`, say —
+are different edges if one's menu is `{AB, C}` and the other's `{A, BC}`.
+
+**braiding** — what a one-to-three junction does under the axiom when its open layer holds more
+than one menu: the layer splits by menu, each piece is a distinct origin for the pieces below,
+those split by origin, the merges split by entrance, and nested combinations are all distinct.
+Unbounded in the number of outcomes; impossible with two, since `{A, B}` is the only menu. Found
+2026-09-12 with `RefineToy`; canonical in `EDGES.md` §2a. It is why a bifurcated `E⊥S` is a
+navigation object and not a decomposition object.
 
 **orbit** — an edge some point of which can forward-navigate back to itself. Strongly
 connected, so the axiom cannot split it; it has to be cut.
@@ -689,6 +701,7 @@ anything not listed.
 | edge insertion / gate construction | `GateSplit`, run by hand | printed; renders in `render/gate-split/` |
 | cross-section view | `GateSplit.drawCrossSections` — one tile per tick of tau, across x `d`, perpendicular to travel | `render/gate-split/edge<e>-cross.png`, `-cross-zoom.png` |
 | cut-line test | `GateSplit.lines` — lines across one cross-section, phase-completed, `E⊥S` sided | printed |
+| braiding toys | `RefineToy` — hand-built junction graphs through the real `refine` | printed |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

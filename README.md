@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-11. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-12. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
@@ -71,6 +71,7 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | edge insertion | split a conditioned `S` off any edge and refine: exactly `{S, E<S, E⊥S, E>S}`, **nine of nine** on dabeone, settled in two rounds | `GateSplit`, `EDGES.md` §2a |
 | absorb in refinement | reducing masks to their equivalence class; **byte-identical labellings on all three maps** with it on | `EdgeDecomposition.absorb` |
 | what cuts a corridor | only a line at constant `d` bifurcates `E⊥S` — 250/250, none straddling; every other orientation leaves one straddling piece | `GateSplit.lines`, `HINTS.md` §3a |
+| braiding | the axiom groups by menu, not outcome: a one-to-three branch with one menu settles at exactly the 13 pieces predicted; with two menus its open layer splits and everything below follows. Binary joints cannot braid. **Not a defect in `refine`**; a bifurcated `E⊥S` stays out of the decomposition | `RefineToy`, `EDGES.md` §2a |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -142,7 +143,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 57 files.
+One package, `src/boids`, 58 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -155,7 +156,8 @@ with the `Trace` tap) · `MovementControl`, `BoidArray`, `Engine` (the decision 
 
 **Structure** — `EdgeDecomposition` (the axiom and the six-step construction; `EDGES.md` §1 and §3)
 · `GateSplit` (edge insertion, the gate construction, the cross-section view and the cut-line test;
-run by hand, `EDGES.md` §2a).
+run by hand, `EDGES.md` §2a) · `RefineToy` (hand-built junction graphs through the real `refine`;
+the braiding evidence, run by hand).
 
 **Maps and storage** — `MapStore` (content-addressed ingests) · `Derived` (the structure and
 behaviour tiers: an artifact is addressed by everything it is a function of) · `NavMap`,

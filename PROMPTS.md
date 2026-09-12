@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-355 prompts across 12 sessions.
+357 prompts across 12 sessions.
 
 ---
 
@@ -10174,7 +10174,7 @@ About to close this thread. Just double checking that everything's wrapped up. I
 
 ## Session 12 - 2026-09-08
 
-*Log `f088cd7e-837d-454b-97cb-72ac40260363`, 28 prompts.*
+*Log `f088cd7e-837d-454b-97cb-72ac40260363`, 30 prompts.*
 
 ### 1
 
@@ -10520,3 +10520,17 @@ I'm confused where S actually is in that map. I see E<S (red), E>S (blue) and E�
 Although this has got me to thinking that E⊥S is much more heavily connected than I thought at first. The cross section is 2-dimensional, with a left-to-right axis and a d axis. In order for S to bifurcate E⊥S, it must contact 2 edges of that parallelogram-esque shape.
 
 I can't imagine being able to visualize this without the aid of something in 3d. You're the expert here for graphical implementations. So I'm not even going to offer a suggestion, for fear that you'll tunnel on a bad idea of mine. Just whatever sort of 3d visualization that you know how to do.
+
+### 29
+
+The slice view is fantastic. That works great. Let's preserve that as way of viewing constricted pathways going forward, particularly when trying to diagnose edge decomposition. Let's also note the finding that the actual requirement for E⊥S being split is a phase-complete bifurcation of this cross sectional view with one axis being d, and the other being (x,y) translation orthogonal to d's step vector.
+
+As a last step, let's check how accurately this prediction holds. Use this same edge, since it's easier to handle given that it's straight and perfectly aligned with an axis. It's also nice that this area doesn't allow any phase bleed. Draw a few lines across the space in various orientations. Since there's no phase bleed here, we shouldn't need to worry about phase completeness. Use the resulting states to see if we get a bifurcated edge.
+
+See if you can figure out analytically what sort of connectivity a line drawn across the cross section needs to have. Obvious candidates being diagonal connectivity, orthogonal connectivity, 1 state per y, or 1 state per d. Then test to see if that holds up.
+
+In the more general case where we aren't phase locked, I suspect we'll need a more specialized algorithm to generate these cuts. There might be something in graph theory that will help. For example, taking 1-tick long band of a tunnel, scoring each node from -1 to 1 (representing the desired side of that node in the final partition), and finding the set of removed nodes that maximizes the total square of sums of the remaining connected subgraphs. IDK if an algorithm to do that or something close to it exists. But that's at least a good way to precisely define a desired cut. Anyway, this paragraph isn't necessary for the task at hand.
+
+### 30
+
+This is the end of this session. Please update HINTS.md, and any other docs. The next session is likely going to start by trying to confirm that a bifurcation of E⊥S with proper merging can avoid edge blowup downstream. I suspect the answer is no, meaning that E⊥S can have multiple parts for analysis purposes or psyboid logic purposes, but they can't be made to follow the edge axiom.

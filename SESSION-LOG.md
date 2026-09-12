@@ -11,6 +11,51 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-12 — braiding: why one-to-three junctions do not settle, and it is not a bug
+
+**Set out to bug-hunt `refine()`** on the hypothesis that a one-to-three branch `O → {A, B, C}`
+should need at most thirteen edges — `O`, `AB`, `AC`, `BC`, and three pieces per outcome — with a
+sister count for `{X, Y} → {A, B}`; binary splits and merges settle, three-way ones blow up, so
+past thirteen should mean a defect. Read `refineOnce` and `absorb` and found them faithful to the
+axiom, so instead of arguing, fed hand-built state graphs to the real `EdgeDecomposition.refine`.
+That is `RefineToy`, now in `src/boids`, six graphs of a dozen states each.
+
+**Numbers.** FAN (one menu in the three-open layer): `O` in exactly **13** pieces, settled in two
+rounds — the hand count. PLAZA (two menus, `{AB, C}` and `{A, BC}`, under one entrance): **8**
+pieces where 6 were predicted; the three-open layer itself splits in three. BINARY control (the
+PLAZA shape with two outcomes): 3. TRIDENT (a direct commit `O → A` beside the pairs): 13, with an
+`A via O` tail and a split layer. `{X, Y} → {A, B}`: 10 meeting in the committed layer, 13 with a
+still-open merge region. **No defect in `refine` on any of them.**
+
+**The finding is braiding.** The axiom groups states by the set of next edges — the *menu* — not by
+the outcomes still open. With two outcomes there is one menu and nothing can braid; with three
+there are eight after `absorb`, states with different menus are different edges, each is a
+different origin for what lies below, and nested combinations are all distinct. The user confirmed
+`{AB, C}`, `{A, BC}` and `{AC, B}` are different, and the nested `{{AB,C},{A,BC}}` versus
+`{{AB,C},{AC,B}}` likewise — a conclusion they had reached before and lost to context. Named and
+recorded: `EDGES.md` §1 and §2a, `HINTS.md` §3a, `GLOSSARY.md` (menu, braiding, `RefineToy`).
+
+**What it closes.** The question the last session left — can a bifurcated `E⊥S` be kept as two
+edges — is answered no without touching a map: `E<S` would branch three ways and `E>S` merge three
+ways, both braid. A split `E⊥S` is a navigation object. A one-to-three branch decomposes cleanly
+only when two of the three first peels are empty, i.e. it is a chain of binary forks. An altered
+rule or a sub-edge structure for three-way joints is parked, not planned.
+
+**One correction.** The `absorb` rule specified 2026-09-09 said `{all of X's successors}` ≡ `{X}`;
+the code never implemented that half, and braiding shows it is the outcome reading, which fails
+one-step navigability. Javadoc on `EdgeDecomposition.absorb` corrected; `ROADMAP.md` §0i and
+`HINTS.md` §3a annotated rather than rewritten. Also noted in passing, not fixed: `absorb`'s
+antisymmetry guard is pairwise, so a mask holding three edges in a direct 3-cycle would empty
+itself — cannot fire on the current maps since a mask only ever holds one edge's neighbours.
+
+**Changed on disk.** `RefineToy.java` added; `EdgeDecomposition.absorb` javadoc; `EDGES.md`,
+`HINTS.md`, `GLOSSARY.md`, `README.md`, `ROADMAP.md` updated and dated. No artifact re-derived;
+no decomposition changed.
+
+**Open.** Unchanged frontier in `ROADMAP.md` §0i: navigation gates for shortcuts, specified and
+not built; a real `insert` with the reachability assertion and interior perfection; the cut
+construction for maps that are not phase-locked.
+
 ## 2026-09-11 — the cross-section view, and what a cut across it has to be
 
 **The cross-section view is the tool of the day.** `GateSplit.drawCrossSections`: one tile per

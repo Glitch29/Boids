@@ -6,8 +6,9 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-11, physics 3. Figures taken under physics 2 are marked as such. §3a added
-2026-09-11: gates, edge insertion, and what a cut across a corridor has to be. This file is
+**Status:** 2026-09-12, physics 3. Figures taken under physics 2 are marked as such. §3a added
+2026-09-11: gates, edge insertion, and what a cut across a corridor has to be; braiding added to
+it 2026-09-12. This file is
 also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
@@ -302,14 +303,32 @@ assertion about `S`, not something the algorithm can repair.** Measured: 0 viola
 past on another phase. Every exit of every dabeone edge was reachable from an entrance while
 avoiding `S`, in every variant tried.
 
-**Refinement had a defect this exposed, and it is fixed.** Reaching `X` and reaching `X`'s
-successors are one fact, not two — `{X}`, `{all of X's successors}` and `{X} + some of them` are
-one equivalence class. The algorithm applied that once, implicitly, and never reduced a mask that
-held both an edge and something downstream of it, so `E<S` was split over whether it could slip
-into `E>S` while both sides agreed they reach `S`. Known to be needed when the algorithm was first
-specified and deferred because it only bites on sub-tick edges. Reducing masks to their class
-before grouping changes nothing on any existing map — byte-identical labellings on all three —
-and took the construction from four of nine edges to eight.
+**Refinement had a defect this exposed, and it is fixed.** A mask that holds `X` and also
+something `X` steps to says no more than `{X}` — reaching `X` already means reaching its
+successors. The algorithm applied that once, implicitly, and never reduced a mask that held both
+an edge and something downstream of it, so `E<S` was split over whether it could slip into `E>S`
+while both sides agreed they reach `S`. Known to be needed when the algorithm was first specified
+and deferred because it only bites on sub-tick edges. Reducing masks to their class before
+grouping changes nothing on any existing map — byte-identical labellings on all three — and took
+the construction from four of nine edges to eight. **The rule stops there.** `{all of X's
+successors}` is *not* the same class as `{X}`: a state that can step into `A` and into `B` has a
+different menu from one that can step into `AB`, and the axiom keeps them apart. Treating them as
+one is the outcome reading below, and braiding is what it costs.
+
+**A one-to-three junction braids, and no bound on its edge count exists.** The axiom groups states
+by the set of edges they can step into next — the *menu* — not by the outcomes they can still
+reach. With two outcomes there is only one menu, `{A, B}`, so binary branches and merges always
+settle. With three, a three-open state may leave by peeling one option (`{A, BC}`, `{B, AC}`,
+`{C, AB}`) or into pair-pieces, eight menus in all; states with different menus are different
+edges; each is then a different origin for the pieces below, which split by origin; the merges
+split by which entrances reach them; and every phase lattice is a strand. Nested combinations are
+all distinct. Measured by feeding hand-built graphs to the real refinement: a layer with one menu
+comes apart into exactly the thirteen pieces predicted by hand and settles; the same layer with
+two menus splits itself in three and every piece below follows. A one-to-three branch is clean
+only when its open layer has a single menu — in the simple case, a chain of binary forks, with two
+of the three first peels empty. So a bifurcated `E⊥S` cannot go back into the decomposition:
+`E<S` would branch three ways and `E>S` merge three ways, and both braid. It is a navigation
+object, full stop.
 
 **Seeding `S` needs three things, and their order is not the obvious one.**
 
@@ -1172,11 +1191,9 @@ Documents:
 - Whether the momentum lift survives conditioning on state: `P(turn | state, last)` against
   `P(turn | state)` was never measured, so the 2.4× unconditional lift may be map geometry
   the state-based weighting already has.
-- **Whether a bifurcated `E⊥S` can be kept as two edges without the decomposition blowing up
-  downstream.** The cut is known — constant `d` across the cross-section — and it produces two
-  clean halves; what is not known is whether those halves satisfy the axiom against everything
-  beyond them. The user's expectation is no: that `E⊥S` can be in several parts for analysis or
-  psyboid logic, but they cannot be made to follow the edge axiom. Next session starts here.
+- **Three-way joints.** Settled 2026-09-12 that a bifurcated `E⊥S` cannot be kept as two edges —
+  the joint braids, §3a. What is open is whether an altered rule, or a sub-edge structure beneath
+  the decomposition, could carry a one-to-three joint without braiding. Parked, not planned.
 - Constructing a cut on a map that is not phase-locked. Drawing one at constant `d` works where
   the corridor is straight and locked; elsewhere the cut has to be found. One definition: score a
   one-tick band of tunnel −1 to 1 per state and choose the removal maximising the sum of squared
