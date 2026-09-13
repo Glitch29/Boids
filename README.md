@@ -73,6 +73,7 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | what cuts a corridor | only a line at constant `d` bifurcates `E⊥S` — 250/250, none straddling; every other orientation leaves one straddling piece | `GateSplit.lines`, `HINTS.md` §3a |
 | braiding | the axiom groups by menu, not outcome: a one-to-three branch with one menu settles at exactly the 13 pieces predicted; with two menus its open layer splits and everything below follows. Binary joints cannot braid. **Not a defect in `refine`**; a bifurcated `E⊥S` stays out of the decomposition | `RefineToy`, `EDGES.md` §2a |
 | exit decision zones | region + opening gate + prohibited transitions + closing gate, per edge: **nine of nine sound** on dabeone (0 entrances inside, 0 bypassing, 0 leaks); `DecisionOverride` and `EdgePilot` fly `[4, 2, 1, 5, 8]` with **0 mismatching ticks** over 4,000, alone and in a flock of four; lone lap 535 ticks, 54 points | `DecisionZone`, `SimTest.zones`, `EDGES.md` §2a |
+| subpath decision zones | a route within an edge as a chain of `S_k`, threaded by forbidding the way round each: three paths on dabeone edge 4 at tau 36–56, **all sound**, and a psyboid told to take one lands on every `S_k` in order on **every traversal, alone and in a flock**, then takes either exit. Entrance saturation needs `S_1` ≥ ~32–36 ticks in | `DecisionZone.subpath`, `SimTest.subpaths`, `EDGES.md` §2a |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -195,8 +196,8 @@ way, one-step navigability checked on every build). See `CORPUS.md` for what it 
 flocking rules; `held` is an analysis primitive and not a plan kind) · `EdgePilot` (a route,
 steered only where coasting would leave it — **one step of lookahead is all of navigation**) ·
 `Gate` (a transition-based gate: sorted `(state, effective turn)` keys) · `DecisionZone` (one
-edge's exit decision as gates — a region entered, prohibited transitions per option, a closing
-gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone, stateless, label prefix `g`;
+edge's exit decision, or a subpath along it, as gates — a region entered, prohibited transitions
+per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone, stateless, label prefix `g`;
 flies identically to `EdgePilot`) ·
 `EdgePrice` (the price function: gain and bias over `(edge, tau)`) · `EdgeReach` (forward
 distance and rebasing in `(edge, tau)`; currently uncalled) · `CorpusPreset` (named recipes, so
@@ -252,6 +253,7 @@ ways → 6 edges.
 | `phaseMapOnStablePlus` | the three-boid phase map with stable+ as both the suspect population and admission's ground, plus a control |
 | `tablesOnStablePlus` | the critical-envelope tables for one arc on that same ground |
 | `zones` | the exit decision zone of every edge, checked, then flown against `EdgePilot` tick for tick |
+| `subpaths` | three subpaths on one edge — coasting, left-hugging, right-hugging — each built as a zone, checked, and flown taken and skipped, alone and in a flock; plus the `S_1` saturation sweep |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` prints one sampled exit tick by tick, marking which

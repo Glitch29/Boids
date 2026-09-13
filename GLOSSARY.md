@@ -400,6 +400,17 @@ stored as the convex **region** between them — for exits, `S` = the states tha
 edge plus their forward closure on it — and *inside the region* stands in for *between the gates*.
 The prohibitions stay transitions. `EDGES.md` §2a.
 
+**subpath** — a sequence of states `s_0 → … → s_N` along one edge, consecutive by permitted
+transitions; the way a shortcut or longcut is specified. Its decision zone threads a boid through
+a chain of sets `S_1 … S_N`, one per transition — `S_1` the partial tick of the first, each
+`S_{k+1}` where `S_k` lands taking the path's turn — by forbidding, from `E<S_k`, every step that
+does not stay in `E<S_k` or enter `S_k`. `DecisionZone.subpath`; options `SKIP` and `TAKE`.
+`EDGES.md` §2a.
+
+**phantom edges** — the four pieces `E<S`, `S`, `E⊥S`, `E>S` that edge insertion makes of an edge
+around a set `S`, used by navigation logic without ever joining the decomposition. A subpath
+zone works with four at a time, one `S_k` after another.
+
 **`Gate`** (the class) — the transition-based gate: a sorted set of `(state, effective turn)`
 keys with `crosses(state, turn)`. `Gate.between` builds one from a set of states and a landing
 predicate; `Gate.landingIn` converts a state-based gate. Not to be confused with
@@ -722,6 +733,7 @@ anything not listed.
 | cut-line test | `GateSplit.lines` — lines across one cross-section, phase-completed, `E⊥S` sided | printed |
 | braiding toys | `RefineToy` — hand-built junction graphs through the real `refine` | printed |
 | exit decision zones | `DecisionZone.exits`, flown by `DecisionOverride`, checked by `SimTest.zones` | in memory; printed |
+| subpath decision zones | `DecisionZone.subpath`, flown by `DecisionOverride`, checked by `SimTest.subpaths` | in memory; printed |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

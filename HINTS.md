@@ -401,6 +401,22 @@ with other prohibitions rather than another rule. Keyed on the effective turn, a
 a request the veto alters is not the transition the boid takes. Measured: nine of nine zones sound
 on dabeone and zero mismatching ticks against the pilot over 4,000, alone and in a flock.
 
+**A route within an edge is a chain of thin sets, and the boid is threaded through them.** Take
+the states a chosen path visits, `s_0 … s_N`; for each step take a small set `S_k` across the
+phases of the step lattice; then forbid, from everything that can still reach `S_k`, any step
+that cannot. Nothing needs cutting in two: forbidding the way round `S_k` forces the way through
+it, four phantom edges at a time, and the same one-step rule executes it. Three things were
+learned building it. *Let the phases fall out of the physics*: seed `S_1` with the partial tick
+and get each later `S_k` by stepping the previous one forward with the path's turn — the sample
+formula rounds a phase onto the wrong pixel about one turn in four, and every such break leaves
+states with every turn forbidden. *Saturation has a floor of about thirty ticks*: `S_1` is a few
+states at one heading, so an entrance must converge laterally and arrive at exactly that heading,
+and on a ~10 px corridor at radius 40 that takes ~30 ticks of run-up before every entrance can —
+against ~12 for a cut to settle. *The zone opens where the path can first be lost*, some 4–14
+ticks before `S_1` when it is placed past the floor, and at the entrance itself when it is not.
+With those three, a psyboid told to take a path lands on every `S_k` in order on every traversal,
+alone or pushed by a flock, and takes either exit afterwards.
+
 ## 4. The clock — tick values and edge lengths
 
 **The problem it solves.** The decomposition says which stretch a state is on but not where

@@ -2493,12 +2493,190 @@ picks, never in what is available to it.
     }
 
     /**
+     * Specifies subpaths along one edge of {@code loop}, builds the {@link DecisionZone} of each,
+     * and flies a psyboid that has decided to take it.
+     * <p>
+     * Three subpaths, each from the state a coasting psyboid reaches {@code margin} ticks into
+     * the edge to where it is {@code margin} ticks from the end: the coasting trajectory itself
+     * (a control, which should change nothing), and two that hug the left and the right wall by
+     * asking for that turn whenever it is permitted and stays on the edge. Whether either is a
+     * shortcut or a longcut is the map's business; what is checked is that the zone is sound,
+     * that a psyboid told to take the path lands on every one of its {@code S_k} in order, that
+     * one told to skip it flies as if the zone were not there, and how the lap changes.
+     */
+    public static void subpaths(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] loop,
+                                int edge, int margin, int ticks) throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        SolverFacts f = b.facts();
+        NavMap map = b.labelling().map();
+        DecisionZone[] exits = DecisionZone.exits(map, f);
+        int[] choice = new int[f.edges()];
+        Arrays.fill(choice, -1);
+        for (int k = 0; k < loop.length; k++) choice[loop[k]] = loop[(k + 1) % loop.length];
+
+        // One coasting traversal of the edge, as the states a lone psyboid on the loop visits.
+        Engine solo = new Boids2DEngine(withFlockSize(preset, 1));
+        Sim.State root = solo.init(0);
+        for (int t = 0; t < 1000; t++) root = solo.tick(root);
+        Sim.State s = withOverrides(root, DecisionOverride.of(0, choice, map, f, exits));
+        List<Integer> traversal = new ArrayList<>();
+        boolean seen = false;
+        for (int t = 0; t < 3000 && (!seen || !traversal.isEmpty()); t++) {
+            int state = f.state(s.x[0], s.y[0], s.h[0]);
+            boolean on = f.edgeOf()[state] == edge;
+            if (on) { traversal.add(state); seen = true; }
+            else if (seen && !traversal.isEmpty()) break;
+            s = solo.tick(s);
+        }
+        System.out.printf("%n=== %s @%s: subpaths on edge %d, coasting traversal of %d ticks, "
+                + "margin %d ===%n", preset.name(), preset.ingest().hash(), edge,
+                traversal.size(), margin);
+        // How far into the edge S_1 has to sit before every entrance can reach it: one-step
+        // subpaths seeded at each state of the coasting traversal in turn.
+        System.out.printf("%-6s %7s %8s %8s%n", "index", "tau", "E<S_1", "missing");
+        for (int i = 0; i + 1 < traversal.size(); i += 2) {
+            int[] one = {traversal.get(i), traversal.get(i + 1)};
+            if (exits[edge].inside(one[1])) break;
+            DecisionZone z = DecisionZone.subpath(map, f, edge, one);
+            String r = z.report();
+            System.out.printf("%-6d %7.1f %8s %8s%n", i, f.tickOf()[one[0]],
+                    field(r, "E<S_1"), field(r, "missing S_1"));
+        }
+
+        // Placed by the clock, not by count: a traversal entered from one predecessor starts at a
+        // different tau from one entered from another, and the entrance has to be able to
+        // converge onto S_1 before passing it.
+        int start = -1, end = -1;
+        for (int i = 0; i < traversal.size(); i++) {
+            double tau = f.tickOf()[traversal.get(i)];
+            if (start < 0 && tau >= margin) start = i;
+            if (tau <= f.length()[edge] - margin) end = i;
+        }
+        if (start < 0 || end <= start + 1) {
+            System.out.println("traversal too short for that margin");
+            return;
+        }
+        double endTick = f.tickOf()[traversal.get(end)];
+
+        int[][] paths = new int[3][];
+        String[] names = {"coast", "left", "right"};
+        paths[0] = traversal.subList(start, end + 1).stream().mapToInt(Integer::intValue).toArray();
+        for (int side = -1; side <= 1; side += 2) {
+            List<Integer> path = new ArrayList<>();
+            int at = traversal.get(start);
+            path.add(at);
+            int[] prefer = {side, 0, -side};
+            while (path.size() < 4 * traversal.size()) {
+                int d = at % Params.TURNS, cell = at / Params.TURNS;
+                int x = cell % map.width(), y = cell / map.width();
+                int next = -1;
+                for (int turn : prefer) {
+                    if (map.constrainTurn(x, y, d, turn) != turn) continue;
+                    int u = map.successor(at, turn);
+                    if (u >= 0 && f.edgeOf()[u] == edge && !exits[edge].inside(u)) { next = u; break; }
+                }
+                if (next < 0 || f.tickOf()[next] >= endTick) break;
+                path.add(next);
+                at = next;
+            }
+            paths[side < 0 ? 1 : 2] = path.stream().mapToInt(Integer::intValue).toArray();
+        }
+
+        for (int p = 0; p < paths.length; p++) {
+            int[] path = paths[p];
+            if (path.length < 2) { System.out.printf("%n-- %s: no path --%n", names[p]); continue; }
+            DecisionZone zone = DecisionZone.subpath(map, f, edge, path);
+            System.out.printf("%n-- %s: %d states, tau %.1f to %.1f --%n  %s%n", names[p],
+                    path.length, f.tickOf()[path[0]], f.tickOf()[path[path.length - 1]], zone.report());
+
+            // Where the zone opens, by the clock, and where it is left. An opening gate whose
+            // landings run from the entrance to S_1 is one that opens as soon as S_1 can be lost.
+            double oLo = Double.MAX_VALUE, oHi = -Double.MAX_VALUE, cLo = Double.MAX_VALUE, cHi = -Double.MAX_VALUE;
+            for (int key : zone.opens().keys()) {
+                double tau = f.tickOf()[map.successor(Gate.stateOf(key), Gate.turnOf(key))];
+                oLo = Math.min(oLo, tau); oHi = Math.max(oHi, tau);
+            }
+            for (int key : zone.closes().keys()) {
+                double tau = f.tickOf()[Gate.stateOf(key)];
+                cLo = Math.min(cLo, tau); cHi = Math.max(cHi, tau);
+            }
+            System.out.printf("  opens onto tau %.1f-%.1f, closes from tau %.1f-%.1f%n", oLo, oHi, cLo, cHi);
+
+            for (int flock : new int[]{1, preset.flockSize()}) {
+                for (int decision : new int[]{DecisionZone.TAKE, DecisionZone.SKIP}) {
+                    Engine engine = new Boids2DEngine(withFlockSize(preset, flock));
+                    Sim.State r = engine.init(0);
+                    for (int t = 0; t < 1000; t++) r = engine.tick(r);
+                    Sim.State a = withOverrides(r, DecisionOverride.of(0, choice, map, f, exits,
+                            zone, path, decision));
+                    int traversals = 0, complete = 0, opened = 0, closed = 0;
+                    int highest = 0, distinct = 0, prevStep = 0;
+                    boolean inside = false;
+                    List<Long> entries = new ArrayList<>();
+                    List<Long> scores = new ArrayList<>();
+                    int prevEdge = f.edgeAt(a.x[0], a.y[0], a.h[0]);
+                    String failure = null;
+                    for (int t = 0; t < ticks && failure == null; t++) {
+                        int s0 = f.state(a.x[0], a.y[0], a.h[0]);
+                        try {
+                            a = engine.tick(a);
+                        } catch (IllegalStateException ex) {
+                            failure = ex.getMessage();
+                            break;
+                        }
+                        int turn = Math.floorMod(a.h[0] - (s0 % Params.TURNS) + 1, Params.TURNS) - 1;
+                        if (zone.opens().crosses(s0, turn)) opened++;
+                        if (zone.closes().crosses(s0, turn)) closed++;
+                        int s1 = f.state(a.x[0], a.y[0], a.h[0]);
+                        int e1 = f.edgeOf()[s1];
+                        if (e1 == edge && !inside) { inside = true; traversals++; highest = 0; distinct = 0; prevStep = 0; }
+                        if (e1 != edge && inside) {
+                            inside = false;
+                            if (distinct == zone.steps()) complete++;
+                        }
+                        if (inside) {
+                            int k = zone.stepOf(s1);
+                            if (k > 0) {
+                                if (k > highest) highest = k;
+                                if (k > prevStep) { distinct++; prevStep = k; }
+                            }
+                        }
+                        if (e1 == loop[0] && prevEdge != loop[0]) {
+                            entries.add(a.tick);
+                            scores.add(a.boidScore[0]);
+                        }
+                        prevEdge = e1;
+                    }
+                    StringBuilder laps = new StringBuilder();
+                    for (int k = 1; k < entries.size(); k++) {
+                        laps.append(String.format(" %d/%d", entries.get(k) - entries.get(k - 1),
+                                scores.get(k) - scores.get(k - 1)));
+                    }
+                    System.out.printf("  flock %d, %-4s: %d traversals, %d on every S_k in order,"
+                                    + " opened %d closed %d, laps%s%s%n", flock,
+                            decision == DecisionZone.TAKE ? "take" : "skip", traversals, complete,
+                            opened, closed, laps, failure == null ? "" : "   THREW: " + failure);
+                }
+            }
+        }
+    }
+
+    /** The value after {@code name} in a {@link DecisionZone#report}. */
+    private static String field(String report, String name) {
+        int at = report.indexOf(name + " ");
+        if (at < 0) return "?";
+        int from = at + name.length() + 1, to = report.indexOf(',', from);
+        return report.substring(from, to < 0 ? report.length() : to);
+    }
+
+    /**
      * Scratch dispatcher, not an interface. Edit it to call whatever entry point is wanted;
      * {@code PIPELINE.md} has the real invocations in order with their expected numbers.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        zones(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4000);
+        subpaths(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4, 36, 4000);
+        subpaths(PresetScenarioParameter.DABEONE, dab, new int[]{4, 0, 3, 5, 8}, 4, 36, 4000);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

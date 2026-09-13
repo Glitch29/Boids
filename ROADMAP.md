@@ -1908,9 +1908,34 @@ standing in for *between the gates*. Of the four open questions put to the user:
 exits — one zone per edge, one option set; (4) is answered by the region — a decision instance is
 `(edge, nth entry into its zone)`, and the tick is never needed. (1) and (3) remain.
 
-**Next: shortcuts and longcuts on the same shape.** A different region, bounded by a navigation
-gate from edge insertion where the wall is, and the same override; nothing new to steer with.
-Not started.
+### Subpaths — shortcuts and longcuts — **built and verified** 2026-09-12
+
+**The user's respecification, same session.** Cutting `E⊥S` in two was never needed: forbidding
+`E<S → E⊥S`, and thereby forcing `E<S → S`, does the job directly with four phantom edges at a
+time. A shortcut or longcut is a **subpath** — `N` transitions along one edge, specified
+explicitly — with an `S_k` per transition; the alternate phases fall out of the construction. The
+zone opens at the states that can leave `E<S_1`, forward-closed on `E<S_1`, exactly as an exit
+zone opens at the states that can leave `E`; it closes on the transition off `E<S_N`. Subpaths
+that cross an edge border are deferred; the first and last `S` are to saturate the entrance and
+the exit so borders never come into it. Choosing *where* a subpath should run is a separate task,
+not started. `DecisionZone.subpath`, flown by the unchanged `DecisionOverride`, driven by
+`SimTest.subpaths`; canonical in `EDGES.md` §2a "Subpaths".
+
+**One amendment to the spec, measured in.** Taking every `S_k` literally as its transition's
+partial tick broke the chain at turns — the sample formula rounds a phase onto the wrong pixel
+about one turn in four — and every break left states with all three turns forbidden, on which a
+flocked psyboid was stranded. `S_1` is the partial tick; each `S_{k+1}` is where `S_k` lands
+taking the path's turn. Chain breaks and stuck states went from 10 and 31–61 to **0**.
+
+**Measured, dabeone edge 4.** Entrance saturation has a floor: `S_1` must sit at tau ≥ 32–36
+before all 618 entrances can reach it (sweep in `EDGES.md`). Past it, three paths — coasting,
+left-hugging, right-hugging — give **six of six sound zones** across both exit loops, and a
+psyboid told to take one lands on every `S_k` in order on every full traversal, alone and in a
+flock of four, then takes either exit. The zone opens 4–14 ticks before `S_1`. The wall-hugging
+paths change the lap by at most a tick, the stretch being straight.
+
+**Next.** Placement — which subpaths shorten or lengthen a lap, and by how much — and then the
+search that chooses among decisions. Cross-border subpaths when wanted.
 
 ### The tear-out, 2026-09-08
 

@@ -484,6 +484,74 @@ and needs no new rule — which is the whole reason for the representation.
 > is a different line through the corners. Not investigated beyond noting that both rules agree
 > with each other tick for tick.
 
+### Subpaths: shortcuts and longcuts as a chain of phantom edges
+
+**Specified by the user and built 2026-09-12** — `DecisionZone.subpath`, flown by the same
+`DecisionOverride`, driven by `SimTest.subpaths`. It replaces the idea of cutting `E⊥S` in two,
+which braiding rules out and which was never needed.
+
+**A subpath is a sequence of states `s_0 → s_1 → … → s_N` along one edge**, consecutive by
+permitted transitions. Around each transition's `S_k` the edge falls into the four **phantom
+edges** of edge insertion — `E<S_k`, `S_k`, `E⊥S_k`, `E>S_k` — which never join the decomposition.
+**Taking the subpath means: from `E<S_k`, never step anywhere but `E<S_k` or `S_k`, for every
+`k`.** That forbids `E<S_k → E⊥S_k` and thereby forces `E<S_k → S_k`, four phantom edges at a
+time, and the boid is threaded through `S_1, S_2, …, S_N` in order. The zone opens at the states
+of `E<S_1` that can step out of it, forward-closed on `E<S_1` — the same construction as the exit
+zone's, with "can leave `E<S_1`" for "can leave `E`" — and closes on the transition off `E<S_N`.
+Options are `SKIP` (forbid nothing) and `TAKE`. Its region is `Z_1 ∪ (E<S_N − E<S_1)`.
+
+**What `S_k` is, amended.** The specification took each `S_k` to be the partial tick of its
+transition — the samples the step sweeps through at the new heading, one per phase of the step
+lattice, so that a boid on any phase lands on one. Built literally, that **broke the chain at
+turns**: a phase-`f` boid on `S_k` taking the path's turn lands `(1−f)·|Δstep|` ≈ 0.3 px from the
+sample formula's pixel, which rounds the wrong way about one step in four (10 breaks in 41 steps
+on dabeone edge 4), and a broken chain leaves states whose every turn is forbidden — 31 to 61 of
+them — on which a flocked psyboid was stranded and the override threw. So **`S_1` is the partial
+tick of the first transition, and each `S_{k+1}` is where the states of `S_k` land taking the
+path's turn**: the phases followed forward by the physics rather than by the formula. Identical
+on straight steps, exact at turns; chain breaks and stuck states both **0** on every path since.
+Where the veto alters the path's turn for some phase the landing is still a permitted transition,
+and the count is reported (`veto-altered`, 0 to 11 per path).
+
+**Entrance saturation has a floor, and it is about thirty ticks.** For the opening gate to be a
+gate, every entrance of `E` must be able to reach `S_1`; `S_1` is four states at **one heading**,
+so an entrance must converge laterally *and* arrive at exactly that heading on one of those
+pixels. Swept along the coasting traversal of dabeone edge 4 (618 entrances) with one-step
+subpaths seeded at each state: entrances missing `S_1` are hundreds up to tau 19, **67 at tau
+20.7, 1 at 22.4, 0 from tau 32** on a traversal entered from edge 8, and 0 only from **tau 36**
+on one entered from edge 7 (with flickers of 3–4 at 27.7 and 33.4). `|E<S_1|` grows from a few
+hundred to 3,225 over the same stretch. The 12-tick floor for insertion *settling* is not the
+floor for *saturation*; placement wants a sweep like this, per edge.
+
+**Measured, dabeone `609cffdb84be218c`, edge 4, margin 36** — three subpaths from tau 36.3 to
+≈56, 20–21 steps each: the coasting trajectory (control), and left- and right-wall-hugging paths
+built by asking for that turn wherever it is permitted and stays on the edge. **All six zones
+sound** across both exit loops `[4, 2, 1, 5, 8]` and `[4, 0, 3, 5, 8]`: 0 entrances missing,
+0 inside, 0 bypassing, 0 chain breaks, 0 stuck, both exit edges reachable from `S_N`. Flown
+4,000 ticks each, `TAKE` against `SKIP`, alone and in a flock of four:
+
+| | on every `S_k` in order, alone | in the flock | lone lap, loop 1 / loop 2 |
+| --- | --- | --- | --- |
+| coast, take | 7 of 7 | 7 of 7 | 535 / 538 |
+| left, take | 7 of 7 | 7 of 7 | **536 / 539** |
+| right, take | 7 of 7 | 7 of 7 | 535 / 538 |
+| any, skip | 0 of 7 (7 for coast, which is the coasting line) | 0–2 of 7 | 535 / 538 |
+
+Opening and closing gates crossed in equal numbers throughout; no throw anywhere. The
+wall-hugging paths are one tick longer or the same — the stretch is straight, so nothing was
+there to cut; which paths actually shorten or lengthen a lap is the placement question the user
+has set aside. **What is shown is that a route can be specified and a boid made to follow it,
+pushed or not, with nothing but the same override that takes exits.**
+
+**Where the zone opens, measured.** With `S_1` at tau 36.3 the opening gate's landings run tau
+22.6–32.2: the zone opens where a wrong turn would first lose `S_1`, some 4–14 ticks before it.
+Place `S_1` inside the saturation floor and it opens onto the entrance itself (tau −8 to 12 with
+`S_1` at 20.7), with most entrances already inside — the counts say so, and the flights then
+follow the path only on the phases that can reach it.
+
+**Not yet.** Subpaths that cross an edge border, which the user expects to be possible with more
+manipulation; and choosing where a subpath should run to be a shortcut or a longcut.
+
 ---
 
 ## 3. Constructing a decomposition

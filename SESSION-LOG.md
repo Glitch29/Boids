@@ -75,11 +75,41 @@ added; `PsyboidOverride.parse` learns `g`; `SimTest.zones` added and `main` poin
 `EDGES.md` §2a "Decision zones", `HINTS.md` §3a, `GLOSSARY.md` (decision zone, `Gate`,
 `DecisionOverride`), `README.md`, `PIPELINE.md` §12a, `ROADMAP.md` §0i updated.
 
-**Open.** Shortcuts and longcuts on the same shape — a region bounded by a navigation gate where
-the wall is, the same override — not started. Still open from before: a real `insert` with the
-reachability assertion and interior perfection; the cut construction for maps that are not
-phase-locked. Of §0i's four questions to the user, (1) where `nextDecision` gets its context and
-(3) what `Windows.inPhase` is remain.
+**Then, same session again: subpaths.** The user respecified shortcuts and longcuts: no
+bifurcation of `E⊥S` needed — forbid `E<S_k → E⊥S_k` and thereby force `E<S_k → S_k`, four
+phantom edges at a time, along a subpath of `N` transitions with an `S_k` per transition; the zone
+opens at the states that can leave `E<S_1` forward-closed on `E<S_1`, closes on leaving `E<S_N`;
+first and last `S` to saturate the entrance and the exit. Built as `DecisionZone.subpath` with
+`SKIP`/`TAKE`; `DecisionOverride` generalised to carry several zones per edge and a subpath's
+path in its label; `SimTest.subpaths` drives it.
+
+**First run, spec taken literally (`S_k` = partial tick of transition `k`), edge 4, tau 22–63:**
+lone psyboid on every `S_k` in order on all three paths, but zones unsound — chain breaks 9–10,
+stuck 30–61 — and in the flock of four the override **threw** on a stranded state. Diagnosis: at
+a turn the sample formula and where a phase-`f` boid actually lands differ by `(1−f)·|Δstep|`
+≈ 0.3 px and round apart about one step in four. **Amended:** `S_1` partial tick, `S_{k+1}` the
+forward image of `S_k` under the path's turn. Chain breaks 0, stuck 0, no throws, flock 7 of 7.
+
+**Placement sweep** (one-step subpaths along the coasting traversal): entrances of edge 4 missing
+`S_1` are hundreds up to tau 19, 67 at 20.7, 1 at 22.4, **0 from tau 32** (entered from 8) and
+**from 36** (entered from 7); `|E<S_1|` 263 → 3,225 over that stretch. With `S_1` inside the floor
+the zone opens onto the entrance and most entrances are already "inside".
+
+**At margin 36, both loops `[4,2,1,5,8]` and `[4,0,3,5,8]`:** six of six zones sound; take →
+on every `S_k` in order on every full traversal, alone and in the flock; skip → not; opened and
+closed paired; laps 535/536/535 and 538/539/538 (coast/left/right), left a one-tick longcut on a
+straight stretch. Opening gate lands at tau 22.6–32.2 for `S_1` at 36.3.
+
+**Changed on disk, third commit.** `DecisionZone` (subpaths, generic options, measured counts,
+`stepOf`), `DecisionOverride` (several zones per edge, subpath labels), `SimTest.subpaths` and
+`field`; `EDGES.md` §2a "Subpaths", `HINTS.md` §3a, `GLOSSARY.md` (subpath, phantom edges),
+`README.md`, `PIPELINE.md` §12a, `ROADMAP.md` §0i.
+
+**Open.** Placement — which subpaths actually shorten or lengthen a lap — set aside by the user;
+cross-border subpaths, deferred; then the search over decisions. Still open from before: a real
+`insert` with the reachability assertion and interior perfection; the cut construction for maps
+that are not phase-locked. Of §0i's four questions to the user, (1) where `nextDecision` gets its
+context and (3) what `Windows.inPhase` is remain.
 
 ## 2026-09-11 — the cross-section view, and what a cut across it has to be
 

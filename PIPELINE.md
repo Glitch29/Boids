@@ -322,6 +322,18 @@ opening and closing gates crossed in equal numbers per edge, lone laps of **535 
 54**. Seconds once the facts are built. Nothing is written; zones are rebuilt from the facts and
 the map wherever they are needed, including when a `g` label is read back. `EDGES.md` §2a.
 
+```java
+SimTest.subpaths(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4, 36, 4000);
+```
+
+The same for subpaths on edge 4: first a sweep of one-step subpaths along the coasting traversal
+showing how far in `S_1` must sit before every entrance reaches it (0 missing from tau ≈ 32–36 on
+dabeone edge 4), then three subpaths from tau 36 — coasting, left-hugging, right-hugging — each
+built as a zone, reported, and flown taken and skipped, alone and in the flock. Expected: **all
+sound**, a psyboid told to take the path on every `S_k` in order on every full traversal, and
+laps within a tick of the untaken ones. Run it with the other loop, `{4, 0, 3, 5, 8}`, to see the
+path followed by the other exit.
+
 ## 13. Answer a scene
 
 ```java
