@@ -1937,6 +1937,14 @@ paths change the lap by at most a tick, the stretch being straight.
 **Next.** Placement — which subpaths shorten or lengthen a lap, and by how much — and then the
 search that chooses among decisions. Cross-border subpaths when wanted.
 
+**Shortcuts and longcuts are per route**, the user decided the same day: a route is any simple
+loop, and in practice only the stable ones (orbits) and the scoring ones matter. Whether the
+map-wide clock serves a single route was checked rather than assumed — `SimTest.routeClock`,
+`EDGES.md` §5: refit on each of dabeone's three loops alone, only the total is determined (edge
+lengths shift by up to 13 ticks, all gauge), totals agree to 0.2 ticks, spans to 0.3, and the
+tick within any edge changes by a per-edge constant to within 0.7. **The map-wide clock is the
+one to read subpath lengths and route phase off**; no per-route clock is needed.
+
 ### The tear-out, 2026-09-08
 
 Deleted, all recoverable at `0f9b2b7`:

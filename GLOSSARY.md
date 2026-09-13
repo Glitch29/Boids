@@ -734,6 +734,7 @@ anything not listed.
 | braiding toys | `RefineToy` — hand-built junction graphs through the real `refine` | printed |
 | exit decision zones | `DecisionZone.exits`, flown by `DecisionOverride`, checked by `SimTest.zones` | in memory; printed |
 | subpath decision zones | `DecisionZone.subpath`, flown by `DecisionOverride`, checked by `SimTest.subpaths` | in memory; printed |
+| the clock on one route | `SimTest.routeClock` — refit on a loop alone, compared three ways | printed |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

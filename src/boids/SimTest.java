@@ -2661,6 +2661,123 @@ picks, never in what is available to it.
         }
     }
 
+    /**
+     * The clock refitted on one route at a time, against the map-wide clock.
+     * <p>
+     * A route is a simple loop of edges. Its <b>corridor</b> is, on each edge, the states
+     * reachable from the crossing in from the previous edge that can also reach the crossing out
+     * to the next — what a boid on that route can occupy. The same least squares is run on the
+     * corridor alone, with the route's own crossings and no others, and compared with the
+     * map-wide fit three ways: the edge lengths, which on a lone cycle are gauge apart from
+     * their sum; the <b>spans</b>, the clock time from the route's canonical entry of each edge
+     * to its exit, which are not gauge; and the spread across each edge's corridor of the change
+     * in tick, which is the most any within-edge distance moves.
+     *
+     * @param routes each a cycle of edges, every one an arc of the one before
+     */
+    public static void routeClock(PresetScenarioParameter preset, SolverFacts.Gate gate,
+                                  int[][] routes) throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        SolverFacts f = b.facts();
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+        int[] edgeOf = l.edge();
+        DecisionZone[] exits = DecisionZone.exits(map, f);
+
+        for (int[] route : routes) {
+            int m = route.length;
+            System.out.printf("%n=== %s @%s: the clock on route %s alone ===%n", preset.name(),
+                    preset.ingest().hash(), Arrays.toString(route));
+
+            // The corridor: on each edge, reachable from the way in and reaching the way out.
+            int[] edge2 = new int[edgeOf.length];
+            Arrays.fill(edge2, -1);
+            int[] out = new int[3];
+            for (int i = 0; i < m; i++) {
+                int e = route[i], prev = route[(i + m - 1) % m], next = route[(i + 1) % m];
+                boolean[] fromIn = new boolean[edgeOf.length], toOut = new boolean[edgeOf.length];
+                ArrayDeque<Integer> queue = new ArrayDeque<>();
+                for (int k = 0; k < l.liveCount(); k++) {
+                    int s = l.live()[k];
+                    if (edgeOf[s] != e) continue;
+                    int c = map.steeredPredecessors(s, out);
+                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == prev) { fromIn[s] = true; queue.add(s); break; }
+                }
+                while (!queue.isEmpty()) {
+                    int s = queue.poll();
+                    int c = map.steeredSuccessors(s, out);
+                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == e && !fromIn[out[j]]) { fromIn[out[j]] = true; queue.add(out[j]); }
+                }
+                for (int k = 0; k < l.liveCount(); k++) {
+                    int s = l.live()[k];
+                    if (edgeOf[s] != e) continue;
+                    int c = map.steeredSuccessors(s, out);
+                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == next) { toOut[s] = true; queue.add(s); break; }
+                }
+                while (!queue.isEmpty()) {
+                    int s = queue.poll();
+                    int c = map.steeredPredecessors(s, out);
+                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == e && !toOut[out[j]]) { toOut[out[j]] = true; queue.add(out[j]); }
+                }
+                for (int k = 0; k < l.liveCount(); k++) {
+                    int s = l.live()[k];
+                    if (fromIn[s] && toOut[s]) edge2[s] = i;
+                }
+            }
+            int count = 0;
+            for (int k = 0; k < l.liveCount(); k++) if (edge2[l.live()[k]] >= 0) count++;
+            int[] live2 = new int[count];
+            for (int k = 0, at = 0; k < l.liveCount(); k++) if (edge2[l.live()[k]] >= 0) live2[at++] = l.live()[k];
+
+            EdgeMetric.Metric alone = EdgeMetric.compute(map, edge2, live2, count, m, SCHEME, CHAIN);
+            System.out.println("  " + EdgeMetric.lastSolve());
+
+            // The lap as flown, for the total to be read against.
+            int[] choice = new int[f.edges()];
+            Arrays.fill(choice, -1);
+            for (int i = 0; i < m; i++) choice[route[i]] = route[(i + 1) % m];
+            Engine solo = new Boids2DEngine(withFlockSize(preset, 1));
+            Sim.State s = solo.init(0);
+            for (int t = 0; t < 1000; t++) s = solo.tick(s);
+            s = withOverrides(s, DecisionOverride.of(0, choice, map, f, exits));
+            List<Long> entries = new ArrayList<>();
+            int prevEdge = f.edgeAt(s.x[0], s.y[0], s.h[0]);
+            for (int t = 0; t < 3000; t++) {
+                s = solo.tick(s);
+                int e = f.edgeAt(s.x[0], s.y[0], s.h[0]);
+                if (e == route[0] && prevEdge != route[0]) entries.add(s.tick);
+                prevEdge = e;
+            }
+            StringBuilder laps = new StringBuilder();
+            for (int k = 1; k < entries.size(); k++) laps.append(' ').append(entries.get(k) - entries.get(k - 1));
+
+            System.out.printf("%n%-5s %7s %9s %9s %9s %9s %9s %8s%n", "edge", "states",
+                    "L map", "L route", "span map", "span rt", "d spread", "d mean");
+            double sumL = 0, sumL2 = 0, sumSpan = 0, sumSpan2 = 0, worstSpread = 0;
+            for (int i = 0; i < m; i++) {
+                int e = route[i], prev = (i + m - 1) % m, next = (i + 1) % m;
+                int entry = alone.entryFrom()[i][prev], exit = alone.exitTo()[i][next];
+                double spanMap = f.tickOf()[exit] - f.tickOf()[entry] + 1;
+                double spanRoute = alone.tick()[exit] - alone.tick()[entry] + 1;
+                double lo = Double.MAX_VALUE, hi = -Double.MAX_VALUE, sum = 0;
+                int n = 0;
+                for (int st : live2) {
+                    if (edge2[st] != i) continue;
+                    double d = alone.tick()[st] - f.tickOf()[st];
+                    lo = Math.min(lo, d); hi = Math.max(hi, d); sum += d; n++;
+                }
+                System.out.printf("%-5d %7d %9.2f %9.2f %9.2f %9.2f %9.2f %8.2f%n", e, n,
+                        f.length()[e], alone.length()[i], spanMap, spanRoute, hi - lo, sum / n);
+                sumL += f.length()[e]; sumL2 += alone.length()[i];
+                sumSpan += spanMap; sumSpan2 += spanRoute;
+                worstSpread = Math.max(worstSpread, hi - lo);
+            }
+            System.out.printf("%-5s %7s %9.2f %9.2f %9.2f %9.2f %9.2f%n", "total", "", sumL, sumL2,
+                    sumSpan, sumSpan2, worstSpread);
+            System.out.printf("flown lap:%s%n", laps);
+        }
+    }
+
     /** The value after {@code name} in a {@link DecisionZone#report}. */
     private static String field(String report, String name) {
         int at = report.indexOf(name + " ");
@@ -2675,8 +2792,7 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        subpaths(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4, 36, 4000);
-        subpaths(PresetScenarioParameter.DABEONE, dab, new int[]{4, 0, 3, 5, 8}, 4, 36, 4000);
+        routeClock(PresetScenarioParameter.DABEONE, dab, new int[][]{{2, 7, 4}, {4, 2, 1, 5, 8}, {4, 0, 3, 5, 8}});
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

@@ -663,6 +663,42 @@ dabeone's nine lengths are ≈ 158.14, 158.62, 100.59, 100.97, 93.73, 102.59, 71
 99.75/100.15, 752.89/753.39). Nothing in the solve knows about inverses, so agreement is
 independent evidence.
 
+### The clock on one route alone, against the map-wide clock
+
+**Measured 2026-09-12, dabeone `609cffdb84be218c`, `SimTest.routeClock`, physics 3, MOMENTUM.**
+The question was whether a clock fitted map-wide agrees with one fitted on a single route, since
+shortcuts and longcuts are a per-route matter. The same least squares was run on each route
+alone — its edges, its own crossings and no others, the walk's weights recomputed on the route —
+for the stable cycle `[2, 7, 4]` and both scoring loops.
+
+**A route's corridor is the whole of each edge.** On every route, the states of an edge
+reachable from the way in *and* reaching the way out are all of its states — the axiom in both
+directions — so "the route alone" removes the off-route crossings and nothing else.
+
+| | `[2, 7, 4]` | `[4, 2, 1, 5, 8]` | `[4, 0, 3, 5, 8]` |
+| --- | --- | --- | --- |
+| total length, map-wide / route alone | 275.29 / **275.29** | 528.30 / **528.45** | 528.19 / **528.38** |
+| largest change in one edge's length | 12.8 (edge 7: 80.97 → 93.76) | 12.5 (edge 2: 100.59 → 113.09) | 10.7 (edge 5: 102.59 → 91.88) |
+| largest change in one edge's span | 0.01 | 0.29 | 0.30 |
+| largest within-edge spread of the change in tick | **0.49** | **0.70** | **0.60** |
+| lap as flown by a lone psyboid | 278 | 535 | 538 |
+
+**Lengths move by up to thirteen ticks, and it is all gauge.** On a lone cycle the fit
+determines only the total; the split between edges is a free choice, and the regauge makes it by
+putting every length at its route's own shortest-path estimate plus an equal share of the slack
+(the per-route lengths on a loop all carry the same fractional part). Map-wide, the class
+structure at branches and merges pins some of that freedom, which is why the two conventions
+differ — not because either clock disagrees about anything a boid can feel.
+
+**What is not gauge barely moves.** Totals agree to 0.2 ticks. The span of each edge — clock time
+from the route's canonical entry to its exit, gauge-free — agrees to 0.3. And the change in tick
+across every state of an edge is a per-edge constant to within **0.7 ticks** on the worst edge,
+so **no subpath's length in tau changes by more than 0.7 ticks** between the two clocks, on
+edges 70 to 160 ticks long. Read subpath lengths off the map-wide clock; nothing is lost.
+
+The flown laps sit 1–2% above both clocks, which is the known bias of §4 in `HINTS.md`: the
+transitions boids fly are slower than the average transition.
+
 ---
 
 ## 6. Routes

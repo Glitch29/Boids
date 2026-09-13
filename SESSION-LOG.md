@@ -105,6 +105,20 @@ straight stretch. Opening gate lands at tau 22.6–32.2 for `S_1` at 36.3.
 `field`; `EDGES.md` §2a "Subpaths", `HINTS.md` §3a, `GLOSSARY.md` (subpath, phantom edges),
 `README.md`, `PIPELINE.md` §12a, `ROADMAP.md` §0i.
 
+**Then: does the map-wide clock serve one route?** The user's framing: shortcuts and longcuts are
+per route (a simple loop; in practice orbits and scoring loops), and a clock fitted on one route
+alone would have just one non-arbitrary variable, the total. Checked with `SimTest.routeClock`:
+the same least squares run on each of dabeone's three loops alone — its edges, its own crossings,
+MOMENTUM weights recomputed on the route. The corridor of a route is the whole of each edge, both
+ways round, by the axiom. Results: totals **275.29/275.29, 528.30/528.45, 528.19/528.38**
+(map-wide / alone); edge lengths shift up to **12.8** (edge 7, 80.97 → 93.76) and the per-route
+lengths all share one fractional part — the regauge putting each at its estimate plus an equal
+share of slack, i.e. gauge; spans (entry to exit, gauge-free) agree to **0.3**; the change in tick
+across an edge's states is a constant to within **0.70** on the worst edge (0.49, 0.70, 0.60 per
+route). So no within-edge subpath moves by more than 0.7 ticks between the clocks. Flown laps
+278, 535, 538 against clocks 275, 528, 528 — the known 1–2% bias. Recorded in `EDGES.md` §5,
+`HINTS.md` §4, `ROADMAP.md` §0i; fourth commit.
+
 **Open.** Placement — which subpaths actually shorten or lengthen a lap — set aside by the user;
 cross-border subpaths, deferred; then the search over decisions. Still open from before: a real
 `insert` with the reachability assertion and interior perfection; the cut construction for maps

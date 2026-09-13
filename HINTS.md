@@ -465,6 +465,13 @@ least-squares solve against the traversal estimate.
 (157.37/157.77, 99.75/100.15, 752.89/753.39). Nothing in the solve knows about inverses, so
 agreement is independent evidence the gauge picked a sensible representative.
 
+**A clock fitted on one route alone is the map-wide clock plus a constant per edge.** Refit on a
+single loop and only its total is determined; the split between edges is free, and lengths move
+by up to thirteen ticks purely by convention. Everything a boid can feel stays: totals agree to
+0.2 ticks, entry-to-exit spans to 0.3, and the change in tick across an edge's states is constant
+to within 0.7 on the worst of dabeone's edges. So distances within an edge, and phase around a
+loop, can be read off the map-wide clock for any route. Measured on all three of dabeone's loops.
+
 ### Two traps
 
 - **Run the solver to a residual, not a fixed step cap.** plait's worst vertex error read 0.56
