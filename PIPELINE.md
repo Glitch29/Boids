@@ -19,7 +19,7 @@ A map and a gate in, a verified corpus out. Read on for what each tier is and ho
 read `CORPUS.md` for what the recipe resolves per map and what still blocks running unattended.
 The gate is the only argument that is neither the map nor a named recipe.
 
-**Status:** 2026-09-08, physics 3. **The corpus step is gone** — `Pipeline.corpus` and everything
+**Status:** 2026-09-12, physics 3; §12a (decision zones) added. **The corpus step is gone** — `Pipeline.corpus` and everything
 under it were removed on 2026-09-08 with the search that produced plans; `Pipeline.build` still
 takes a map and a cut line to solver facts, and step 18 onward has no implementation. See
 `ROADMAP.md` §0i. **Every path below moved**: derived output is addressed by
@@ -306,6 +306,21 @@ in the middle of answering a question about a photograph.
 **Bump `SolverStore.FORMAT` whenever the meaning of anything stored changes**, for the same
 reason `EdgeMetricStore` carries one. These facts are the solver's entire model of the map, and
 a stale one does not look stale — it answers a slightly different map's questions.
+
+## 12a. Build the exit decision zones, and check them by flying
+
+```java
+SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
+SimTest.zones(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4000);
+```
+
+Builds `DecisionZone.exits` for every edge — the region a psyboid enters, the transitions each
+choice forbids, the gate that closes it — reports each as sound or not, then flies a lone psyboid
+and a flocked one round the loop under `DecisionOverride` and under `EdgePilot` from the same
+state. Expected on dabeone: **9 of 9 zones sound**, **0 mismatching ticks** in both flights,
+opening and closing gates crossed in equal numbers per edge, lone laps of **535 ticks scoring
+54**. Seconds once the facts are built. Nothing is written; zones are rebuilt from the facts and
+the map wherever they are needed, including when a `g` label is read back. `EDGES.md` §2a.
 
 ## 13. Answer a scene
 

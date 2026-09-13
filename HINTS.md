@@ -387,6 +387,20 @@ chosen subset of the transitions it creates, and hand the result to navigation l
 under the ordinary one-step lookahead cannot cross a boundary it was not sent to, so a gate placed
 where a wall is bounds a shortcut without any new kind of steering.
 
+**Every piece of psyboid logic has one shape: enter a zone, refuse some transitions, leave the
+zone.** A decision zone is a gate that opens it, one or more gates the boid will not cross while
+inside, and a gate that closes it. For an exit the zone is the states that can leave the edge plus
+everything they reach on it, the prohibitions are the transitions into the successors not chosen,
+and the closing gate is every transition off the edge. Two things make this cheap. The opening
+and closing gates sit on one edge, opening upstream, so they are crossed in pairs and bound a
+convex region — the zone can be stored as that region, and *inside it* replaces any memory of
+what was crossed, which an override cannot keep anyway once a search re-advances the same state.
+And the steering rule is the same one-step lookahead as before with *prohibited* in place of
+*leaves the route*, so it reproduces the route pilot tick for tick and a shortcut is another zone
+with other prohibitions rather than another rule. Keyed on the effective turn, after the veto:
+a request the veto alters is not the transition the boid takes. Measured: nine of nine zones sound
+on dabeone and zero mismatching ticks against the pilot over 4,000, alone and in a flock.
+
 ## 4. The clock — tick values and edge lengths
 
 **The problem it solves.** The decomposition says which stretch a state is on but not where

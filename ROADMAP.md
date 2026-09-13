@@ -1881,6 +1881,37 @@ three-way joint. For now a joint where three edges meet is a dead end for the de
 is specified and not built; the reachability assertion and interior perfection want a real
 `insert`; the cut-construction for unlocked maps has a definition and no algorithm.
 
+### Decision zones for psyboid logic — exits **built and verified** 2026-09-12
+
+**`Gate` (transition sets), `DecisionZone` (an edge's exit decision: region, opening gate,
+prohibited gates per option, closing gate) and `DecisionOverride` (a stateless override that
+honours the prohibitions while inside a zone), driven by `SimTest.zones`. Canonical in
+`EDGES.md` §2a "Decision zones".** Specified by the user this session: a psyboid crosses a gate
+that opens a decision zone, is handed one or more gates it will not cross, and crosses a gate that
+closes the zone. For exits: `S` = every state of `E` that can leave `E`, plus its forward closure
+on `E`; the opening gate is every transition `E−S → S`; the prohibited gate for a choice is every
+transition from `E` into a successor not chosen; the closing gate is every transition off `E`.
+Opening and closing gates on one edge, opening upstream, are crossed in pairs — equivalent to
+bounding a convex region, which is `S` itself — so the zone is stored as its region and the
+prohibitions stay transitions.
+
+**Measured on dabeone `609cffdb84be218c`.** Nine of nine zones sound: no entrance inside its
+region, nothing bypassing it, nothing leaking back out. `DecisionOverride` and `EdgePilot` flown
+from one state round `[4, 2, 1, 5, 8]` for 4,000 ticks, alone and in a flock of four: **0
+mismatching ticks in either flight**; every zone's opening and closing gates crossed in equal
+numbers; a lone psyboid laps in 535 ticks scoring 54. (533 is on record for the retired
+held-turn plans; the pilot turns as late as possible. Not chased.)
+
+**This partly supersedes the `Decision` sketch above.** What a decision installs is now known:
+a chosen option per zone, carried as data on a stateless override, with *inside the region*
+standing in for *between the gates*. Of the four open questions put to the user: (2) is moot for
+exits — one zone per edge, one option set; (4) is answered by the region — a decision instance is
+`(edge, nth entry into its zone)`, and the tick is never needed. (1) and (3) remain.
+
+**Next: shortcuts and longcuts on the same shape.** A different region, bounded by a navigation
+gate from edge insertion where the wall is, and the same override; nothing new to steer with.
+Not started.
+
 ### The tear-out, 2026-09-08
 
 Deleted, all recoverable at `0f9b2b7`:

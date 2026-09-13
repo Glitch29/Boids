@@ -102,6 +102,7 @@ public interface PsyboidOverride extends MovementControl {
     /** The same, for a context where the map is available. Handles every kind. */
     static PsyboidOverride parse(String label, NavMap map, SolverFacts f) {
         if (label.startsWith("q")) return EdgePilot.parsePilot(label, map, f);
+        if (label.startsWith("g")) return DecisionOverride.parseZones(label, map, f);
         throw new IllegalArgumentException("no override kind is written '" + label.charAt(0)
                 + "': " + label);
     }

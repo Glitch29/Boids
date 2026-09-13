@@ -434,6 +434,56 @@ of its upcoming states. **Exits and shortcuts are not different in kind** — sa
 table-driven execution, different consequence: an exit decision forces a particular edge exit, a
 shortcut decision advances or regresses phase in tau-space. See `ROADMAP.md` §0i.
 
+### Decision zones: the shape every piece of psyboid logic takes
+
+**Specified by the user and built 2026-09-12** — `Gate`, `DecisionZone`, `DecisionOverride`,
+driven by `SimTest.zones`. Everything a psyboid does is meant to be local and of one shape:
+
+1. it crosses a gate that **opens** a decision zone;
+2. depending on the decision, it is handed one or more gates it **will not cross**;
+3. it crosses a gate that **closes** the zone.
+
+**Transition-based throughout.** A state-based gate converts to a transition-based one by taking
+every transition that lands in its states (`Gate.landingIn`), and the prohibitions in step 2 have
+no state-based form at all, so transitions are the common currency. A transition is keyed on the
+*effective* turn — what the boid does after the veto — because that is what the decomposition
+calls a transition; a request the veto would alter is looked up as the turn it becomes.
+
+**The exit construction.** Let `S` be every state of `E` that can leave `E` in one permitted
+turn, plus the forward closure of those on `E`. Then the opening gate is every transition
+`E−S → S`; the prohibited gate for choosing successor `g` is every transition from `E` into a
+successor other than `g`; the closing gate is every transition off `E`.
+
+**The opening and closing gates are crossed in pairs, so the zone is a region.** Both sit on one
+edge with the opening gate upstream, which is the same as saying they bound a convex set — no
+navigation from `S` out to `E−S` and back, equivalently any state that can forward-navigate to
+`S` and backward-navigate to `S` is in `S` — and that set is `S` itself, forward-closed on `E` by
+construction. So *being inside `S`* stands in for *between the gates*, the zone is stored as its
+region, and `DecisionOverride` needs no memory of what it crossed. **It could not have any**: an
+override is shared by every timeline descending from the state it was installed on, and a search
+re-advances the same state many times. The prohibitions stay transitions.
+
+**What makes the opening gate a gate, checked per edge.** No entrance of `E` lies inside `S`, so
+no traversal starts past it; every state of `E` reaches `S` without leaving `E`, so none misses
+it (this follows from the axiom, since every state reaches every successor and only `S` can step
+off, and is verified anyway); and nothing steps from `S` back to `E−S`. On dabeone
+`609cffdb84be218c`: **nine of nine sound**, regions 43 to 1,232 states, opening gates 61 to 718
+transitions, entrances 43 to 646 per edge with **0 inside**, 0 bypassing, 0 leaks.
+
+**The override is the pilot's rule as data, and flies identically.** Inside a zone whose decision
+is made, the flock's own request stands unless it crosses the prohibited gate; otherwise the first
+of straight, left, right that does not. For an exit that is `EdgePilot`'s *stays on the edge or
+reaches the target* exactly, and the two were flown from the same state round `[4, 2, 1, 5, 8]`
+for 4,000 ticks, alone and in a flock of four: **0 mismatching ticks in either**, opening and
+closing gates crossed in equal numbers on every edge, and a lone psyboid lapping in **535 ticks
+scoring 54** every lap. The difference is that a shortcut is another zone with other prohibitions
+and needs no new rule — which is the whole reason for the representation.
+
+> The lone-psyboid lap here is **535**, where §6 and §9 record **533**. The 533 was flown by the
+> retired held-turn plans; the pilot and the override turn as late as a turn can be left, which
+> is a different line through the corners. Not investigated beyond noting that both rules agree
+> with each other tick for tick.
+
 ---
 
 ## 3. Constructing a decomposition
@@ -579,7 +629,8 @@ inverse edge pairs: nothing in the clock's fit knows they are near-mirrors.
 seeds of `PLANS_40` — `SimTest.scoringFloor`, and `CORPUS.md`. The 0.9% disagreement with the
 clock sits inside the clock's own 1.65% `sd/mean`, so this is **a third independent check on the
 metric** rather than a defect in it: nothing in the clock's gradient fit knows how long a lap
-takes in ticks.
+takes in ticks. (Those plans and that entry point are gone; the pilot and the gate override lap
+the same loop in **535** — §2a.)
 
 **Edge 6 lies on no simple loop**, which is correct and useful — it is reachable only during
 warmup, and anything keyed on loops drops it without needing to special-case it.
@@ -757,7 +808,7 @@ Ingest `609cffdb84be218c`, 379×407, turning radius 40, physics 2.
 | follow-through states | 20 on edge 2, 16 on edge 4, 18 on edge 5 |
 | route A lap | 278 ticks |
 | exit routes | 533–536 ticks, score 54 |
-| flown scoring lap | **exactly 533 ticks, exactly 54 points**, physics 3 |
+| flown scoring lap | **exactly 533 ticks, exactly 54 points**, physics 3, under the retired held-turn plans; **535 and 54** under `EdgePilot` / `DecisionOverride`, §2a |
 | warm edge occupancy | `2:0.3556 4:0.3285 7:0.3156`, everything else at or below `0.0002`, physics 3 |
 | reachable pairs | 213,423,450 (1.15%), bit-identical from 5 seeds |
 | psyboid reaches | 100% of live states; the boid reaches 79.86% |

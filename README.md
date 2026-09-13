@@ -72,6 +72,7 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | absorb in refinement | reducing masks to their equivalence class; **byte-identical labellings on all three maps** with it on | `EdgeDecomposition.absorb` |
 | what cuts a corridor | only a line at constant `d` bifurcates `E⊥S` — 250/250, none straddling; every other orientation leaves one straddling piece | `GateSplit.lines`, `HINTS.md` §3a |
 | braiding | the axiom groups by menu, not outcome: a one-to-three branch with one menu settles at exactly the 13 pieces predicted; with two menus its open layer splits and everything below follows. Binary joints cannot braid. **Not a defect in `refine`**; a bifurcated `E⊥S` stays out of the decomposition | `RefineToy`, `EDGES.md` §2a |
+| exit decision zones | region + opening gate + prohibited transitions + closing gate, per edge: **nine of nine sound** on dabeone (0 entrances inside, 0 bypassing, 0 leaks); `DecisionOverride` and `EdgePilot` fly `[4, 2, 1, 5, 8]` with **0 mismatching ticks** over 4,000, alone and in a flock of four; lone lap 535 ticks, 54 points | `DecisionZone`, `SimTest.zones`, `EDGES.md` §2a |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -143,7 +144,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 58 files.
+One package, `src/boids`, 61 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -193,6 +194,10 @@ way, one-step navigability checked on every build). See `CORPUS.md` for what it 
 **Psyboid** — `PsyboidOverride` (the interface: anything that steers, in the same chain as the
 flocking rules; `held` is an analysis primitive and not a plan kind) · `EdgePilot` (a route,
 steered only where coasting would leave it — **one step of lookahead is all of navigation**) ·
+`Gate` (a transition-based gate: sorted `(state, effective turn)` keys) · `DecisionZone` (one
+edge's exit decision as gates — a region entered, prohibited transitions per option, a closing
+gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone, stateless, label prefix `g`;
+flies identically to `EdgePilot`) ·
 `EdgePrice` (the price function: gain and bias over `(edge, tau)`) · `EdgeReach` (forward
 distance and rebasing in `(edge, tau)`; currently uncalled) · `CorpusPreset` (named recipes, so
 a corpus is addressed by the settings that produced it). See `CORPUS.md`.
@@ -246,6 +251,7 @@ ways → 6 edges.
 | `proposedPhysics` | the whole pipeline — stable+, tables, phase map — rerun under a proposed aggregation, with the closed-form check |
 | `phaseMapOnStablePlus` | the three-boid phase map with stable+ as both the suspect population and admission's ground, plus a control |
 | `tablesOnStablePlus` | the critical-envelope tables for one arc on that same ground |
+| `zones` | the exit decision zone of every edge, checked, then flown against `EdgePilot` tick for tick |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` prints one sampled exit tick by tick, marking which

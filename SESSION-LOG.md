@@ -52,9 +52,34 @@ itself — cannot fire on the current maps since a mask only ever holds one edge
 `HINTS.md`, `GLOSSARY.md`, `README.md`, `ROADMAP.md` updated and dated. No artifact re-derived;
 no decomposition changed.
 
-**Open.** Unchanged frontier in `ROADMAP.md` §0i: navigation gates for shortcuts, specified and
-not built; a real `insert` with the reachability assertion and interior perfection; the cut
-construction for maps that are not phase-locked.
+**Then, same session: decision zones built for exits.** The user specified the shape every piece
+of psyboid logic is to take — cross a gate that opens a zone, be handed gates you will not cross,
+cross a gate that closes it — and the exit construction: `S` = states that can leave `E` plus
+their forward closure on `E`; opening gate `E−S → S`; prohibited gate per choice = transitions
+into the other successors; closing gate = transitions off `E`. Built as `Gate` (sorted
+transition keys on the effective turn), `DecisionZone` (region + gates + per-option prohibitions,
+with soundness checks: entrances inside, bypassing, leaks) and `DecisionOverride` (stateless —
+*inside the region* stands in for *between the gates*, which is forced, since an override is
+shared across every timeline descending from a state). Label prefix `g`, parsed alongside `q`.
+Driven by `SimTest.zones`.
+
+**Numbers, dabeone `609cffdb84be218c`.** Nine of nine zones sound: regions 43–1,232 states,
+opening gates 61–718 transitions, 0 entrances inside, 0 bypassing, 0 leaks. `DecisionOverride`
+against `EdgePilot` from one state round `[4, 2, 1, 5, 8]`, 4,000 ticks: **0 mismatching ticks
+alone, 0 in a flock of four**; opening and closing crossings equal on every edge (7/7 or 8/8);
+lone laps **535/54** six times running. **535 is not the 533 on record** — that was the retired
+held-turn plans; the pilot turns as late as possible. Noted in `EDGES.md` §6 and §9, not chased.
+
+**Changed on disk, second commit.** `Gate.java`, `DecisionZone.java`, `DecisionOverride.java`
+added; `PsyboidOverride.parse` learns `g`; `SimTest.zones` added and `main` points at it.
+`EDGES.md` §2a "Decision zones", `HINTS.md` §3a, `GLOSSARY.md` (decision zone, `Gate`,
+`DecisionOverride`), `README.md`, `PIPELINE.md` §12a, `ROADMAP.md` §0i updated.
+
+**Open.** Shortcuts and longcuts on the same shape — a region bounded by a navigation gate where
+the wall is, the same override — not started. Still open from before: a real `insert` with the
+reachability assertion and interior perfection; the cut construction for maps that are not
+phase-locked. Of §0i's four questions to the user, (1) where `nextDecision` gets its context and
+(3) what `Windows.inPhase` is remain.
 
 ## 2026-09-11 — the cross-section view, and what a cut across it has to be
 

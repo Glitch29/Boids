@@ -2390,15 +2390,115 @@ picks, never in what is available to it.
     }
 
     /**
+     * Builds the exit {@link DecisionZone} of every edge, checks each is sound, then flies a lone
+     * psyboid round {@code loop} under {@link DecisionOverride} and under {@link EdgePilot} from
+     * the same state and compares them tick by tick.
+     * <p>
+     * The two rules are meant to be the same rule in two representations — <em>not
+     * prohibited</em> against <em>stays on the edge or reaches the target</em> — so any tick on
+     * which they part is a defect in one of them. Along the way it counts, per zone, how many
+     * times the flown boid crossed the opening and the closing gate, which must be equal, and
+     * reports the lap period and score, which on dabeone's scoring loop are 533 and 54.
+     *
+     * @param loop  the route as a cycle of edges, each an exit of the one before
+     * @param ticks how long to fly after a 1,000-tick coast
+     */
+    public static void zones(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] loop,
+                             int ticks) throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        SolverFacts f = b.facts();
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+
+        int disagree = 0;
+        for (int i = 0; i < l.liveCount(); i++) {
+            int s = l.live()[i];
+            if (f.edgeOf()[s] != l.edge()[s]) disagree++;
+        }
+        if (disagree > 0) {
+            throw new IllegalStateException(disagree + " live states are labelled differently by "
+                    + "the facts and the labelling; the zones would be built on one and flown on "
+                    + "the other");
+        }
+
+        System.out.printf("%n=== %s @%s: exit decision zones ===%n", preset.name(),
+                preset.ingest().hash());
+        DecisionZone[] zones = DecisionZone.exits(map, f);
+        int unsound = 0;
+        for (DecisionZone z : zones) {
+            System.out.println("  " + z.report() + (z.sound() ? "" : "   <-- NOT A GATE"));
+            if (!z.sound()) unsound++;
+        }
+        System.out.printf("%d of %d zones sound%n", zones.length - unsound, zones.length);
+
+        int[] choice = new int[f.edges()];
+        Arrays.fill(choice, -1);
+        for (int k = 0; k < loop.length; k++) choice[loop[k]] = loop[(k + 1) % loop.length];
+
+        // Alone first, where the flock asks for nothing and the rule is all there is; then with
+        // the whole flock, where the request the rule leaves alone is exercised.
+        for (int flock : new int[]{1, preset.flockSize()}) {
+            Engine engine = new Boids2DEngine(withFlockSize(preset, flock));
+            Sim.State root = engine.init(0);
+            for (int t = 0; t < 1000; t++) root = engine.tick(root);
+            Sim.State a = withOverrides(root, DecisionOverride.of(0, choice, map, f, zones));
+            Sim.State p = withOverrides(root, EdgePilot.of(0, choice, map, f, l));
+            System.out.printf("%nflock of %d: flying %s and %s from tick %d, edge %d%n", flock,
+                    a.psyboidOverrides[0].label(), p.psyboidOverrides[0].label(), root.tick,
+                    f.edgeAt(root.x[0], root.y[0], root.h[0]));
+
+            int mismatches = 0;
+            long firstMismatch = -1;
+            int[] opened = new int[f.edges()], closed = new int[f.edges()];
+            List<Long> entries = new ArrayList<>();
+            List<Long> scores = new ArrayList<>();
+            int prevEdge = f.edgeAt(root.x[0], root.y[0], root.h[0]);
+            for (int t = 0; t < ticks; t++) {
+                int s0 = f.state(a.x[0], a.y[0], a.h[0]);
+                a = engine.tick(a);
+                p = engine.tick(p);
+                for (int i = 0; i < flock; i++) {
+                    if (a.x[i] != p.x[i] || a.y[i] != p.y[i] || a.h[i] != p.h[i]) {
+                        if (mismatches == 0) firstMismatch = a.tick;
+                        mismatches++;
+                        break;
+                    }
+                }
+                int turn = Math.floorMod(a.h[0] - (s0 % Params.TURNS) + 1, Params.TURNS) - 1;
+                for (DecisionZone z : zones) {
+                    if (z.opens().crosses(s0, turn)) opened[z.edge()]++;
+                    if (z.closes().crosses(s0, turn)) closed[z.edge()]++;
+                }
+                int edge = f.edgeAt(a.x[0], a.y[0], a.h[0]);
+                if (edge == loop[0] && prevEdge != loop[0]) {
+                    entries.add(a.tick);
+                    scores.add(a.boidScore[0]);
+                }
+                prevEdge = edge;
+            }
+            System.out.printf("%d ticks flown, %d mismatching ticks between the two rules%s%n",
+                    ticks, mismatches, mismatches == 0 ? "" : ", first at tick " + firstMismatch);
+            System.out.printf("%-5s %7s %7s%n", "edge", "opened", "closed");
+            for (int e = 0; e < f.edges(); e++) {
+                System.out.printf("%-5d %7d %7d%s%n", e, opened[e], closed[e],
+                        opened[e] == closed[e] ? "" : "   <-- unpaired");
+            }
+            StringBuilder laps = new StringBuilder();
+            for (int k = 1; k < entries.size(); k++) {
+                laps.append(String.format(" %d/%d", entries.get(k) - entries.get(k - 1),
+                        scores.get(k) - scores.get(k - 1)));
+            }
+            System.out.printf("psyboid's laps into edge %d (period/score):%s%n", loop[0], laps);
+        }
+    }
+
+    /**
      * Scratch dispatcher, not an interface. Edit it to call whatever entry point is wanted;
      * {@code PIPELINE.md} has the real invocations in order with their expected numbers.
-     * <p>
-     * Currently: build each registered map to the point every tier is derived and every
-     * invariant checked, which is the cheapest thing that exercises the whole structure tier.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        GateSplit.lines(PresetScenarioParameter.EDGE_TEST, dab, 4, 222);
+        zones(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4000);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

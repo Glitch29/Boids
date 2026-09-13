@@ -389,7 +389,26 @@ provenance; nothing at solve time reads one. See `EDGES.md` §2.
 returns the triggering state with the appropriate override installed; how and when that override
 acts is a black box to the caller. **Exits and shortcuts are not different in kind** — both hand a
 boid precomputed navigation decisions for some of its upcoming states, one to force an edge exit,
-the other to shift phase in tau-space. Specified in `ROADMAP.md` §0i; not yet built.
+the other to shift phase in tau-space. Specified in `ROADMAP.md` §0i; the exit form is built as
+a **decision zone**.
+
+**decision zone** — the shape every piece of psyboid logic takes: a boid crosses a gate that
+**opens** the zone, is handed one or more gates it **will not cross** depending on the decision,
+and crosses a gate that **closes** it. `DecisionZone`, one per edge for exits, built by
+`DecisionZone.exits`. Opening and closing gates on one edge are crossed in pairs, so the zone is
+stored as the convex **region** between them — for exits, `S` = the states that can leave the
+edge plus their forward closure on it — and *inside the region* stands in for *between the gates*.
+The prohibitions stay transitions. `EDGES.md` §2a.
+
+**`Gate`** (the class) — the transition-based gate: a sorted set of `(state, effective turn)`
+keys with `crosses(state, turn)`. `Gate.between` builds one from a set of states and a landing
+predicate; `Gate.landingIn` converts a state-based gate. Not to be confused with
+`SolverFacts.Gate`, which is a **cut line**.
+
+**`DecisionOverride`** — the override that steers by zones alone: inside a zone whose decision it
+carries, it refuses any turn that crosses the prohibited gate and otherwise leaves the boid to the
+flock. Stateless by necessity — an override is shared by every timeline descending from the state
+it was installed on. Label prefix `g`. Flies identically to `EdgePilot` on exits.
 
 **stable edge** — unsteered travel returns to it without scoring. A boid on a stable edge
 could have been there forever and owes no explanation. On dabeone: `{2, 4, 7}`.
@@ -702,6 +721,7 @@ anything not listed.
 | cross-section view | `GateSplit.drawCrossSections` — one tile per tick of tau, across x `d`, perpendicular to travel | `render/gate-split/edge<e>-cross.png`, `-cross-zoom.png` |
 | cut-line test | `GateSplit.lines` — lines across one cross-section, phase-completed, `E⊥S` sided | printed |
 | braiding toys | `RefineToy` — hand-built junction graphs through the real `refine` | printed |
+| exit decision zones | `DecisionZone.exits`, flown by `DecisionOverride`, checked by `SimTest.zones` | in memory; printed |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |
