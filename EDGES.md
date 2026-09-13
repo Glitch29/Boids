@@ -653,7 +653,9 @@ of `3 × ticks` pruned every route leaving the start edge, producing errors of 8
 `cap = ticks + Σ all edge lengths`.
 
 **Keep lengths real.** Rounding to whole ticks injects up to half a tick of error at every
-crossing — invisible inside an edge, and the same order as the effects being measured.
+crossing — invisible inside an edge, and the same order as the effects being measured. The
+whole-tick solver that once produced them survived, unused, behind a flag until 2026-09-12 and is
+gone; nothing in `EdgeMetric` rounds a length or a tick now (`HINTS.md` §4).
 
 **Lengths are weighting-dependent.** Never compare across schemes. Under lifted memoryless,
 dabeone's nine lengths are ≈ 158.14, 158.62, 100.59, 100.97, 93.73, 102.59, 71.84, 80.97,

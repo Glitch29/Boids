@@ -2792,7 +2792,7 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        routeClock(PresetScenarioParameter.DABEONE, dab, new int[][]{{2, 7, 4}, {4, 2, 1, 5, 8}, {4, 0, 3, 5, 8}});
+        zones(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4000);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

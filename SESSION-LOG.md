@@ -119,11 +119,26 @@ route). So no within-edge subpath moves by more than 0.7 ticks between the clock
 278, 535, 538 against clocks 275, 528, 528 — the known 1–2% bias. Recorded in `EDGES.md` §5,
 `HINTS.md` §4, `ROADMAP.md` §0i; fourth commit.
 
+**Then: an integer audit of the clock, and a redundancy survey.** The user asked to tear out
+every weighting scheme but the winner, which they recalled from old transcripts as
+`CIRCULATION`; `HINTS.md` §5 records the lifted memoryless flow (`MOMENTUM` at γ=0) beating
+`CIRCULATION` 1.653% to 1.756% `sd/mean` on dabeone, and that is what is in production and what
+every structure hash is keyed on. **The tear-out is held until the user has seen that table** —
+switching the scheme re-derives every tier and moves every clock figure; keeping the lifted flow
+and deleting the rest is a rename. The integer audit was unambiguous and done: the whole-tick
+solver (`pinPaths`, `solve`, `balance`, `apply`, the claim/dispute machinery) was dead code
+behind a flag nothing set and is removed; `EdgeMetricStore` keeps a constant 0 in the key slot
+the flag occupied so no stored clock is renamed (the Sep 4 `metric-bdedfd3284031feb.bin` still
+loads, lengths unchanged). Found on the way: the `step` diagnostic compared a path's step count
+to the *real* length and so has reported 0 since lengths went real; it compares against the
+whole-step estimate now. `EdgeMetric` 1,191 → 964 lines. Redundancy candidates listed for the
+user in the conversation, not acted on.
+
 **Open.** Placement — which subpaths actually shorten or lengthen a lap — set aside by the user;
 cross-border subpaths, deferred; then the search over decisions. Still open from before: a real
 `insert` with the reachability assertion and interior perfection; the cut construction for maps
 that are not phase-locked. Of §0i's four questions to the user, (1) where `nextDecision` gets its
-context and (3) what `Windows.inPhase` is remain.
+context and (3) what `Windows.inPhase` is remain. **And the weighting-scheme decision.**
 
 ## 2026-09-11 — the cross-section view, and what a cut across it has to be
 

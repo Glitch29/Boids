@@ -47,19 +47,12 @@ public final class EdgeMetricStore {
 
     public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
                                        int liveCount, int edges) {
-        return of(dir, map, edge, live, liveCount, edges, false, EdgeWeights.Scheme.UNIFORM,
-                null);
+        return of(dir, map, edge, live, liveCount, edges, EdgeWeights.Scheme.UNIFORM, null);
     }
 
     public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
                                        int liveCount, int edges, EdgeWeights.Scheme scheme) {
-        return of(dir, map, edge, live, liveCount, edges, false, scheme, null);
-    }
-
-    public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
-                                       int liveCount, int edges, EdgeWeights.Scheme scheme,
-                                       double[][] chain) {
-        return of(dir, map, edge, live, liveCount, edges, false, scheme, chain);
+        return of(dir, map, edge, live, liveCount, edges, scheme, null);
     }
 
     /**
@@ -70,9 +63,9 @@ public final class EdgeMetricStore {
      *            clock cannot outlive the map it measures
      */
     public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
-                                       int liveCount, int edges, boolean pinPaths,
-                                       EdgeWeights.Scheme scheme, double[][] chain) {
-        String key = key(map, edge, live, liveCount, edges, pinPaths, scheme, chain);
+                                       int liveCount, int edges, EdgeWeights.Scheme scheme,
+                                       double[][] chain) {
+        String key = key(map, edge, live, liveCount, edges, scheme, chain);
         Path file = dir.resolve("metric-" + key + ".bin");
         if (Files.exists(file)) {
             try (DataInputStream in = new DataInputStream(
@@ -86,8 +79,7 @@ public final class EdgeMetricStore {
                         file.getFileName(), e.getMessage());
             }
         }
-        EdgeMetric.Metric m = EdgeMetric.compute(map, edge, live, liveCount, edges, pinPaths,
-                scheme, chain);
+        EdgeMetric.Metric m = EdgeMetric.compute(map, edge, live, liveCount, edges, scheme, chain);
         try {
             write(file, m, live, liveCount);
         } catch (IOException e) {
@@ -104,7 +96,7 @@ public final class EdgeMetricStore {
      * set have the same graph whatever their images look like.
      */
     private static String key(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                              boolean pinPaths, EdgeWeights.Scheme scheme, double[][] chain) {
+                              EdgeWeights.Scheme scheme, double[][] chain) {
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -123,7 +115,9 @@ public final class EdgeMetricStore {
         for (int h = 0; h < Params.TURNS; h++) { feed.accept(map.stepX(h)); feed.accept(map.stepY(h)); }
         feed.accept(edges);
         feed.accept(liveCount);
-        feed.accept(pinPaths ? 1 : 0);
+        // A slot that used to carry a pinPaths flag, always 0 in every clock ever stored. Kept
+        // at 0 so removing the flag (2026-09-12) renames no file and re-derives nothing.
+        feed.accept(0);
         for (byte b : scheme.name().getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
             digest.update(b);
         }

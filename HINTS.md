@@ -482,7 +482,13 @@ loop, can be read off the map-wide clock for any route. Measured on all three of
   where a boid leaves one. It was the same order as the effects being measured. Fixing it
   changed conclusions: a weighting that looked like a regression became an improvement, and a
   non-monotonicity vanished. Worst single-tick step fell 0.506 → 0.296 (dabeone UNIFORM) and
-  0.968 → 0.602 (plait CIRCULATION).
+  0.968 → 0.602 (plait CIRCULATION). **Audited 2026-09-12:** the fix had been written around
+  rather than removed — the whole-tick solver survived behind a `pinPaths` flag nothing set —
+  and it is now gone; the only integer left in the fit is the step-count estimate that seeds
+  the lengths and anchors the gauge. One casualty found on the way: the `step` diagnostic
+  (worst deviation from one tick per step along a canonical path) compared a path's step
+  count to the *real* length and so matched nothing, reporting 0 since lengths went real. It
+  compares against the estimate now; clocks stored before that still carry the 0.
 
 ### Diagnostics that told the truth
 

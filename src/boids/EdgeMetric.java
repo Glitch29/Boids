@@ -36,7 +36,7 @@ import java.util.List;
  * by exactly one tick, and where that cannot hold everywhere the error is spread rather than
  * dumped in one place. Nothing is held fixed except a single state to say where zero is,
  * because holding more makes it worse — see {@link #compute(NavMap, int[], int[], int, int,
- * boolean)}. Stationarity of the squared error is a Laplacian, solved by conjugate gradient.
+ * EdgeWeights.Scheme, double[][])}. Stationarity of the squared error is a Laplacian, solved by conjugate gradient.
  * Sweeping instead would move a correction one state per pass, and with only one state
  * anchored the system's conditioning goes as the square of the graph's diameter, so a sweep
  * needs the square of an edge's length to settle where the gradient needs a few thousand
@@ -117,41 +117,29 @@ public final class EdgeMetric {
                          int slack, int broken, int band, double step, double cost) {}
 
     public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges) {
-        return compute(map, edge, live, liveCount, edges, false, EdgeWeights.Scheme.UNIFORM, null);
+        return compute(map, edge, live, liveCount, edges, EdgeWeights.Scheme.UNIFORM, null);
     }
 
     public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges,
                                  EdgeWeights.Scheme scheme) {
-        return compute(map, edge, live, liveCount, edges, false, scheme, null);
-    }
-
-    public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                                 EdgeWeights.Scheme scheme, double[][] chain) {
-        return compute(map, edge, live, liveCount, edges, false, scheme, chain);
-    }
-
-    public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                                 boolean pinPaths, EdgeWeights.Scheme scheme) {
-        return compute(map, edge, live, liveCount, edges, pinPaths, scheme, null);
+        return compute(map, edge, live, liveCount, edges, scheme, null);
     }
 
     /**
-     * @param pinPaths whether to hold the canonical paths at whole ticks, so a step along one
-     *                 advances the clock by exactly one. Off by default, because it cannot be
-     *                 had together with a smooth clock and the smooth clock is what a distance
-     *                 is read from: the shortest way through an edge is a shortcut, crossing
-     *                 edge 2 of dabeone in 109 steps where the clock takes 123 ticks, so
-     *                 forcing one tick per step there compresses the path against the rest of
-     *                 the edge and the strain comes out at the vertices. Pinned, dabeone's
-     *                 worst vertex discontinuity is 8.37 ticks; unpinned, 0.39. Its use is
-     *                 fixing an edge's length to a measured traversal time rather than a
-     *                 derived one, which nothing needs yet.
+     * <b>Lengths are real numbers, fitted, and nothing here rounds them.</b> There used to be a
+     * second solver behind a {@code pinPaths} flag that held the canonical paths at whole ticks
+     * and took each length as its whole-step estimate; it was off by default, never called, and
+     * was removed on 2026-09-12 because integer lengths were a bug once (half a tick of error at
+     * every crossing) and code that can reintroduce one is not worth keeping. The only integer
+     * in the fit is {@code estimate}, a count of graph steps used to seed the lengths and as the
+     * target the gauge is restored toward; the lengths themselves come out of the solve.
+     *
      * @param chain    the steering chain {@link EdgeWeights.Scheme#MOMENTUM} weights by, and
      *                 ignored by every other scheme, which have no notion of what a boid last
      *                 asked for
      */
     public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                                 boolean pinPaths, EdgeWeights.Scheme scheme, double[][] chain) {
+                                 EdgeWeights.Scheme scheme, double[][] chain) {
         if (scheme == EdgeWeights.Scheme.MOMENTUM && chain == null) {
             throw new IllegalArgumentException("MOMENTUM needs a steering chain");
         }
@@ -181,7 +169,6 @@ public final class EdgeMetric {
         int[] estimate = new int[edges];
         double[] length = new double[edges];
         int slack = 0, broken = 0;
-        List<int[]> ends = new ArrayList<>();
         for (int e = 0; e < edges; e++) {
             int worst = 1;
             for (int a = 0; a < edges; a++) {
@@ -205,79 +192,23 @@ public final class EdgeMetric {
                 }
             }
         }
-        // Pin the canonical paths themselves, not just their ends, so a step along one
-        // advances the clock by exactly one as required. Only where a path has no slack: a
-        // route shorter than the edge would otherwise pin its exit twice, at its own length
-        // and at the edge's. Where two paths cross and disagree about the tick, neither claim
-        // is pinned and the fit is left to settle it.
-        java.util.Map<Integer, Double> claim = new java.util.HashMap<>();
-        java.util.Set<Integer> disputed = new java.util.HashSet<>();
+        // One state held, and only to fix the origin. The fit determines every difference
+        // between ticks but nothing says where zero is, so without an anchor the answer is a
+        // family rather than a value. Chosen by lowest state id so a rerun of the same map
+        // lands on the same numbers rather than merely the same shape. The lengths are solved
+        // for jointly with the ticks — the estimate only seeds them and names where the gauge
+        // is restored to — and they are real numbers throughout.
+        int gauge = Integer.MAX_VALUE;
         for (int e = 0; e < edges; e++) {
             for (int a = 0; a < edges; a++) {
-                if (entryFrom[e][a] < 0) continue;
-                for (int c = 0; c < edges; c++) {
-                    if (exitTo[e][c] < 0) continue;
-                    int[] path = reach.path(e, entryFrom[e][a], exitTo[e][c]);
-                    if (path == null || path.length != estimate[e]) continue;
-                    for (int i = 0; i < path.length; i++) {
-                        Double had = claim.putIfAbsent(path[i], (double) i);
-                        if (had != null && had != i) disputed.add(path[i]);
-                    }
-                }
-            }
-            for (int a = 0; a < edges; a++) if (entryFrom[e][a] >= 0) claim.putIfAbsent(entryFrom[e][a], 0.0);
-            for (int c = 0; c < edges; c++) {
-                if (exitTo[e][c] >= 0) claim.putIfAbsent(exitTo[e][c], (double) (estimate[e] - 1));
+                if (entryFrom[e][a] >= 0) gauge = Math.min(gauge, entryFrom[e][a]);
             }
         }
-        if (pinPaths) {
-            for (var it : claim.entrySet()) {
-                if (!disputed.contains(it.getKey())) {
-                    ends.add(new int[]{it.getKey(), (int) (double) it.getValue()});
-                }
-            }
-        } else {
-            // One state held, and only to fix the origin. The fit determines every difference
-            // between ticks but nothing says where zero is, so without an anchor the answer is
-            // a family rather than a value. Chosen by lowest state id so a rerun of the same
-            // map lands on the same numbers rather than merely the same shape.
-            int anchor = Integer.MAX_VALUE;
-            for (int e = 0; e < edges; e++) {
-                for (int a = 0; a < edges; a++) {
-                    if (entryFrom[e][a] >= 0) anchor = Math.min(anchor, entryFrom[e][a]);
-                }
-            }
-            if (anchor != Integer.MAX_VALUE) ends.add(new int[]{anchor, 0});
-        }
-
-        // The length is not solved for. Reading it back from the fit and refitting looks like
-        // the obvious fix and diverges: the span between the two ends grows with the length
-        // that produced it, so each pass overshoots the last and dabeone's edge 7 walks from
-        // 90 to 375 without settling. It is also unnecessary. The length has to equal the drop
-        // in tick across a boundary for the clock to be continuous, and against that measure
-        // the shortest-path length is already right to within four tenths of a tick. What it
-        // is *not* is the span from one end of the edge to the other, because the shortest way
-        // through is a shortcut: the clock crosses edge 2 in 123 ticks while the shortest path
-        // through it is 109 states long.
-        double[] tick;
-        if (pinPaths) {
-            // Path pinning works in whole steps by definition, so it takes the estimate and
-            // the fitted length is that estimate. It is off by default; see below.
-            for (int e = 0; e < edges; e++) length[e] = estimate[e];
-            tick = solve(map, edge, live, liveCount, estimate, ends);
-        } else {
-            int gauge = Integer.MAX_VALUE;
-            for (int e = 0; e < edges; e++) {
-                for (int a = 0; a < edges; a++) {
-                    if (entryFrom[e][a] >= 0) gauge = Math.min(gauge, entryFrom[e][a]);
-                }
-            }
-            tick = solveJoint(map, edge, live, liveCount, edges, estimate, length, gauge,
-                    scheme, chain);
-        }
+        double[] tick = solveJoint(map, edge, live, liveCount, edges, estimate, length, gauge,
+                scheme, chain);
         return new Metric(entryFrom, exitTo, length, tick, slack, broken,
                 bandViolations(map, edge, live, liveCount, length, tick),
-                worstStep(map, edge, live, liveCount, edges, length, tick, entryFrom, exitTo, reach),
+                worstStep(map, edge, live, liveCount, edges, estimate, tick, entryFrom, exitTo, reach),
                 cost(map, edge, live, liveCount, length, tick));
     }
 
@@ -780,166 +711,6 @@ public final class EdgeMetric {
         }
     }
 
-    private static double[] solve(NavMap map, int[] edge, int[] live, int liveCount,
-                                  int[] length, List<int[]> ends) {
-        int[] index = new int[edge.length];
-        Arrays.fill(index, -1);
-        for (int i = 0; i < liveCount; i++) index[live[i]] = i;
-
-        int[] start = new int[liveCount + 1];
-        int[] preds = new int[3], succs = new int[3];
-        for (int i = 0; i < liveCount; i++) {
-            int s = live[i], n = 0;
-            int ns = map.steeredSuccessors(s, succs);
-            for (int k = 0; k < ns; k++) if (index[succs[k]] >= 0 && edge[succs[k]] >= 0) n++;
-            int np = map.steeredPredecessors(s, preds);
-            for (int k = 0; k < np; k++) if (index[preds[k]] >= 0 && edge[preds[k]] >= 0) n++;
-            start[i + 1] = n;
-        }
-        for (int i = 0; i < liveCount; i++) start[i + 1] += start[i];
-        int[] to = new int[start[liveCount]];
-        boolean[] behind = new boolean[to.length];
-        double[] offset = new double[to.length];
-        int[] fill = new int[liveCount];
-        for (int i = 0; i < liveCount; i++) {
-            int s = live[i];
-            int ns = map.steeredSuccessors(s, succs);
-            for (int k = 0; k < ns; k++) {
-                int u = succs[k];
-                if (index[u] < 0 || edge[u] < 0) continue;
-                int at = start[i] + fill[i]++;
-                to[at] = index[u];
-                offset[at] = -1 + (edge[u] != edge[s] ? length[edge[s]] : 0);
-                behind[at] = false;
-            }
-            int np = map.steeredPredecessors(s, preds);
-            for (int k = 0; k < np; k++) {
-                int p = preds[k];
-                if (index[p] < 0 || edge[p] < 0) continue;
-                int at = start[i] + fill[i]++;
-                to[at] = index[p];
-                offset[at] = 1 - (edge[p] != edge[s] ? length[edge[p]] : 0);
-                behind[at] = true;
-            }
-        }
-
-        double[] t = new double[liveCount];
-        boolean[] pinned = new boolean[liveCount];
-        for (int[] end : ends) {
-            int i = index[end[0]];
-            if (i < 0) continue;
-            t[i] = end[1];
-            pinned[i] = true;
-        }
-        for (int i = 0; i < liveCount; i++) {
-            if (!pinned[i]) t[i] = length[edge[live[i]]] / 2.0;
-        }
-
-        double[] c = new double[liveCount];
-        for (int i = 0; i < liveCount; i++) {
-            if (pinned[i]) continue;
-            double sum = 0;
-            for (int a = start[i]; a < start[i + 1]; a++) {
-                sum += offset[a];
-                if (pinned[to[a]]) sum += t[to[a]];
-            }
-            c[i] = sum;
-        }
-
-        double[] r = new double[liveCount], p = new double[liveCount], ap = new double[liveCount];
-        apply(t, r, start, to, pinned, liveCount);
-        for (int i = 0; i < liveCount; i++) r[i] = pinned[i] ? 0 : c[i] - r[i];
-        System.arraycopy(r, 0, p, 0, liveCount);
-        double rr = dot(r, r);
-        double rr0 = rr;
-        // Anchored at a single state the system is a Laplacian with one Dirichlet node, whose
-        // condition number grows with the square of the graph's diameter — and an edge is
-        // hundreds of states long. The iteration count has to match that, or the answer still
-        // remembers where it started: on plait, stopping early moved the worst vertex error
-        // from 0.56 to 1.00 ticks purely by changing which state was anchored.
-        int k = 0;
-        for (; k < 400000 && rr > 1e-14 * Math.max(1, rr0); k++) {
-            apply(p, ap, start, to, pinned, liveCount);
-            double denominator = dot(p, ap);
-            if (denominator <= 0) break;
-            double alpha = rr / denominator;
-            for (int i = 0; i < liveCount; i++) {
-                if (pinned[i]) continue;
-                t[i] += alpha * p[i];
-                r[i] -= alpha * ap[i];
-            }
-            double next = dot(r, r);
-            double beta = next / rr;
-            rr = next;
-            for (int i = 0; i < liveCount; i++) p[i] = pinned[i] ? 0 : r[i] + beta * p[i];
-        }
-        residual = Math.sqrt(rr / Math.max(1, rr0));
-        iterations = k;
-
-        balance(t, start, to, offset, behind, pinned, liveCount);
-
-        double[] tick = new double[edge.length];
-        Arrays.fill(tick, Double.NaN);
-        for (int i = 0; i < liveCount; i++) tick[live[i]] = t[i];
-        return tick;
-    }
-
-    /**
-     * Rebalances each state between the two sides of its own neighbourhood.
-     * <p>
-     * The plain fit puts a state at the mean of its predecessors plus one and its successors
-     * minus one, pooled. Where a state has more predecessors than successors, or fewer, those
-     * plus and minus ones do not cancel: the state is pulled off the midpoint by
-     * {@code (in - out) / (in + out)} of a tick. That is invisible in the error — it is what
-     * minimising the error asks for — but it breaks the local ordering, which wants the state
-     * between its neighbours and knows nothing about how many of them there are. Every
-     * violation on dabeone was a state with unequal degrees; states with matched degrees had
-     * none at all.
-     * <p>
-     * So the two sides are averaged separately and then halved together, which lands the
-     * state at the midpoint of the two means. A mean lies between its own extremes, so that
-     * midpoint always lies between the midpoint of the minima and the midpoint of the maxima
-     * — the ordering requirement, satisfied by construction rather than by luck.
-     * <p>
-     * Swept rather than solved, because the operator that does this is not symmetric and has
-     * no conjugate gradient. It does not need one: the fit has already placed everything
-     * globally and what is left is a fraction of a tick of local correction, which a sweep
-     * carries as far as it needs to go.
-     */
-    private static void balance(double[] t, int[] start, int[] to, double[] offset,
-                                boolean[] behind,
-                                boolean[] pinned, int liveCount) {
-        for (int round = 0; round < 400; round++) {
-            double worst = 0;
-            for (int i = 0; i < liveCount; i++) {
-                if (pinned[i] || start[i] == start[i + 1]) continue;
-                double back = 0, ahead = 0;
-                int nBack = 0, nAhead = 0;
-                for (int a = start[i]; a < start[i + 1]; a++) {
-                    if (behind[a]) { back += t[to[a]] + offset[a]; nBack++; }
-                    else { ahead += t[to[a]] + offset[a]; nAhead++; }
-                }
-                double next = nBack == 0 ? ahead / nAhead
-                        : nAhead == 0 ? back / nBack
-                        : 0.5 * back / nBack + 0.5 * ahead / nAhead;
-                worst = Math.max(worst, Math.abs(next - t[i]));
-                t[i] = next;
-            }
-            if (worst < 1e-9) break;
-        }
-    }
-
-    /** The Laplacian over the free states: degree times self, less the free neighbours. */
-    private static void apply(double[] v, double[] out, int[] start, int[] to, boolean[] pinned,
-                              int liveCount) {
-        for (int i = 0; i < liveCount; i++) {
-            if (pinned[i]) { out[i] = 0; continue; }
-            double sum = (start[i + 1] - start[i]) * v[i];
-            for (int a = start[i]; a < start[i + 1]; a++) if (!pinned[to[a]]) sum -= v[to[a]];
-            out[i] = sum;
-        }
-    }
-
     private static double dot(double[] a, double[] b) {
         double sum = 0;
         for (int i = 0; i < a.length; i++) sum += a[i] * b[i];
@@ -1034,7 +805,7 @@ public final class EdgeMetric {
 
     /** The worst a step along a canonical path deviates from advancing the clock by one. */
     private static double worstStep(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                                    double[] length, double[] tick, int[][] entryFrom,
+                                    int[] estimate, double[] tick, int[][] entryFrom,
                                     int[][] exitTo, Reach reach) {
         double worst = 0;
         for (int e = 0; e < edges; e++) {
@@ -1044,9 +815,11 @@ public final class EdgeMetric {
                     if (exitTo[e][c] < 0) continue;
                     // Only routes that fill the edge exactly. One with slack has to cover the
                     // difference somewhere, and measuring it here would report the slack
-                    // rather than the fit.
+                    // rather than the fit. Against the whole-step estimate, not the fitted
+                    // length: a real length equals a step count only by accident, and
+                    // comparing against it had quietly emptied this diagnostic.
                     int[] path = reach.path(e, entryFrom[e][a], exitTo[e][c]);
-                    if (path == null || path.length != length[e]) continue;
+                    if (path == null || path.length != estimate[e]) continue;
                     for (int i = 0; i + 1 < path.length; i++) {
                         worst = Math.max(worst, Math.abs(tick[path[i + 1]] - tick[path[i]] - 1));
                     }
