@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-12. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-13. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
@@ -59,20 +59,19 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | predecessors are `FLIP → MOVE → TURN → FLIP` | 0 mismatches vs brute force over all live states | `NavMap` |
 | edge decomposition | 9 edges on dabeone, refinement stable; 6 on plait | `<ingest>/edges/` |
 | stability | unsteered cycle `2 → 7 → 4 → 2`, so `{2,4,7}` stable | `EdgeNavigation` |
-| the clock | `sd/mean` 1.65%, `rms-100` 2.01% under lifted memoryless | `<ingest>/metric/` |
+| the clock | `sd/mean` 1.65%, `rms-100` 2.01% under the lifted memoryless flow, the one weighting since 2026-09-13 (`HINTS.md` §5) | `<ingest>/metric/` |
 | two-boid reachability | 213,423,450 arrangements, bit-identical from 5 seeds | `TwoBoid` |
 | steerable arcs | **exactly three** on dabeone: `2→1`, `4→0`, `5→6` | `TwoBoid.boidEdgeMoves` |
 | leader windows | opening bands per arc; tightest `2→1` at leader edge 7, 0.2 ticks | `<ingest>/windows/` |
 | phase is conserved | edge occupancy oscillates at the lap period, autocorrelation 0.99 after 73 laps | `EdgeOccupancy` |
 | warm-up needed | **500 ticks** on edge occupancy; the scoring criterion never terminates. Settled as total edge length: 941 on dabeone, 1,814 on plait | `CorpusPreset.Warmup` |
 | pipeline from a map | all three maps run from PNG to solver facts, every invariant checked | `Pipeline` |
-| the price function | gain 0.046471 on plait, 0.106634 on dabeone; a piloted lone boid flies 100.2% and 94.2% of them. **Both figures are suspect** — see below | `EdgePrice` |
 | one-step navigability | from every state of an edge some turn stays on it or reaches the chosen exit. Holds on all three maps; **bad aim cannot explain a missed exit** | `Pipeline.checkNavigable` |
 | edge insertion | split a conditioned `S` off any edge and refine: exactly `{S, E<S, E⊥S, E>S}`, **nine of nine** on dabeone, settled in two rounds | `GateSplit`, `EDGES.md` §2a |
 | absorb in refinement | reducing masks to their equivalence class; **byte-identical labellings on all three maps** with it on | `EdgeDecomposition.absorb` |
 | what cuts a corridor | only a line at constant `d` bifurcates `E⊥S` — 250/250, none straddling; every other orientation leaves one straddling piece | `GateSplit.lines`, `HINTS.md` §3a |
 | braiding | the axiom groups by menu, not outcome: a one-to-three branch with one menu settles at exactly the 13 pieces predicted; with two menus its open layer splits and everything below follows. Binary joints cannot braid. **Not a defect in `refine`**; a bifurcated `E⊥S` stays out of the decomposition | `RefineToy`, `EDGES.md` §2a |
-| exit decision zones | region + opening gate + prohibited transitions + closing gate, per edge: **nine of nine sound** on dabeone (0 entrances inside, 0 bypassing, 0 leaks); `DecisionOverride` and `EdgePilot` fly `[4, 2, 1, 5, 8]` with **0 mismatching ticks** over 4,000, alone and in a flock of four; lone lap 535 ticks, 54 points | `DecisionZone`, `SimTest.zones`, `EDGES.md` §2a |
+| exit decision zones | region + opening gate + prohibited transitions + closing gate, per edge: **nine of nine sound** on dabeone (0 entrances inside, 0 bypassing, 0 leaks); `DecisionOverride` flew `[4, 2, 1, 5, 8]` with **0 mismatching ticks** against the route pilot over 4,000, alone and in a flock of four, and the pilot was retired on that; lone lap 535 ticks, 54 points | `DecisionZone`, `SimTest.zones`, `EDGES.md` §2a |
 | subpath decision zones | a route within an edge as a chain of `S_k`, threaded by forbidding the way round each: three paths on dabeone edge 4 at tau 36–56, **all sound**, and a psyboid told to take one lands on every `S_k` in order on **every traversal, alone and in a flock**, then takes either exit. Entrance saturation needs `S_1` ≥ ~32–36 ticks in | `DecisionZone.subpath`, `SimTest.subpaths`, `EDGES.md` §2a |
 | the clock on one route | refit on each of dabeone's three loops alone: totals agree with the map-wide clock to **0.2 ticks**, spans to 0.3, and the change in tick within any edge is a constant to within **0.7** — the 13-tick shifts in edge length are gauge. Read subpath lengths off the map-wide clock | `SimTest.routeClock`, `EDGES.md` §5 |
 
@@ -81,13 +80,12 @@ boid on an **unstable edge** is somewhere unsteered travel would not have left i
 needs only `(x, y, d)` plus the decomposition — both of which a photograph plus precomputation
 supply.
 
-> ⚠ **The price function's gain figures were measured through a filter that should not have been
-> there.** `EdgePrice.of` took a `steerableOnly` flag, and its only caller passed `true`; that
-> path dropped any exit no *single held turn* reached from a critical state. One-step
-> navigability says every successor is reachable from every state of an edge, so the filter could
-> only ever discard real exits, and with them the cycles through those exits. The flag was removed
-> on 2026-09-08 along with the code it called. **`gain`, the best cycle, and the bias `h(e)` all
-> need re-measuring on all three maps**, and may come out higher.
+> **The price function is gone.** `EdgePrice` (gain and bias over `(edge, tau)`) and `EdgeReach`
+> (forward distance and rebasing) were removed 2026-09-13: nothing called either, and every
+> `EdgePrice` figure on record — gain 0.046471 on plait, 0.106634 on dabeone — had been measured
+> through a filter that dropped real exits, so none was worth carrying. Both are in git at
+> `0116abc`. If a decision search wants a value for where a boid ends up, that is the place to
+> start reading, and `ROADMAP.md` §0h has the account of what the price function was for.
 
 ### In flight
 
@@ -146,7 +144,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 61 files.
+One package, `src/boids`, 58 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -174,13 +172,14 @@ behaviour tiers: an artifact is addressed by everything it is a function of) · 
 stored by `CriticalEnvelopeStore` · `EdgeInfluence` (`steer`, the single-neighbour closed form) ·
 `EdgeSlice` (bands at a fixed tau) · `Flocking` (constants as an argument, and `diluted()`).
 
-**State sets** — `StateSet` (the algebra: `partialTick`, `closed`, `expandByAgreement`) ·
+**State sets** — `StateSet` (the algebra: `partialTick`, `closed`, the perfections, `expandByQuorum`) ·
 `MapStates` (that algebra bound to one map, plus `pureStable` and the straight-travel cycles).
 Behind an interface because stable+ is not yet defined and is expected to change.
 
 **Surveys** — `EdgeOccupancy` (how fast a flock forgets its spawn, and three spawn rules
-beside each other) · `AggregationSurvey` (candidate aggregations scored against the simulation on
-sampled arrangements, with a fidelity check that the baseline *is* the simulation).
+beside each other) · `AggregationSurvey` (two standing checks: that `Aggregation.SIMULATION` is
+what the engine flies, and that every aggregation at one neighbour is `EdgeInfluence.steer`; the
+seven-way survey it used to be is in git at `0116abc`).
 
 **Exhaustive and sampled** — `TwoBoid` (all reachable two-boid arrangements) ·
 `ThreeBoidPhase` (three-boid arrangements sampled and mapped by phase difference, since three
@@ -194,15 +193,13 @@ that map, drawn at envelope entry).
 way, one-step navigability checked on every build). See `CORPUS.md` for what it resolves per map.
 
 **Psyboid** — `PsyboidOverride` (the interface: anything that steers, in the same chain as the
-flocking rules; `held` is an analysis primitive and not a plan kind) · `EdgePilot` (a route,
-steered only where coasting would leave it — **one step of lookahead is all of navigation**) ·
+flocking rules; `held` is an analysis primitive and not a plan kind) ·
 `Gate` (a transition-based gate: sorted `(state, effective turn)` keys) · `DecisionZone` (one
 edge's exit decision, or a subpath along it, as gates — a region entered, prohibited transitions
-per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone, stateless, label prefix `g`;
-flies identically to `EdgePilot`) ·
-`EdgePrice` (the price function: gain and bias over `(edge, tau)`) · `EdgeReach` (forward
-distance and rebasing in `(edge, tau)`; currently uncalled) · `CorpusPreset` (named recipes, so
-a corpus is addressed by the settings that produced it). See `CORPUS.md`.
+per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone —
+**one step of lookahead is all of navigation** — stateless, label prefix `g`; the route pilot it
+replaced flew identically and was retired 2026-09-13) · `CorpusPreset` (named recipes, so a
+corpus is addressed by the settings that produced it). See `CORPUS.md`.
 
 > **Removed 2026-09-08, with the era they belonged to.** `PsyboidBits` (bit-string branch
 > search), `PsyboidCorpus` (plans verified by replay), `HeldTurn` (a turn at an absolute tick,
@@ -233,8 +230,6 @@ ways → 6 edges.
 | `metric` | edge lengths and tau ranges |
 | `corpus` | does the clock match ticks actually flown (`sd/mean`, `rms-100`) |
 | `tickField` | the two per-pixel field maps; diagnoses local smoothness, not accuracy |
-| `synthetic` | Markov-chain journeys, for ranking weighting schemes |
-| `steering` | measured steering marginals |
 | `envelopeReport` | sizes of the sets the leader search runs over |
 | `influence` | where a second boid could induce a saving turn |
 | `slice` | leader bands at one tau |
@@ -247,13 +242,11 @@ ways → 6 edges.
 | `envelope` | build one arc's critical-envelope table and report it |
 | `chains` | how far a history walks back inside an edge, and by what |
 | `census` | audit plain seeds — few exits, so mostly a smoke test |
-| `stablePlus` | the map-wide stable set and what agreement expands it to, per edge |
-| `stablePlusScan` | the same over a range of agreement ratios, with cost-to-leave and a render |
 | `aggregationPhaseMaps` | the phase map flown under each candidate aggregation, cross-tabbed against the baseline |
 | `proposedPhysics` | the whole pipeline — stable+, tables, phase map — rerun under a proposed aggregation, with the closed-form check |
 | `phaseMapOnStablePlus` | the three-boid phase map with stable+ as both the suspect population and admission's ground, plus a control |
 | `tablesOnStablePlus` | the critical-envelope tables for one arc on that same ground |
-| `zones` | the exit decision zone of every edge, checked, then flown against `EdgePilot` tick for tick |
+| `zones` | the exit decision zone of every edge, checked, then flown alone and in the flock: gates crossed in pairs, laps |
 | `subpaths` | three subpaths on one edge — coasting, left-hugging, right-hugging — each built as a zone, checked, and flown taken and skipped, alone and in a flock; plus the `S_1` saturation sweep |
 | `routeClock` | the clock refitted on one route at a time against the map-wide one: lengths, spans, and the within-edge spread of the change in tick |
 
@@ -307,7 +300,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `<behaviour>/envelope/arc_<f>_<t>.tsv` | `SimTest.envelope` | the same tables in readable form, for inspection only |
 | `<behaviour>/windows/window_<f>_<t>.tsv` | `SimTest.windows` | critical-envelope bands, tau by tau |
 | `<behaviour>/influence/*.png` | `SimTest.slice`, `influence`, `envelopeReport` | where a leader could be. **Moved out of `edges/`, which mixed these with structure** |
-| `<behaviour>/corpus/*.tsv` | `SimTest.corpus`, `steering` | flown journeys against the clock; measured steering marginals |
+| `<behaviour>/corpus/*.tsv` | `SimTest.corpus` | flown journeys against the clock |
 | `<behaviour>/twoboid/` | `TwoBoid` | reachable pairs. 254 MB; rebuilds in ~17 s |
 | `<behaviour>/audit/exits_*.tsv` | `ExitAudit` | every classified exit |
 | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` | `EdgeOccupancy` | edge occupancy per 50-tick window against the long run, one file per spawn rule |

@@ -1,6 +1,6 @@
 # What is being built now
 
-**Status:** 2026-09-12. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-13. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it. **§0i is the live thread — read that first**; its last subsection
 records that braiding closed the `E⊥S` question. §0h is closed; its handoff is kept as the record
 of what the benchmark measured and why that search was abandoned.
@@ -1754,7 +1754,9 @@ both sides agreed they reach `S`, was read as a real difference when `E>S` is do
 `SimTest.absorb` reduces a mask to its class before anything is grouped on it, with an antisymmetry
 guard so two edges that step to each other do not cancel out. **Known to be needed when the
 algorithm was specified and deferred then, because it can only bite on edges shorter than one
-tick.** Behind `SimTest.absorbEquivalentMasks`.
+tick.** It was behind a flag, `absorbEquivalentMasks`, until 2026-09-13; with byte-identical
+labellings either way there was nothing for the flag to guard, and absorb is now simply part of
+refinement.
 
 > **It costs nothing.** dabeone, dabnt and plait all produce the same edge count *and the same
 > labelling fingerprint* with it on — `5d1ff610…`, `c9ca9029…`, `c68de7a7…`. No artifact
@@ -1813,7 +1815,8 @@ bounds travel along a wall, keep a chosen subset of the transitions the insertio
 `E<S → E⊥S` on the left and `E<S → S`, omitting `E<S → E⊥S` on the right — and a boid steered by
 the same greedy one-step lookahead that crosses real edges simply cannot pass through it.
 
-**So a shortcut needs no new steering.** It needs a gate where the wall is, and `EdgePilot`.
+**So a shortcut needs no new steering.** It needs a gate where the wall is, and the one-step
+rule (`EdgePilot` then; `DecisionOverride` now).
 That closes the question `PhaseShift` was deleted over: the thing to precompute is not a table of
 hurry-and-dawdle offers but the gates that bound each one.
 
@@ -1896,7 +1899,7 @@ bounding a convex region, which is `S` itself — so the zone is stored as its r
 prohibitions stay transitions.
 
 **Measured on dabeone `609cffdb84be218c`.** Nine of nine zones sound: no entrance inside its
-region, nothing bypassing it, nothing leaking back out. `DecisionOverride` and `EdgePilot` flown
+region, nothing bypassing it, nothing leaking back out. `DecisionOverride` and `EdgePilot` (since retired) flown
 from one state round `[4, 2, 1, 5, 8]` for 4,000 ticks, alone and in a flock of four: **0
 mismatching ticks in either flight**; every zone's opening and closing gates crossed in equal
 numbers; a lone psyboid laps in 535 ticks scoring 54. (533 is on record for the retired
@@ -1945,6 +1948,28 @@ lengths shift by up to 13 ticks, all gauge), totals agree to 0.2 ticks, spans to
 tick within any edge changes by a per-edge constant to within 0.7. **The map-wide clock is the
 one to read subpath lengths and route phase off**; no per-route clock is needed.
 
+### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
+
+The user asked for every case of two versions of one thing to be reduced to the winner, with the
+reason recorded. All recoverable at `0116abc`.
+
+| removed | winner, and why |
+| --- | --- |
+| `EdgeWeights.Scheme` — `UNIFORM`, `CIRCULATION`, the `X2`/`X4` boosts, the γ-blended chain; `SimTest.synthetic` and `steering`, which built and ranked them | the **lifted memoryless flow**, `EdgeWeights.lifted`: 1.653% / 2.014% against CIRCULATION's 1.756% / 2.502% on dabeone, `HINTS.md` §5. The user had recalled CIRCULATION as the winner from transcripts that predate the bug which invalidated that run; the recorded table settled it. Hashes carry the old bytes; nothing re-derived |
+| `EdgeMetric`'s whole-tick solver behind `pinPaths` | `solveJoint` with real lengths, which had been the only caller's path since the integer-length bug was fixed; the flag was how the bug had been written around rather than removed |
+| `EdgePilot` | `DecisionOverride`: the same rule with the route as data, 0 mismatching ticks over 4,000 alone and in a flock, and it also carries subpaths |
+| `StateSet.expandByAgreement`, `MapStates.agreement`, `SimTest.stablePlus` and `stablePlusScan` | `expandByQuorum` at `SimTest.QUORUM = 5`: the quorum means *how many ticks of influencer positions agree*, and a ratio made it depend on how densely the influencer set sampled its loop |
+| `Aggregation.RULE_MEAN`, `RULE_SUM_CLAMP_STEP`, `VOTE_MEAN`, `VOTE_SUM_CLAMP`, `VOTE_NORM`; the survey in `AggregationSurvey` | `RULE_SUM_CLAMP`, physics 3, §0a–§0c; `RULE_NORMALISE` stays as the physics-2 record and `proposedPhysics` baseline; the fidelity and closed-form checks stay |
+| `EdgeDecomposition.absorbEquivalentMasks` | absorb unconditionally: byte-identical labellings on all three maps either way |
+| `EdgePrice`, `EdgeReach` | nothing — uncalled, and every `EdgePrice` figure was measured through the filter above; definitions kept in `GLOSSARY.md` |
+| `GateSplit.run`, `diagnose`, `sweep`, `centred`, `Shape.CONCAVE`/`CONCAVE_FIXED`, the sides/pieces render | `insert` (nine of nine), `drawCrossSections` and `lines`; every result those drivers produced is in `EDGES.md` §2a, including the interior-perfection result that had only lived in a commit message |
+
+**Left alone, deliberately:** the corpus plumbing (`CorpusPreset`, `Derived.corpus`, `Spawn` and
+its three rules) until the decision-point search says what a plan is; `EdgeMetric.diagnose`,
+uncalled but a diagnostic rather than a variant; the private reach/closure walks duplicated across
+`EdgeMetric`, `GateSplit`, `DecisionZone` and `EdgeNavigation`, which are utility duplication and
+not competing methods.
+
 ### The tear-out, 2026-09-08
 
 Deleted, all recoverable at `0f9b2b7`:
@@ -1962,14 +1987,16 @@ Deleted, all recoverable at `0f9b2b7`:
 | `SimTest.graded`, `auditCorpus`, `renderUnexplained`, `steeringHistory`, `renderTick`, `scoringFloor`, `scoringLaps` | every one read a corpus. `SimTest` fell 3,982 → 3,096 lines |
 
 `EdgeReach` was kept on the guess that its `(edge, tau)` rebase primitives will be wanted for the
-execution tables; if they are not, that will become obvious and it can go.
+execution tables; if they are not, that will become obvious and it can go. *(It went, 2026-09-13,
+still uncalled; git `0116abc`.)*
 
 **One defect fell out of the tear-out.** `EdgePrice.of` took a `steerableOnly` flag whose only
 caller passed `true`, and that path dropped any exit no *single held turn* reached from a critical
 state — the held-turn fallacy §0h had already disproved. One-step navigability says every
 successor is reachable from every state, so the filter could only discard real exits and the
 cycles through them. **Every `EdgePrice` figure on record — `gain`, the best cycle, the bias
-`h(e)` — was measured through it and needs re-measuring.**
+`h(e)` — was measured through it and needs re-measuring.** *(Overtaken: `EdgePrice` was removed
+2026-09-13, uncalled; the definition is in `GLOSSARY.md` and the class in git at `0116abc`.)*
 
 ### Open questions put to the user
 

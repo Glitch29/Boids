@@ -17,7 +17,8 @@ import java.util.Arrays;
  * <p>
  * Content-addressed on everything the answer depends on rather than on the arguments that
  * produced it — the map's dimensions and step vectors, the live set, the edge each live state
- * was given, the weighting scheme and whether paths were pinned. Two callers that reach the
+ * was given, and the weighting (fixed since 2026-09-13, fed as the bytes it always fed). Two
+ * callers that reach the
  * same decomposition by different routes therefore share a file, and a decomposition that
  * shifts by one state gets a different name instead of silently reusing the old answer. That
  * is the same rule the map ingests follow, and for the same reason: a stale clock is not
@@ -45,16 +46,6 @@ public final class EdgeMetricStore {
      */
     private static final int FORMAT = 3;
 
-    public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
-                                       int liveCount, int edges) {
-        return of(dir, map, edge, live, liveCount, edges, EdgeWeights.Scheme.UNIFORM, null);
-    }
-
-    public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
-                                       int liveCount, int edges, EdgeWeights.Scheme scheme) {
-        return of(dir, map, edge, live, liveCount, edges, scheme, null);
-    }
-
     /**
      * The clock for this decomposition, from store if it is there and computed and stored
      * if it is not.
@@ -63,9 +54,8 @@ public final class EdgeMetricStore {
      *            clock cannot outlive the map it measures
      */
     public static EdgeMetric.Metric of(Path dir, NavMap map, int[] edge, int[] live,
-                                       int liveCount, int edges, EdgeWeights.Scheme scheme,
-                                       double[][] chain) {
-        String key = key(map, edge, live, liveCount, edges, scheme, chain);
+                                       int liveCount, int edges) {
+        String key = key(map, edge, live, liveCount, edges);
         Path file = dir.resolve("metric-" + key + ".bin");
         if (Files.exists(file)) {
             try (DataInputStream in = new DataInputStream(
@@ -79,7 +69,7 @@ public final class EdgeMetricStore {
                         file.getFileName(), e.getMessage());
             }
         }
-        EdgeMetric.Metric m = EdgeMetric.compute(map, edge, live, liveCount, edges, scheme, chain);
+        EdgeMetric.Metric m = EdgeMetric.compute(map, edge, live, liveCount, edges);
         try {
             write(file, m, live, liveCount);
         } catch (IOException e) {
@@ -95,8 +85,7 @@ public final class EdgeMetricStore {
      * what the successor relation is built from, so two maps agreeing on them and on the live
      * set have the same graph whatever their images look like.
      */
-    private static String key(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                              EdgeWeights.Scheme scheme, double[][] chain) {
+    private static String key(NavMap map, int[] edge, int[] live, int liveCount, int edges) {
         MessageDigest digest;
         try {
             digest = MessageDigest.getInstance("SHA-256");
@@ -118,18 +107,16 @@ public final class EdgeMetricStore {
         // A slot that used to carry a pinPaths flag, always 0 in every clock ever stored. Kept
         // at 0 so removing the flag (2026-09-12) renames no file and re-derives nothing.
         feed.accept(0);
-        for (byte b : scheme.name().getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+        // The weighting, as the bytes it fed under the name it had when every stored clock was
+        // built. It has not changed; only the losers around it went. See EdgeWeights.HASH_NAME.
+        for (byte b : EdgeWeights.HASH_NAME.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
             digest.update(b);
         }
-        // Two clocks that differ only in the chain they were weighted by are different clocks,
-        // and the scheme name alone cannot tell them apart.
-        if (chain != null) {
-            for (double[] row : chain) {
-                for (double v : row) {
-                    long bits = Double.doubleToLongBits(v);
-                    feed.accept((int) (bits >>> 32));
-                    feed.accept((int) bits);
-                }
+        for (double[] row : EdgeWeights.HASH_CHAIN) {
+            for (double v : row) {
+                long bits = Double.doubleToLongBits(v);
+                feed.accept((int) (bits >>> 32));
+                feed.accept((int) bits);
             }
         }
         for (int i = 0; i < liveCount; i++) { feed.accept(live[i]); feed.accept(edge[live[i]]); }

@@ -19,7 +19,7 @@ A map and a gate in, a verified corpus out. Read on for what each tier is and ho
 read `CORPUS.md` for what the recipe resolves per map and what still blocks running unattended.
 The gate is the only argument that is neither the map nor a named recipe.
 
-**Status:** 2026-09-12, physics 3; §12a (decision zones) added. **The corpus step is gone** — `Pipeline.corpus` and everything
+**Status:** 2026-09-13, physics 3; §12a (decision zones) added 2026-09-12; invocations lost their weighting-scheme arguments 2026-09-13. **The corpus step is gone** — `Pipeline.corpus` and everything
 under it were removed on 2026-09-08 with the search that produced plans; `Pipeline.build` still
 takes a map and a cut line to solver facts, and step 18 onward has no implementation. See
 `ROADMAP.md` §0i. **Every path below moved**: derived output is addressed by
@@ -179,26 +179,24 @@ Gives per edge:
 ## 7. The clock
 
 ```java
-double[][] chain = EdgeWeights.blend(new double[][]{{1,1,1},{1,1,1},{1,1,1}}, 0);
 EdgeMetric.Metric m = EdgeMetricStore.of(
         SimTest.structure(preset, horizontal, line, lo, hi, dir).at("metric"),
-        l.map(), l.edge(), l.live(), l.liveCount(),
-        l.edges(), EdgeWeights.Scheme.MOMENTUM, chain);
+        l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
 ```
 
-That invocation is the **lifted memoryless** weighting, which is the best measured. It gives
-every state a tick and every edge a **real-valued** length. Cached in the ingest, keyed on the
-map, the live set, the labelling, the scheme *and the format version*.
+Weighted by the **lifted memoryless flow**, the one weighting there is since 2026-09-13 — the
+survey that chose it is in `HINTS.md` §5. It gives every state a tick and every edge a
+**real-valued** length. Cached in the ingest, keyed on the map, the live set, the labelling, the
+weighting (as the bytes it fed under its old name, so nothing moved) *and the format version*.
 
 **Bump `EdgeMetricStore.FORMAT` whenever the way a clock is computed changes.** The key is
 built from inputs, so improving the solver otherwise leaves every key where it was and the
 store hands back answers from the old code without a word. This has already caused one wrong
 conclusion.
 
-Expect roughly, under this weighting: dabeone lengths ≈ 158.14, 158.62, 100.59, 100.97, 93.73,
-102.59, 71.84, 80.97, 72.76; 3,000–8,000 CG steps; residual ~1e-8. (Under `UNIFORM` the same
-edges come out ≈0.8–1.7 shorter — the lengths are weighting-dependent, so never compare across
-schemes.) Inverse pairs should come out near-equal — nothing in the solve knows about
+Expect roughly: dabeone lengths ≈ 158.14, 158.62, 100.59, 100.97, 93.73, 102.59, 71.84, 80.97,
+72.76; 3,000–8,000 CG steps; residual ~1e-8. (Lengths are a property of the weighting; figures
+recorded under the surveyed alternatives are not comparable.) Inverse pairs should come out near-equal — nothing in the solve knows about
 inverses, so that agreement is a free correctness check.
 
 Distances then come from `EdgeDistance.between(edge, m, from, to, cap)`, where
@@ -209,8 +207,7 @@ producing errors of 815 ticks.
 ## 8. Validate against a corpus
 
 ```java
-SimTest.corpus(preset, false, 202, 174, 191, -1,
-               new int[]{1,2,4,8,16,32}, 1024, 100, EdgeWeights.Scheme.MOMENTUM, chain);
+SimTest.corpus(preset, false, 202, 174, 191, -1, new int[]{1,2,4,8,16,32}, 1024, 100);
 ```
 
 Flies short journeys from cold starts and compares flown ticks against the clock's estimate.
@@ -245,7 +242,7 @@ position constrains the other.
 
 ```java
 SimTest.windows(preset, false, 202, 174, 191, -1, /*from=*/4, /*keep=*/0,
-                EdgeWeights.Scheme.MOMENTUM, chain, Flocking.of(turningRadius));
+                Flocking.of(turningRadius));
 ```
 
 For each transition that requires explanation, where a leader must be, tick by tick. Run it for
@@ -290,8 +287,7 @@ classifier and have been withdrawn; see the warning above.
 
 ```java
 SolverFacts f = SolverStore.prepare(preset,
-        new SolverFacts.Gate(false, 202, 174, 191, -1),
-        EdgeWeights.Scheme.MOMENTUM, chain, Flocking.of(turningRadius));
+        new SolverFacts.Gate(false, 202, 174, 191, -1), Flocking.of(turningRadius));
 ```
 
 Everything a solver may know about a map before it is shown a scene: the decomposition,
@@ -316,10 +312,10 @@ SimTest.zones(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 40
 
 Builds `DecisionZone.exits` for every edge — the region a psyboid enters, the transitions each
 choice forbids, the gate that closes it — reports each as sound or not, then flies a lone psyboid
-and a flocked one round the loop under `DecisionOverride` and under `EdgePilot` from the same
-state. Expected on dabeone: **9 of 9 zones sound**, **0 mismatching ticks** in both flights,
-opening and closing gates crossed in equal numbers per edge, lone laps of **535 ticks scoring
-54**. Seconds once the facts are built. Nothing is written; zones are rebuilt from the facts and
+and a flocked one round the loop under `DecisionOverride`. Expected on dabeone: **9 of 9 zones
+sound**, opening and closing gates crossed in equal numbers per edge, lone laps of **535 ticks
+scoring 54**. (Until 2026-09-13 it also flew the route pilot from the same state and compared
+the two tick by tick — 0 mismatches, alone and in a flock — which is what retired the pilot.) Seconds once the facts are built. Nothing is written; zones are rebuilt from the facts and
 the map wherever they are needed, including when a `g` label is read back. `EDGES.md` §2a.
 
 ```java
@@ -393,8 +389,8 @@ still 5,000; `ROADMAP.md` §0f has the three options and why the choice is not a
 ## 14. Grade the solver
 
 ```java
-SimTest.graded(preset, false, 202, 174, 191, -1, scheme, chain, flock, /*every=*/13, clue);
-SimTest.solve  (preset, false, 202, 174, 191, -1, scheme, chain, flock, seeds, warm);
+SimTest.graded(preset, false, 202, 174, 191, -1, flock, /*every=*/13, clue);   // gone
+SimTest.solve  (preset, false, 202, 174, 191, -1, flock, seeds, warm);
 ```
 
 `graded` runs the plan corpus at `ingests/<hash>/psyboid/plans.tsv`; `solve` runs synthetic

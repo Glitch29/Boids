@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-12, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-13, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -75,7 +75,8 @@ surveyed beside them. **The rules are not where implementations differ; the aggr
 **cancellation ratio** — for one rule, `sum of the contributions' lengths / length of their sum`.
 One is unanimity; ten means the neighbours nearly cancelled and only a short residue survived.
 **A property of the arrangement, not of the aggregation**, which is what makes it usable as
-evidence about which exits the normalisation is inventing. `AggregationSurvey.cancellation`.
+evidence about which exits the normalisation is inventing. Was `AggregationSurvey.cancellation`,
+removed with the survey 2026-09-13.
 
 **amplification** — `|signal(A,B)| / max(|signal(A)|, |signal(B)|)`, where *signal* is the
 across-heading component of the desired direction. Above one means the pair asked for something
@@ -120,21 +121,21 @@ discount every decision's payoff to 0.006 of face value. **A horizon has to be a
 and this is the same shape that worked before, expressed in terms the map supplies.
 
 **potential** — the sum of every boid's bias over the flock, used to value a search leaf.
-`EdgePrice.potential`. **What lets a search see herding at all**: a boid induced off its route does
+Was `EdgePrice.potential`; the class is gone (2026-09-13, git `0116abc`) and the idea is kept here. **What lets a search see herding at all**: a boid induced off its route does
 not score for another lap, so any window shorter than that lap gives the inducing line and the
 declining line the same points, and the tie goes to declining. The potential values the induced
 exit on the tick it happens, because that boid's bias jumps by the difference between the route it
 was on and the one it is on now.
 
-**forward distance** — ticks from one `(edge, tau)` to another, travelling forwards. `EdgeReach`,
-in two flavours that answer different questions. **`unsteered`** is where a boid goes if nothing
+**forward distance** — ticks from one `(edge, tau)` to another, travelling forwards. Was
+`EdgeReach`, removed uncalled 2026-09-13 (git `0116abc`); the definition stands. Two flavours that answer different questions. **`unsteered`** is where a boid goes if nothing
 acts on it, and is **absent whenever coasting never arrives** — which is normal rather than
 exceptional, since unsteered travel from the stable cycle stays on it and every window on an
 unstable edge is therefore unreachable that way. **`steered`** is the fewest ticks with steering
 allowed. Asking for the position you already occupy means a **full circuit**, not zero.
 
-**forward rebasing** — advancing an `(edge, tau)` by a number of ticks along a route.
-`EdgeReach.advance`. The operation every window comparison is built from: a window is recorded
+**forward rebasing** — advancing an `(edge, tau)` by a number of ticks along a route. Was
+`EdgeReach.advance`, removed with the class. The operation every window comparison is built from: a window is recorded
 against the led boid's edge and names a leader on another, so comparing them means advancing both
 by the same duration and asking where each lands.
 
@@ -165,7 +166,9 @@ timeline offers none: knowing where a lead is possible is what makes it affordab
 there.
 
 **price function** — what a position is worth in `(edge, tau)` space, from the map alone.
-`EdgePrice`. Per edge the ticks a coasting traversal takes and how many of them score; then the
+Was `EdgePrice`, removed 2026-09-13 with nothing calling it and every figure measured through a
+filter that dropped real exits (git `0116abc`); the definition is kept for when a decision search
+needs a value. Per edge the ticks a coasting traversal takes and how many of them score; then the
 **gain** `lambda*`, the best score per tick any cycle sustains, and the **bias** `h(e)`, how much
 better than average it is to stand at the start of edge `e`. Greedy on `h` is single-boid optimal.
 **Average reward, never discounted** — a discount reintroduces exactly the horizon plait was built
@@ -184,9 +187,10 @@ for one boid; the bias is measured in ticks-of-gain and only its differences mea
 37 ticks of gain.
 
 **pilot** — an override carrying a **route** rather than a schedule: one target exit per edge, and
-a turn asked for only on the ticks where coasting would leave it. `EdgePilot`. Self-correcting,
-because it reads where the boid is rather than where a plan expected it to be, and **inert on
-99.65% of ticks**. Contrast a **held turn**, a fixed turn at an absolute tick — what the deleted
+a turn asked for only on the ticks where coasting would leave it. Was `EdgePilot`; retired
+2026-09-13 after `DecisionOverride` flew identically to it tick for tick, alone and in a flock —
+the same rule with the route as data. Self-correcting, because it reads where the boid is rather
+than where a plan expected it to be, and **inert on 99.65% of ticks**. Contrast a **held turn**, a fixed turn at an absolute tick — what the deleted
 bit-search emitted, and what cannot survive the slip a boid accumulates over a 750-tick edge.
 
 **phase** — how far round its loop a boid is, in ticks. **Conserved:** a boid advances exactly one
@@ -419,7 +423,7 @@ predicate; `Gate.landingIn` converts a state-based gate. Not to be confused with
 **`DecisionOverride`** — the override that steers by zones alone: inside a zone whose decision it
 carries, it refuses any turn that crosses the prohibited gate and otherwise leaves the boid to the
 flock. Stateless by necessity — an override is shared by every timeline descending from the state
-it was installed on. Label prefix `g`. Flies identically to `EdgePilot` on exits.
+it was installed on. Label prefix `g`. Flew identically to the route pilot it replaced.
 
 **stable edge** — unsteered travel returns to it without scoring. A boid on a stable edge
 could have been there forever and owes no explanation. On dabeone: `{2, 4, 7}`.
@@ -475,10 +479,14 @@ joint least-squares fit solved by conjugate gradient. `EdgeMetric`, cached by
 **gauge** — the fit is underdetermined in a describable way; a spanning forest of the class
 graph gives exactly the pinnable lengths. Fix it structurally, never with Tikhonov weights.
 
-**weighting scheme** — how much each transition counts in the fit. `EdgeWeights.Scheme`:
-`UNIFORM`, `CIRCULATION`, `MOMENTUM`. Best measured is the **lifted memoryless flow**
-(`MOMENTUM` with an all-ones chain at γ=0). Lengths are weighting-dependent: **never compare
-across schemes.**
+**weighting** — how much each transition counts in the fit: the **lifted memoryless flow**,
+`EdgeWeights.lifted`, the only one since 2026-09-13. Five were surveyed (`HINTS.md` §5 has the
+table): all-ones, a conserving flow on the flat graph (`CIRCULATION`), that flow with unsteered
+travel boosted, and the lifted flow with a measured steering chain at strengths 0, ½ and 1. The
+lifted flow at strength 0 won on both maps; the flat flow had once been declared the winner before
+a bug found afterwards invalidated that run. The artifact hashes still carry the bytes it fed
+under its old enum name, `MOMENTUM`, so nothing re-derived. Lengths are a property of the
+weighting; figures from before the survey settled are not comparable.
 
 **lifted flow** — traffic solved over `(state, last request)` nodes rather than states. Seeds
 one unit per *request*, which is what the simulation does where the veto collapses two
@@ -598,7 +606,7 @@ clock's 275.29 for the same loop, which nothing in either knows about the other.
 traffic**, visited without psyboid activity or abnormal circumstances. Wanted because *stable* is
 what a lone boid holds and no boid in a scene is alone — the flock knocks everyone slightly off it
 constantly — so a history that merely starts a little off stable should not thereby be
-unexplained. Built by `StateSet.expandByAgreement`, and **closed under straight travel at every
+unexplained. Built by `StateSet.expandByQuorum`, and **closed under straight travel at every
 point**, which is what makes it predictable: an exit can only enter it if an exit window sits on
 the stable loop with a quorum of influencers on it. Settled 2026-08-30 as
 `pureStable(1).partialTick.closed.expandByQuorum(pureStable(1), 5).partialTick.closed`,
@@ -745,10 +753,10 @@ anything not listed.
 | region overlay | hand | `analysis/3BoidAreasOfInterest.png` |
 | region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
 | artifact addressing | `Derived` (structure and behaviour tiers) | `ingests/<map>/structure/<h>/behaviour/<h>/` |
-| map-wide stable, stable+ | `StateSet` + `MapStates.stablePlus`, scanned by `SimTest.stablePlusScan` | `render/stable-plus-by-ratio.png` |
+| map-wide stable, stable+ | `StateSet` + `MapStates.stablePlus` at `SimTest.QUORUM` | in memory |
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
-| aggregation survey | `Aggregation` + `AggregationSurvey`, flown by `SimTest.aggregationPhaseMaps` | `render/agg-*.png` |
+| aggregation survey | **retired 2026-09-13**; `AggregationSurvey` keeps the fidelity and closed-form checks, `SimTest.aggregationPhaseMaps` and `proposedPhysics` compare physics 2 and 3 | `render/agg-*.png`, `render/prop-*.png` |
 | edge-occupancy decay | `EdgeOccupancy` + `Spawn.Rule`, with `warmupScoring` | `<behaviour>/occupancy/decay-<rule>-<seeds>s<window>w.tsv` |
 | proposed physics 3 | `Aggregation.RULE_SUM_CLAMP`, driven by `SimTest.proposedPhysics` | `render/prop-*.png` |
 | cost to leave | `EdgeNavigation.analyse`, per state via `steerCostTo` | in the edge graph |
@@ -756,10 +764,7 @@ anything not listed.
 | solver facts | `SolverStore` → `SolverFacts` | `<ingest>/solver/facts.bin` |
 | the solver | `Solver` + `UnstableEdgeClue` | — |
 | the pipeline | `Pipeline`: map + cut line in, solver facts out | every tier under `ingests/<map>/` |
-| the price function | `EdgePrice` | in memory; reported by hand |
-| route-following override | `EdgePilot` | in a plan's label, prefix `q` |
 | one-step navigability | `Pipeline.checkNavigable`, run on every build | throws on violation |
-| forward distance and rebasing | `EdgeReach` | in memory |
 | spawn | `Spawn` + `Spawn.Rule` | in a corpus's address |
 
 > **Two different two-boid analyses. Do not conflate them.**

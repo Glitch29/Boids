@@ -7,7 +7,7 @@ import java.util.function.IntConsumer;
  * <p>
  * An interface rather than a class because stable+ is not yet defined and is not expected to be
  * got right first time. What a run of this analysis produces is a <em>chain</em> —
- * {@code pureStable(1).partialTick(STRAIGHT).closed(STRAIGHT).expandByAgreement(...)} — and the
+ * {@code pureStable(1).partialTick(STRAIGHT).closed(STRAIGHT).expandByQuorum(...)} — and the
  * useful thing to be able to change is one link of it, without the previous definition being
  * overwritten by the next one.
  *
@@ -158,13 +158,12 @@ public interface StateSet {
      * would end up.
      * <p>
      * The question stable+ has to answer is which departures from stable are ordinary. This
-     * answers it by consensus rather than by possibility: a turn counts as ordinary if
-     * {@code |influencers| / agreementRatio} of them would induce it, so a placement that only
-     * one contrived position produces is not admitted while one that a broad swathe of the
-     * ordinary traffic produces is.
+     * answers it by consensus rather than by possibility: a turn counts as ordinary if a
+     * quorum of them would induce it, so a placement that only one contrived position produces
+     * is not admitted while one that a broad swathe of the ordinary traffic produces is.
      * <p>
-     * <b>One quorum, and the turn may stop at any tick.</b> The same
-     * {@code |influencers| / agreementRatio} gates starting the turn and continuing it, and
+     * <b>One quorum, and the turn may stop at any tick.</b> The same quorum gates starting the
+     * turn and continuing it, and
      * nothing gates ending it — a boid is free to stop turning whenever, so every state along the
      * turn is a state a boid can be left in and every one of them is added, together with
      * everything downstream of it. The coalition is carried forward alongside the boid: the
@@ -178,18 +177,16 @@ public interface StateSet {
      * only enter the set if an exit window sits on the stable loop with a quorum of influencers
      * on it.
      *
+     * <p>
+     * The quorum is named outright — {@code SimTest.QUORUM}, five — rather than derived as a ratio
+     * of the influencer count. A ratio was the first handle and the wrong one: what the quorum
+     * means is <b>how many ticks of influencer positions have to agree</b>, and turning that into
+     * a divisor made it depend on how densely the influencer set happened to sample its loop,
+     * which varies with how the straight-travel cycles came out on the map and not with anything
+     * about flocking. The ratio form and its scan were removed 2026-09-13.
+     *
      * @param influencers where the other boid may be. Must be closed under straight travel, since
      *                    the coalition is advanced by coasting
-     */
-    StateSet expandByAgreement(StateSet influencers, int agreementRatio);
-
-    /**
-     * The same, naming the quorum outright instead of deriving it from the influencer count.
-     * <p>
-     * The primary form. A ratio was the wrong handle: what the quorum means is <b>how many ticks
-     * of influencer positions have to agree</b>, and turning that into a divisor makes it depend
-     * on how densely the influencer set happens to sample its loop — which varies with how the
-     * straight-travel cycles came out on the map, not with anything about flocking.
      */
     StateSet expandByQuorum(StateSet influencers, int quorum);
 }

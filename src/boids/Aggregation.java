@@ -31,8 +31,13 @@ package boids;
  * normalises satisfies no bound at all.
  *
  * <h2>Nothing here changes the simulation</h2>
- * {@link #SIMULATION} is what {@link MovementLogic} does. The others exist to be measured
- * against it, and {@link #RULE_NORMALISE} is kept as the record of what physics 2 did.
+ * {@link #SIMULATION} is what {@link MovementLogic} does, and {@link #RULE_NORMALISE} is kept as
+ * the record of what physics 2 did, so the two can be run against each other end to end
+ * ({@code SimTest.proposedPhysics}). <b>Five more were surveyed and are gone</b> —
+ * {@code RULE_MEAN}, {@code RULE_SUM_CLAMP_STEP}, {@code VOTE_MEAN}, {@code VOTE_SUM_CLAMP} and
+ * {@code VOTE_NORM}, removed 2026-09-13 once {@code RULE_SUM_CLAMP} had shipped as physics 3.
+ * The survey and its numbers are in {@code ROADMAP.md} §0a; the variants are in git at
+ * {@code 0116abc}.
  */
 public interface Aggregation {
 
@@ -89,10 +94,6 @@ public interface Aggregation {
         out[at + 1] = w * vy / m;
     }
 
-    /** {@code w * v / n}: keeps the length as the measure of agreement it is. */
-    private static void mean(double[] out, int at, double vx, double vy, double w, int n) {
-        if (n > 0) { out[at] = w * vx / n; out[at + 1] = w * vy / n; }
-    }
 
     // ---- the variants --------------------------------------------------------
 
@@ -133,45 +134,9 @@ public interface Aggregation {
     };
 
     /**
-     * Each rule averages over its own contributors, and the average keeps its length.
-     * <p>
-     * The magnitude then means what it looks like it means: alignment at full weight is unanimity,
-     * alignment at half weight is neighbours pulling apart. Convex, so the pseudo-triangle rule
-     * holds exactly at {@code k = 1}. The cost is that a single neighbour no longer produces a
-     * full-weight separation term, because the falloff survives.
-     */
-    Aggregation RULE_MEAN = new Aggregation() {
-        public String id() { return "RULE_MEAN"; }
-
-        public String describes() { return "per-rule mean over that rule's contributors"; }
-
-        public boolean separationFalloffAtOne() { return true; }
-
-        public void combine(Neighbours nb, Flocking f, double[] out) {
-            double sx = 0, sy = 0, cx = 0, cy = 0, ax = 0, ay = 0;
-            int close = 0;
-            for (int j = 0; j < nb.n(); j++) {
-                cx += nb.ux()[j];
-                cy += nb.uy()[j];
-                ax += nb.ax()[j];
-                ay += nb.ay()[j];
-                if (nb.d()[j] < f.rSep()) {
-                    close++;
-                    double falloff = (f.rSep() - nb.d()[j]) / f.rSep();
-                    sx -= nb.ux()[j] * falloff;
-                    sy -= nb.uy()[j] * falloff;
-                }
-            }
-            mean(out, 0, sx, sy, f.wSep(), close);
-            mean(out, 2, cx, cy, f.wCoh(), nb.n());
-            mean(out, 4, ax, ay, f.wAli(), nb.n());
-        }
-    };
-
-    /**
      * Each rule sums unit contributions and the sum is capped rather than rescaled.
      * <p>
-     * <b>Identical to {@link #CURRENT} whenever the neighbours agree</b> — two neighbours pulling
+     * <b>Identical to {@link #RULE_NORMALISE} whenever the neighbours agree</b> — two neighbours pulling
      * the same way sum to length 2, which caps to 1, which is what normalising would have given.
      * It differs only where the sum is short, which is exactly the cancelling case the
      * normalisation amplifies. That makes it the smallest change that removes the defect.
@@ -202,137 +167,8 @@ public interface Aggregation {
         }
     };
 
-    /**
-     * The same, with separation as a step rather than a falloff.
-     * <p>
-     * Restores exact agreement with {@link #CURRENT} for a single neighbour: normalising one
-     * vector erases the falloff anyway, so dropping it changes nothing at {@code n = 1} and makes
-     * this the only bounded variant that is a strict extension of today's physics rather than a
-     * replacement for it.
-     */
-    Aggregation RULE_SUM_CLAMP_STEP = new Aggregation() {
-        public String id() { return "RULE_CLAMP_STEP"; }
-
-        public String describes() { return "the same, separation a step so n=1 is unchanged"; }
-
-        public void combine(Neighbours nb, Flocking f, double[] out) {
-            double sx = 0, sy = 0, cx = 0, cy = 0, ax = 0, ay = 0;
-            for (int j = 0; j < nb.n(); j++) {
-                cx += nb.ux()[j];
-                cy += nb.uy()[j];
-                ax += nb.ax()[j];
-                ay += nb.ay()[j];
-                if (nb.d()[j] < f.rSep()) { sx -= nb.ux()[j]; sy -= nb.uy()[j]; }
-            }
-            clamp(out, 0, sx, sy, f.wSep());
-            clamp(out, 2, cx, cy, f.wCoh());
-            clamp(out, 4, ax, ay, f.wAli());
-        }
-    };
-
-    /**
-     * Every neighbour casts one complete vote and the votes are averaged.
-     * <p>
-     * A vote is the single-neighbour closed form {@link EdgeInfluence#steer} already uses:
-     * {@code (wCoh - [close] wSep) u + wAli a}. Averaging bounded votes puts the result inside
-     * their convex hull, so the pseudo-triangle rule holds exactly at {@code k = 1} in two
-     * dimensions and not merely on the across-component — the strongest guarantee available. It
-     * agrees with {@link #CURRENT} exactly at {@code n = 1}.
-     * <p>
-     * It is also the one variant that reorders rather than rescales: rules are combined per
-     * neighbour and then across neighbours, where today it is the other way round.
-     */
-    Aggregation VOTE_MEAN = new Aggregation() {
-        public String id() { return "VOTE_MEAN"; }
-
-        public String describes() { return "mean of per-neighbour votes (rules combined first)"; }
-
-        public void combine(Neighbours nb, Flocking f, double[] out) {
-            for (int j = 0; j < nb.n(); j++) {
-                if (nb.d()[j] < f.rSep()) {
-                    out[0] -= f.wSep() * nb.ux()[j] / nb.n();
-                    out[1] -= f.wSep() * nb.uy()[j] / nb.n();
-                }
-                out[2] += f.wCoh() * nb.ux()[j] / nb.n();
-                out[3] += f.wCoh() * nb.uy()[j] / nb.n();
-                out[4] += f.wAli() * nb.ax()[j] / nb.n();
-                out[5] += f.wAli() * nb.ay()[j] / nb.n();
-            }
-        }
-    };
-
-    /**
-     * The same votes summed, with the total capped at what one vote could have been.
-     * <p>
-     * Between {@link #VOTE_MEAN} and {@link #CURRENT}: agreeing neighbours reinforce up to the
-     * cap instead of being averaged down, and cancelling ones stay cancelled instead of being
-     * blown back up.
-     */
-    Aggregation VOTE_SUM_CLAMP = new Aggregation() {
-        public String id() { return "VOTE_CLAMP"; }
-
-        public String describes() { return "sum of votes, total capped at one vote's reach"; }
-
-        public void combine(Neighbours nb, Flocking f, double[] out) {
-            double sx = 0, sy = 0, cx = 0, cy = 0, ax = 0, ay = 0;
-            for (int j = 0; j < nb.n(); j++) {
-                if (nb.d()[j] < f.rSep()) { sx -= nb.ux()[j]; sy -= nb.uy()[j]; }
-                cx += nb.ux()[j];
-                cy += nb.uy()[j];
-                ax += nb.ax()[j];
-                ay += nb.ay()[j];
-            }
-            double vx = f.wSep() * sx + f.wCoh() * cx + f.wAli() * ax;
-            double vy = f.wSep() * sy + f.wCoh() * cy + f.wAli() * ay;
-            // One vote's reach is the largest a single neighbour could ask for, which is the
-            // separation regime: the three terms are collinear at worst.
-            double cap = Math.max(f.wCoh(), f.wSep() - f.wCoh()) + f.wAli();
-            double m = len(vx, vy);
-            double k = m > cap ? cap / m : 1;
-            out[0] = f.wSep() * sx * k;
-            out[1] = f.wSep() * sy * k;
-            out[2] = f.wCoh() * cx * k;
-            out[3] = f.wCoh() * cy * k;
-            out[4] = f.wAli() * ax * k;
-            out[5] = f.wAli() * ay * k;
-        }
-    };
-
-    /**
-     * The control: reorder without rescaling, and the defect survives.
-     * <p>
-     * Votes are summed and the total is renormalised to one vote's reach. Moving the
-     * normalisation from the rules to the total makes no difference to the amplification,
-     * because the amplification is caused by normalising at all — which is the point worth
-     * establishing before anything is concluded about ordering.
-     */
-    Aggregation VOTE_NORM = new Aggregation() {
-        public String id() { return "VOTE_NORM"; }
-
-        public String describes() { return "sum of votes, renormalised (control: still amplifies)"; }
-
-        public void combine(Neighbours nb, Flocking f, double[] out) {
-            double sx = 0, sy = 0, cx = 0, cy = 0, ax = 0, ay = 0;
-            for (int j = 0; j < nb.n(); j++) {
-                if (nb.d()[j] < f.rSep()) { sx -= nb.ux()[j]; sy -= nb.uy()[j]; }
-                cx += nb.ux()[j];
-                cy += nb.uy()[j];
-                ax += nb.ax()[j];
-                ay += nb.ay()[j];
-            }
-            double vx = f.wSep() * sx + f.wCoh() * cx + f.wAli() * ax;
-            double vy = f.wSep() * sy + f.wCoh() * cy + f.wAli() * ay;
-            double cap = Math.max(f.wCoh(), f.wSep() - f.wCoh()) + f.wAli();
-            double m = len(vx, vy);
-            double k = m > 0 ? cap / m : 0;
-            out[0] = f.wSep() * sx * k;
-            out[1] = f.wSep() * sy * k;
-            out[2] = f.wCoh() * cx * k;
-            out[3] = f.wCoh() * cy * k;
-            out[4] = f.wAli() * ax * k;
-            out[5] = f.wAli() * ay * k;
-        }
-    };
+    /** Physics 2 first, then what flies now. */
+    Aggregation[] ALL = {RULE_NORMALISE, RULE_SUM_CLAMP};
 
     /**
      * What the simulation flies, and the single place that says so.
@@ -344,8 +180,4 @@ public interface Aggregation {
      * <b>Physics 3</b>, shipped 2026-09-04. Physics 2 was {@link #RULE_NORMALISE}.
      */
     Aggregation SIMULATION = RULE_SUM_CLAMP;
-
-    /** Everything surveyed, physics 2 first. */
-    Aggregation[] ALL = {RULE_NORMALISE, RULE_MEAN, RULE_SUM_CLAMP, RULE_SUM_CLAMP_STEP,
-            VOTE_MEAN, VOTE_SUM_CLAMP, VOTE_NORM};
 }

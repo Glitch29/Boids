@@ -416,10 +416,6 @@ public final class MapStates {
             return new Set(b);
         }
 
-        public StateSet expandByAgreement(StateSet influencers, int agreementRatio) {
-            return expandByQuorum(influencers, Math.max(1, influencers.size() / agreementRatio));
-        }
-
         public StateSet expandByQuorum(StateSet influencers, int quorum) {
             int[] inf = influencers.toArray();
             // One number, not three. It gates starting a turn and continuing it, and nothing
@@ -484,28 +480,6 @@ public final class MapStates {
             }
             return n;
         }
-    }
-
-    /**
-     * How many of {@code influencers} would turn a boid at {@code state} each way.
-     * <p>
-     * The number behind {@code agreementRatio}: a turn is admitted when this reaches
-     * {@code |influencers| / ratio}, so seeing the raw counts along a path says what ratio the
-     * path would need rather than leaving it to be found by sweeping.
-     *
-     * @return {@code {left, right, quorum-denominator}}, the last being the influencer count
-     */
-    public int[] agreement(StateSet influencers, int state) {
-        int turns = Params.TURNS;
-        int bd = state % turns, cell = state / turns, bx = cell % width, by = cell / width;
-        int left = 0, right = 0;
-        for (int s : influencers.toArray()) {
-            int lc = s / turns;
-            int got = EdgeInfluence.steer(bd, lc % width - bx, lc / width - by, s % turns, flock);
-            if (got < 0) left++;
-            else if (got > 0) right++;
-        }
-        return new int[]{left, right, influencers.size()};
     }
 
     // ---- reporting -----------------------------------------------------------

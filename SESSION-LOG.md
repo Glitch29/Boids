@@ -11,6 +11,43 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-13 — one version of each thing
+
+**The weighting decision, confirmed from both sides.** The user went back to the transcripts and
+found that `CIRCULATION` had been declared the winner before a bug found afterwards invalidated
+that run; the recorded table in `HINTS.md` §5 has the lifted memoryless flow winning on both maps,
+and that is what has been in production all along under the enum name `MOMENTUM` at γ=0. Settled:
+**the lifted memoryless flow is the one weighting**, `EdgeWeights.lifted`. Removed: the `Scheme`
+enum, `UNIFORM`, the flat `CIRCULATION`, the `X2`/`X4` boosts, `blend`/`equilibrium` and the chain
+parameter, and `SimTest.synthetic` and `steering` which existed to build and rank them. Every
+signature that took `(scheme, chain)` lost it — `EdgeMetric`, `EdgeMetricStore`, `Derived.structure`,
+`SolverStore`, `Solver`, `Pipeline`, `GateSplit`, `SimTest`. **No hash moved**: `Derived.structure`
+and `EdgeMetricStore.key` feed `EdgeWeights.HASH_NAME` (`"MOMENTUM"`) and `HASH_CHAIN` (all `1/3`,
+bits `3fd5555555555555` — checked) exactly as before; verified by rebuilding dabeone — structure
+`b65011999ad52a55`, behaviour `cc1ab3e9a4831bfd`, the Sep 4 metric file, lengths 158.14…,
+`zones` 0 mismatches — all untouched.
+
+**The rest of the agreed cleanup**, each with its winner recorded in `ROADMAP.md` §0i "The
+cleanup": `EdgePilot` retired (`DecisionOverride` flew identically; `zones` no longer compares);
+`expandByAgreement`, `MapStates.agreement`, `SimTest.stablePlus` and `stablePlusScan` gone
+(`expandByQuorum` at 5); `Aggregation` pruned to `RULE_NORMALISE` + `RULE_SUM_CLAMP`, the survey
+and residue test out of `AggregationSurvey` leaving the fidelity and closed-form checks;
+`absorbEquivalentMasks` flag gone, absorb unconditional; `EdgePrice` and `EdgeReach` deleted,
+uncalled; `GateSplit` collapsed to `insert` + `drawCrossSections` + `lines`, the components render
+now drawn by `insert` (nine of nine re-checked, still twelve each), and the interior-perfection
+result that had only lived in commit `e616a54`'s message written into `EDGES.md` §2a. `SimTest`
+2,872 → 2,359 lines; `GateSplit` 1,497 → 719; `EdgeWeights` 380 → 237; 61 → 58 files.
+
+**Left alone on purpose**: the corpus plumbing until the search says what a plan is;
+`EdgeMetric.diagnose`; the duplicated private BFS walks.
+
+**Changed on disk.** Code as above; `README.md`, `GLOSSARY.md`, `EDGES.md`, `HINTS.md`,
+`PIPELINE.md`, `ROADMAP.md` updated and dated.
+
+**Open.** Unchanged from 2026-09-12: subpath placement, cross-border subpaths, the search over
+decisions; a real `insert` with the reachability assertion; the cut construction for unlocked maps;
+§0i's questions (1) and (3).
+
 ## 2026-09-12 — braiding: why one-to-three junctions do not settle, and it is not a bug
 
 **Set out to bug-hunt `refine()`** on the hypothesis that a one-to-three branch `O → {A, B, C}`

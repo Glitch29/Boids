@@ -447,15 +447,6 @@ public final class EdgeDecomposition {
     record Refined(int edges, long[] next, long[] back) {}
 
     /**
-     * Whether a mask is reduced before it is grouped on. See {@link #absorb}.
-     * <p>
-     * A flag rather than a straight change because it alters the decomposition algorithm itself,
-     * and every artifact in the tree is addressed by a decomposition. Off reproduces every
-     * recorded figure; on is the corrected rule.
-     */
-    static boolean absorbEquivalentMasks = true;
-
-    /**
      * Whether edges running alongside one another are merged before refinement.
      * <p>
      * The step identifies headings mod 32, so it can merge an edge with its own inverse. Measured
@@ -546,15 +537,13 @@ public final class EdgeDecomposition {
         // Which edges each edge steps to, and is stepped to from, at the current labelling. The
         // masks are reduced against these before anything is grouped on them.
         long[] outArcs = new long[edges], inArcs = new long[edges];
-        if (absorbEquivalentMasks) {
-            for (int i = 0; i < liveCount; i++) {
-                int s = live[i];
-                for (int j = 0; j < degree[s]; j++) {
-                    int u = succ[s * 3 + j];
-                    if (edge[u] == edge[s]) continue;
-                    outArcs[edge[s]] |= 1L << edge[u];
-                    inArcs[edge[u]] |= 1L << edge[s];
-                }
+        for (int i = 0; i < liveCount; i++) {
+            int s = live[i];
+            for (int j = 0; j < degree[s]; j++) {
+                int u = succ[s * 3 + j];
+                if (edge[u] == edge[s]) continue;
+                outArcs[edge[s]] |= 1L << edge[u];
+                inArcs[edge[u]] |= 1L << edge[s];
             }
         }
 
@@ -562,11 +551,7 @@ public final class EdgeDecomposition {
         int[] fresh = new int[liveCount];
         for (int i = 0; i < liveCount; i++) {
             int s = live[i];
-            long f = next[s], b = back[s];
-            if (absorbEquivalentMasks) {
-                f = absorb(f, outArcs, edges);
-                b = absorb(b, inArcs, edges);
-            }
+            long f = absorb(next[s], outArcs, edges), b = absorb(back[s], inArcs, edges);
             next[s] = f;
             back[s] = b;
             final long ff = f, bb = b;

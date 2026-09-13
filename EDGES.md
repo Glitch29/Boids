@@ -3,7 +3,7 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-12. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-13. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
@@ -211,6 +211,17 @@ around whatever states it is given. Three conditions govern it:
    gate, because a traversal can enter and leave without ever meeting it.
 2. **Closure, which the algorithm can and should fix**, as a further perfection step: any state
    that can navigate both **to** and **from** a state of `S` without leaving `E` belongs in `S`.
+   **Built as `StateSet.interiorPerfect(within)` on 2026-09-10 and measured on dabeone**, a
+   result that had only been recorded in the commit message (`e616a54`) until 2026-09-13: a
+   deliberately concave `S` — the seed and its unsteered successor partial-ticked together, then
+   the successor taken back out, leaving a dent reachable from one member and reaching another —
+   **blows up nine of nine** (66 to 260 pieces; on edge 8 the reachability assertion itself
+   fails, as it should); the same `S` with interior perfection applied first, then the usual
+   chain, **settles nine of nine at twelve**. One pass suffices, since a state admitted is
+   already reachable from the set and already reaches it and so enlarges neither. Runs before
+   backwards and forwards perfection. Separately: `E⊥S` came out as 1, 2, 4 or 5 connected
+   components depending on the edge and the shape, and refinement split none of them — the
+   axiom keys on predecessor and successor edges, never on connectivity.
 3. **Phase completeness, optional.** Where `S` is phase-complete, `E⊥S` comes out as fewer
    disconnected regions — see below for what those regions actually are, which is not what this
    condition was first written to expect.
@@ -470,14 +481,15 @@ off, and is verified anyway); and nothing steps from `S` back to `E−S`. On dab
 `609cffdb84be218c`: **nine of nine sound**, regions 43 to 1,232 states, opening gates 61 to 718
 transitions, entrances 43 to 646 per edge with **0 inside**, 0 bypassing, 0 leaks.
 
-**The override is the pilot's rule as data, and flies identically.** Inside a zone whose decision
-is made, the flock's own request stands unless it crosses the prohibited gate; otherwise the first
-of straight, left, right that does not. For an exit that is `EdgePilot`'s *stays on the edge or
-reaches the target* exactly, and the two were flown from the same state round `[4, 2, 1, 5, 8]`
+**The override is the pilot's rule as data, and flew identically — so the pilot is gone.** Inside
+a zone whose decision is made, the flock's own request stands unless it crosses the prohibited
+gate; otherwise the first of straight, left, right that does not. For an exit that is the route
+pilot's *stays on the edge or reaches the target* exactly, and the two were flown from the same state round `[4, 2, 1, 5, 8]`
 for 4,000 ticks, alone and in a flock of four: **0 mismatching ticks in either**, opening and
 closing gates crossed in equal numbers on every edge, and a lone psyboid lapping in **535 ticks
-scoring 54** every lap. The difference is that a shortcut is another zone with other prohibitions
-and needs no new rule — which is the whole reason for the representation.
+scoring 54** every lap. `EdgePilot` was retired on that evidence on 2026-09-13 (git `0116abc`);
+`DecisionOverride` is the one override. The difference is that a shortcut is another zone with
+other prohibitions and needs no new rule — which is the whole reason for the representation.
 
 > The lone-psyboid lap here is **535**, where §6 and §9 record **533**. The 533 was flown by the
 > retired held-turn plans; the pilot and the override turn as late as a turn can be left, which
@@ -657,8 +669,9 @@ crossing — invisible inside an edge, and the same order as the effects being m
 whole-tick solver that once produced them survived, unused, behind a flag until 2026-09-12 and is
 gone; nothing in `EdgeMetric` rounds a length or a tick now (`HINTS.md` §4).
 
-**Lengths are weighting-dependent.** Never compare across schemes. Under lifted memoryless,
-dabeone's nine lengths are ≈ 158.14, 158.62, 100.59, 100.97, 93.73, 102.59, 71.84, 80.97,
+**Lengths are a property of the weighting.** There is one weighting since 2026-09-13, the lifted
+memoryless flow (`HINTS.md` §5); figures recorded under the surveyed alternatives are not
+comparable with these. Under it dabeone's nine lengths are ≈ 158.14, 158.62, 100.59, 100.97, 93.73, 102.59, 71.84, 80.97,
 72.76.
 
 **Free correctness check:** inverse edge pairs should come out near-equal (157.37/157.77,
@@ -667,7 +680,7 @@ independent evidence.
 
 ### The clock on one route alone, against the map-wide clock
 
-**Measured 2026-09-12, dabeone `609cffdb84be218c`, `SimTest.routeClock`, physics 3, MOMENTUM.**
+**Measured 2026-09-12, dabeone `609cffdb84be218c`, `SimTest.routeClock`, physics 3, lifted memoryless.**
 The question was whether a clock fitted map-wide agrees with one fitted on a single route, since
 shortcuts and longcuts are a per-route matter. The same least squares was run on each route
 alone — its edges, its own crossings and no others, the walk's weights recomputed on the route —
@@ -914,7 +927,7 @@ Ingest `609cffdb84be218c`, 379×407, turning radius 40, physics 2.
 | follow-through states | 20 on edge 2, 16 on edge 4, 18 on edge 5 |
 | route A lap | 278 ticks |
 | exit routes | 533–536 ticks, score 54 |
-| flown scoring lap | **exactly 533 ticks, exactly 54 points**, physics 3, under the retired held-turn plans; **535 and 54** under `EdgePilot` / `DecisionOverride`, §2a |
+| flown scoring lap | **exactly 533 ticks, exactly 54 points**, physics 3, under the retired held-turn plans; **535 and 54** under `DecisionOverride` (and the route pilot it retired), §2a |
 | warm edge occupancy | `2:0.3556 4:0.3285 7:0.3156`, everything else at or below `0.0002`, physics 3 |
 | reachable pairs | 213,423,450 (1.15%), bit-identical from 5 seeds |
 | psyboid reaches | 100% of live states; the boid reaches 79.86% |

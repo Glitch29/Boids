@@ -65,10 +65,9 @@ public final class Pipeline {
                 preset.turningRadius(), preset.flockSize());
         System.out.printf("ingest    %s%n", preset.ingest().dir());
 
-        SolverFacts facts = SolverStore.prepare(preset, gate, SimTest.SCHEME, SimTest.CHAIN,
-                flock);
+        SolverFacts facts = SolverStore.prepare(preset, gate, flock);
         Derived.Structure structure = Derived.structure(preset.ingest(), preset.turningRadius(),
-                gate, SimTest.SCHEME, SimTest.CHAIN);
+                gate);
         Derived.Behaviour where = structure.behaviour(flock, Aggregation.SIMULATION);
         System.out.printf("structure %s%nbehaviour %s%n", structure.dir(), where.dir());
 

@@ -22,15 +22,16 @@ import java.util.List;
  * inside; otherwise the first of straight, left, right that crosses none. The request is
  * constrained by the veto before it is looked up, because a gate holds effective turns and a
  * request the veto alters is not the transition the boid takes. For an exit decision this is
- * {@link EdgePilot}'s rule exactly — <em>not prohibited</em> is <em>stays on the edge or reaches
- * the chosen successor</em> — so the two must fly identically, and {@code SimTest.zones} checks
- * that they do. A subpath decision is another zone with other prohibitions and the same rule,
- * which is the whole reason for the representation.
+ * the retired route pilot's rule exactly — <em>not prohibited</em> is <em>stays on the edge or
+ * reaches the chosen successor</em> — and the two flew identically, tick for tick, alone and in a
+ * flock, before the pilot was removed (2026-09-13; {@code EDGES.md} §2a). A subpath decision is
+ * another zone with other prohibitions and the same rule, which is the whole reason for the
+ * representation.
  *
  * <h2>Labels</h2>
  * {@code g<psyboid>:<exit choice per edge, '.'-separated, -1 for none>}, then for each subpath
- * zone {@code ;s<edge>=<choice>:<path states, '.'-separated>}, then {@code [@from-to]}. Mirrors
- * {@link EdgePilot}'s {@code q}. Reading one back rebuilds every zone from the map and the facts.
+ * zone {@code ;s<edge>=<choice>:<path states, '.'-separated>}, then {@code [@from-to]}.
+ * Reading one back rebuilds every zone from the map and the facts.
  */
 public final class DecisionOverride implements PsyboidOverride {
 
@@ -159,7 +160,11 @@ public final class DecisionOverride implements PsyboidOverride {
         return out;
     }
 
-    /** Straight first, then left, then right; the same order as {@link EdgePilot}, for the same reasons. */
+    /**
+     * Straight first, then left, then right. Straight is preferred because it is the turn the
+     * collision layer is least likely to alter and the one that spends nothing; left before right
+     * is arbitrary and deliberately so — nothing here may assume a particular hand of turn works.
+     */
     private static final int[] ORDER = {0, -1, 1};
 
     @Override

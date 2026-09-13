@@ -35,8 +35,8 @@ import java.util.List;
  * The clock is one least-squares fit over the whole map: every transition wants to advance it
  * by exactly one tick, and where that cannot hold everywhere the error is spread rather than
  * dumped in one place. Nothing is held fixed except a single state to say where zero is,
- * because holding more makes it worse — see {@link #compute(NavMap, int[], int[], int, int,
- * EdgeWeights.Scheme, double[][])}. Stationarity of the squared error is a Laplacian, solved by conjugate gradient.
+ * because holding more makes it worse — see {@link #compute}. Stationarity of the squared
+ * error is a Laplacian, solved by conjugate gradient.
  * Sweeping instead would move a correction one state per pass, and with only one state
  * anchored the system's conditioning goes as the square of the graph's diameter, so a sweep
  * needs the square of an edge's length to settle where the gradient needs a few thousand
@@ -116,15 +116,6 @@ public final class EdgeMetric {
     public record Metric(int[][] entryFrom, int[][] exitTo, double[] length, double[] tick,
                          int slack, int broken, int band, double step, double cost) {}
 
-    public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges) {
-        return compute(map, edge, live, liveCount, edges, EdgeWeights.Scheme.UNIFORM, null);
-    }
-
-    public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                                 EdgeWeights.Scheme scheme) {
-        return compute(map, edge, live, liveCount, edges, scheme, null);
-    }
-
     /**
      * <b>Lengths are real numbers, fitted, and nothing here rounds them.</b> There used to be a
      * second solver behind a {@code pinPaths} flag that held the canonical paths at whole ticks
@@ -133,16 +124,11 @@ public final class EdgeMetric {
      * every crossing) and code that can reintroduce one is not worth keeping. The only integer
      * in the fit is {@code estimate}, a count of graph steps used to seed the lengths and as the
      * target the gauge is restored toward; the lengths themselves come out of the solve.
-     *
-     * @param chain    the steering chain {@link EdgeWeights.Scheme#MOMENTUM} weights by, and
-     *                 ignored by every other scheme, which have no notion of what a boid last
-     *                 asked for
+     * <p>
+     * Weighted by the lifted memoryless flow, {@link EdgeWeights#lifted}, which is the one
+     * weighting there is; the survey that chose it is in {@code HINTS.md} §5.
      */
-    public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges,
-                                 EdgeWeights.Scheme scheme, double[][] chain) {
-        if (scheme == EdgeWeights.Scheme.MOMENTUM && chain == null) {
-            throw new IllegalArgumentException("MOMENTUM needs a steering chain");
-        }
+    public static Metric compute(NavMap map, int[] edge, int[] live, int liveCount, int edges) {
         restored = null;
         long[] down = new long[edges], up = new long[edges];
         for (int i = 0; i < liveCount; i++) {
@@ -204,8 +190,7 @@ public final class EdgeMetric {
                 if (entryFrom[e][a] >= 0) gauge = Math.min(gauge, entryFrom[e][a]);
             }
         }
-        double[] tick = solveJoint(map, edge, live, liveCount, edges, estimate, length, gauge,
-                scheme, chain);
+        double[] tick = solveJoint(map, edge, live, liveCount, edges, estimate, length, gauge);
         return new Metric(entryFrom, exitTo, length, tick, slack, broken,
                 bandViolations(map, edge, live, liveCount, length, tick),
                 worstStep(map, edge, live, liveCount, edges, estimate, tick, entryFrom, exitTo, reach),
@@ -376,12 +361,8 @@ public final class EdgeMetric {
      * A weight is how much a transition's residual counts. Applied as the square root by the
      * caller, because the fit squares what it is given.
      */
-    static double[] weights(NavMap map, int[] live, int liveCount, Rows r,
-                            EdgeWeights.Scheme scheme, double[][] chain) {
-        return scheme == EdgeWeights.Scheme.MOMENTUM
-                ? EdgeWeights.momentum(map, live, liveCount, r.index(), r.rowOf(), chain,
-                        r.count())
-                : EdgeWeights.of(scheme, r.from(), r.to(), r.unsteered(), r.count(), liveCount);
+    static double[] weights(NavMap map, int[] live, int liveCount, Rows r) {
+        return EdgeWeights.lifted(map, live, liveCount, r.index(), r.rowOf(), r.count());
     }
 
     /**
@@ -397,10 +378,9 @@ public final class EdgeMetric {
      * across deciles the weighting is not the cause; if they pile up in the bottom decile it
      * is conditioning, and the answer is a floor on the weights rather than a hunt.
      */
-    public static void diagnose(NavMap map, int[] edge, int[] live, int liveCount, Metric m,
-                                EdgeWeights.Scheme scheme, double[][] chain) {
+    public static void diagnose(NavMap map, int[] edge, int[] live, int liveCount, Metric m) {
         Rows r = rows(map, edge, live, liveCount);
-        double[] w = weights(map, live, liveCount, r, scheme, chain);
+        double[] w = weights(map, live, liveCount, r);
         double[] tick = m.tick();
         double[] length = m.length();
         int rows = r.count();
@@ -415,7 +395,7 @@ public final class EdgeMetric {
         for (int k = 0; k < rows; k++) order[k] = k;
         Arrays.sort(order, (x, y) -> Double.compare(w[x], w[y]));
 
-        System.out.printf("%n  worst single-tick step by weight decile, %s%n", scheme);
+        System.out.printf("%n  worst single-tick step by weight decile%n");
         System.out.printf("  %-8s %11s %11s %9s %9s %9s %9s%n", "decile", "weight lo",
                 "weight hi", "mean |e|", "p99 |e|", "max |e|", "crossing");
         for (int d = 0; d < 10; d++) {
@@ -480,21 +460,19 @@ public final class EdgeMetric {
 
     private static double[] solveJoint(NavMap map, int[] edge, int[] live, int liveCount,
                                        int edges, int[] estimate, double[] length,
-                                       int anchorState, EdgeWeights.Scheme scheme,
-                                       double[][] chain) {
+                                       int anchorState) {
         Rows built = rows(map, edge, live, liveCount);
         int[] index = built.index(), fromOf = built.from(), toOf = built.to();
         int[] crossOf = built.cross();
         boolean[] unsteered = built.unsteered();
         int rows = built.count();
 
-        double[] w = weights(map, live, liveCount, built, scheme, chain);
+        double[] w = weights(map, live, liveCount, built);
         double[] root = new double[rows];
         for (int k = 0; k < rows; k++) root[k] = Math.sqrt(w[k]);
         double[] balance = EdgeWeights.imbalance(w, fromOf, toOf, rows, liveCount);
-        weighting = String.format("%s: net flow worst %.3f, mean %.5f; %s%s", scheme,
-                balance[0], balance[1], EdgeWeights.lastWeights(),
-                scheme == EdgeWeights.Scheme.MOMENTUM ? "; " + EdgeWeights.lastLifted() : "");
+        weighting = String.format("lifted memoryless: net flow worst %.3f, mean %.5f; %s; %s",
+                balance[0], balance[1], EdgeWeights.lastWeights(), EdgeWeights.lastLifted());
 
         int n = liveCount + edges;
         double[] x = new double[n];

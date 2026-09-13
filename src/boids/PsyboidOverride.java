@@ -14,11 +14,12 @@ package boids;
  * is enough to express any plan, but only as a list of absolute-tick instructions worked out in
  * advance — which means the plan cannot react, and a search producing it has to know at planning
  * time exactly when the boid will arrive somewhere. On a map whose edges run 750 ticks, it will
- * not. <b>That class is gone</b>, deleted 2026-09-08 with the search that emitted it.
- * {@link EdgePilot} is the kind that remains: it carries a route rather than a schedule and steers
- * only on the ticks where coasting would leave it. Whatever a decision point installs will be of
- * that shape too — a rule evaluated against where the boid actually is, never a tick worked out
- * in advance.
+ * not. <b>That class is gone</b>, deleted 2026-09-08 with the search that emitted it. Its
+ * successor, {@code EdgePilot}, carried a route rather than a schedule and steered only on the
+ * ticks where coasting would leave it; {@link DecisionOverride} does the same thing as data — a
+ * chosen option per {@link DecisionZone} — and flew identically to it tick for tick, so the pilot
+ * was retired on 2026-09-13. What remains is of that shape: a rule evaluated against where the
+ * boid actually is, never a tick worked out in advance.
  *
  * <h2>The window, generically</h2>
  * Everything that reads an override reads one of three things — when it can act, whether it asks
@@ -28,8 +29,8 @@ package boids;
  * <h2>Labels</h2>
  * A plan's label is its artifact, so every implementation round-trips through one. The first
  * character says which kind, because a corpus row has to be readable back without being told what
- * wrote it. <b>A pilot's label names a route, and a route means nothing without the map it runs
- * on</b>, so reading one back takes the two-argument {@link #parse(String, NavMap, SolverFacts)}.
+ * wrote it. <b>A label names zones and choices, which mean nothing without the map they are on</b>,
+ * so reading one back takes the two-argument {@link #parse(String, NavMap, SolverFacts)}.
  */
 public interface PsyboidOverride extends MovementControl {
 
@@ -101,7 +102,6 @@ public interface PsyboidOverride extends MovementControl {
 
     /** The same, for a context where the map is available. Handles every kind. */
     static PsyboidOverride parse(String label, NavMap map, SolverFacts f) {
-        if (label.startsWith("q")) return EdgePilot.parsePilot(label, map, f);
         if (label.startsWith("g")) return DecisionOverride.parseZones(label, map, f);
         throw new IllegalArgumentException("no override kind is written '" + label.charAt(0)
                 + "': " + label);

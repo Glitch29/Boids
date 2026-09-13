@@ -55,8 +55,8 @@ public final class SolverStore {
     /**
      * Facts for one configuration, as they were last built. Never builds; a miss is an error.
      * <p>
-     * Takes the tier rather than the ingest. Facts are a function of the gate, the weighting
-     * scheme and the flocking constants as well as the map, and a path under the ingest alone
+     * Takes the tier rather than the ingest. Facts are a function of the gate and the flocking
+     * constants as well as the map, and a path under the ingest alone
      * could name only the map — so two configurations shared one file and the second silently
      * replaced the first.
      */
@@ -86,25 +86,22 @@ public final class SolverStore {
      * somewhere, so a second call is a file read and a first call is the whole pipeline.
      */
     public static SolverFacts prepare(PresetScenarioParameter preset, SolverFacts.Gate gate,
-                                      EdgeWeights.Scheme scheme, double[][] chain,
                                       Flocking flock) throws IOException {
         Derived.Behaviour where = Derived
-                .structure(preset.ingest(), preset.turningRadius(), gate, scheme, chain)
+                .structure(preset.ingest(), preset.turningRadius(), gate)
                 .behaviour(flock, Aggregation.SIMULATION);
         if (built(where)) return load(where);
-        return build(preset, gate, scheme, chain, flock);
+        return build(preset, gate, flock);
     }
 
     /**
      * Derives every fact from scratch and writes it, replacing whatever was there.
      *
      * @param gate   the cut to decompose from. The one genuinely human choice in the pipeline
-     * @param scheme the weighting the clock is solved under; lengths mean nothing across two
      * @param flock  the constants the windows are drawn at. Widening these gives a superset of
      *               the true windows, which is what a cover wants — see {@link Flocking}
      */
     public static SolverFacts build(PresetScenarioParameter preset, SolverFacts.Gate gate,
-                                    EdgeWeights.Scheme scheme, double[][] chain,
                                     Flocking flock) throws IOException {
         long began = System.nanoTime();
         EdgeDecomposition.Labelling l = SimTest.labelFor(preset, gate.horizontal(), gate.line(),
@@ -120,9 +117,9 @@ public final class SolverStore {
         EdgeNavigation.Properties props = SimTest.properties(preset, l);
 
         Derived.Structure structure = Derived.structure(preset.ingest(), preset.turningRadius(),
-                gate, scheme, chain);
+                gate);
         EdgeMetric.Metric metric = EdgeMetricStore.of(structure.at("metric"),
-                l.map(), l.edge(), l.live(), l.liveCount(), l.edges(), scheme, chain);
+                l.map(), l.edge(), l.live(), l.liveCount(), l.edges());
         SolverFacts.checkLengths(metric.length());
 
         SolverFacts.Window[] windows = windows(l, metric, straightTo, arcs, flock);
@@ -150,7 +147,8 @@ public final class SolverStore {
         }
 
         SolverFacts facts = new SolverFacts(preset.name().toLowerCase(java.util.Locale.ROOT),
-                preset.ingest().hash(), scheme + "/" + SolverFacts.describe(chain),
+                preset.ingest().hash(),
+                EdgeWeights.HASH_NAME + "/" + SolverFacts.describe(EdgeWeights.HASH_CHAIN),
                 flock.toString(), l.map().width(), l.map().height(), l.edges(), gate,
                 metric.length(), tickLo, tickHi, props.stable(), props.scoring(), straightTo,
                 exitTurn, arcs, windows, edgeOf, tickOf);

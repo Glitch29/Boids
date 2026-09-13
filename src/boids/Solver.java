@@ -48,7 +48,7 @@ public final class Solver {
     /**
      * The solver for a configuration whose facts have already been built.
      * <p>
-     * A configuration, not a map: facts depend on the gate, the weighting scheme and the
+     * A configuration, not a map: facts depend on the gate and the
      * flocking constants too, so naming only the map would let one map answer with another
      * configuration's model of it.
      *
@@ -66,9 +66,8 @@ public final class Solver {
      * it is not a fallback for {@link #of} and nothing on the answering path calls it.
      */
     public static Solver prepare(PresetScenarioParameter preset, SolverFacts.Gate gate,
-                                 EdgeWeights.Scheme scheme, double[][] chain, Flocking flock)
-            throws IOException {
-        return new Solver(SolverStore.prepare(preset, gate, scheme, chain, flock),
+                                 Flocking flock) throws IOException {
+        return new Solver(SolverStore.prepare(preset, gate, flock),
                 new UnstableEdgeClue());
     }
 

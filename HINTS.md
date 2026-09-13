@@ -6,7 +6,7 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-12, physics 3. Figures taken under physics 2 are marked as such. §3a added
+**Status:** 2026-09-13, physics 3. Figures taken under physics 2 are marked as such. §3a added
 2026-09-11: gates, edge insertion, and what a cut across a corridor has to be; braiding added to
 it 2026-09-12. This file is
 also the *training-wheels* condition of the evaluation —
@@ -540,6 +540,14 @@ unit of weight per *request* rather than per *distinct successor*. Where the col
 collapses two requests onto the same successor, request-weighting counts it twice — which is
 what the simulation actually does. It beat CIRCULATION by more than CIRCULATION beat UNIFORM.
 
+**Settled 2026-09-13, and the losers removed.** `EdgeWeights.lifted` is the one weighting; the
+enum, the chain parameter, the boosts and the flat flow are gone (git `0116abc`), along with the
+`synthetic` and `steering` entry points that existed to build and rank them. A note on how a
+wrong name nearly survived: an earlier round had declared CIRCULATION the winner, a bug found
+afterwards invalidated that run, and the transcripts still read as if CIRCULATION had won —
+this table is what settled it. The artifact hashes carry the bytes the weighting fed under its
+old enum name, `MOMENTUM`, so no clock, structure or behaviour tier moved.
+
 **Solving the lifted flow.** Nodes are `(state, last request)`, 3× the state count. Seed each
 arc from the chain and balance as usual. **Critically: ~19% of lifted nodes are unreachable** —
 `(state, left)` where nothing arrives at that state by a left request. No conserving flow
@@ -697,9 +705,10 @@ well enough to be useful and is **map-independent by construction**.
   `sd/mean` 1.374% → 1.716% against a corpus band of 1.747–1.803%.
 - Matching needs a chain **stickier than the measured tick-to-tick rate** (92/7/1 against a
   measured 87/11/2), and I have no confirmed explanation for the gap.
-- The synthetic harness **ranks weighting schemes correctly** (never got the sign wrong across
-  40 runs) but **cannot size the gain** — off by up to 1.7× and drifting with a parameter that
-  has nothing to do with weighting.
+- The synthetic harness **ranked weighting schemes correctly** (never got the sign wrong across
+  40 runs) but **could not size the gain** — off by up to 1.7× and drifting with a parameter that
+  has nothing to do with weighting. Removed with the schemes it ranked, 2026-09-13; the findings
+  here are what it left.
 - Independent check worth doing: the chain that matches the spread should also match the
   **veto rate** (real flocks are overruled on 56–61% of requests on dabeone). Two unrelated
   quantities agreeing on one chain is much better evidence than either alone.

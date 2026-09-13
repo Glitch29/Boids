@@ -64,7 +64,8 @@ import java.util.Arrays;
  * <p>
  * That is accepted on purpose. <b>Over-keying costs a rebuild; under-keying returns the wrong
  * answer without saying so</b>, and this project has already lost one conclusion that way. The
- * scheme has been {@code MOMENTUM} throughout, so the cost has never been paid, and the
+ * weighting has been the lifted memoryless flow throughout (hashed under its old name,
+ * {@code MOMENTUM}) and since 2026-09-13 is the only one, so the cost has never been paid, and the
  * alternative — a third tier between the two — buys one avoided rebuild at the price of a layout
  * nobody can hold in their head.
  */
@@ -158,14 +159,16 @@ public final class Derived {
     }
 
     /**
-     * The structure tier for one map under one gate and weighting scheme.
+     * The structure tier for one map under one gate.
+     * <p>
+     * The clock's weighting is part of what lives here and used to be an argument; it is one
+     * fixed thing now ({@link EdgeWeights}) and is fed to the digest as the bytes it always
+     * fed, so no structure hash moved when the alternatives were removed.
      *
      * @param radius the turning radius the navmap is built at, which fixes the step geometry
-     * @param chain  the transition-weight blend the clock is fitted with
      */
     public static Structure structure(MapStore.Ingest ingest, double radius,
-                                      SolverFacts.Gate gate, EdgeWeights.Scheme scheme,
-                                      double[][] chain) {
+                                      SolverFacts.Gate gate) {
         Digest d = new Digest();
         d.text("boids-structure-v" + FORMAT);
         d.text(ingest.hash());
@@ -173,8 +176,8 @@ public final class Derived {
         d.real(radius);
         d.real(Params.speed(radius));
         d.text(gate.toString());
-        d.text(scheme.name());
-        for (double[] row : chain) for (double v : row) d.real(v);
+        d.text(EdgeWeights.HASH_NAME);
+        for (double[] row : EdgeWeights.HASH_CHAIN) for (double v : row) d.real(v);
 
         String hash = d.hex();
         Path dir = ingest.dir().resolve("structure").resolve(hash);
@@ -189,15 +192,14 @@ public final class Derived {
                 radius     %s
                 speed      %s
                 gate       %s
-                scheme     %s
-                chain      %s
+                weighting  lifted memoryless flow, hashed as %s %s
 
                 What lives here depends on the map's geometry and on nothing a boid decides:
                 the navmap, the edge decomposition, the clock, and anything derived from
                 straight travel alone. A change to the decision rules does not belong in this
                 hash and does not invalidate anything under it.
                 """.formatted(ingest, hash, FORMAT, Params.TURNS, radius, Params.speed(radius),
-                gate, scheme, Arrays.deepToString(chain)));
+                gate, EdgeWeights.HASH_NAME, Arrays.deepToString(EdgeWeights.HASH_CHAIN)));
         return s;
     }
 
