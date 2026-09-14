@@ -3,7 +3,7 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-13. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-14. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
@@ -657,6 +657,21 @@ ticks at +0.07 to +0.10 a tick, the best `F` on the exit route and also on the m
 and edge 7's last eight ticks on the stable route, which is a short edge with little else on
 offer. Whether a lane that runs into an exit zone can be a subpath is the exit-saturation
 question of the section above, not a placement one.
+
+**Known defects of this fitness, 2026-09-14 — do not build on it as it stands.** The user's
+reading, after sleeping on the pictures:
+
+1. A shortcut is rewarded for *starting* where a boid is beginning to veer toward a longcut,
+   because that is where the starting tau is lowest, without committing to the long line. A
+   psyboid already on the short line would then have to veer toward the long one before the
+   shortcut begins. Very likely the same thing as the winners being arcs of a bend rather than
+   whole bends.
+2. The denominator favours paths that start and end in the middle of the cross-section — the
+   strafe × heading blob — rather than at its edge, where a lane runs.
+3. What comes out is a canonical path, and turning one into a phase-complete subpath is a
+   prerequisite that the current construction (the section above: `S_1` the partial tick, each
+   `S_{k+1}` the forward image under the path's turn) only approximates — it translates the
+   path and hopes the veto does not disturb it. That has to come first.
 
 
 

@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-13. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-14. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest

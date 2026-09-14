@@ -11,6 +11,24 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-14 — close of the 12th-to-14th session: the fitness has three defects, and the handoff
+
+**Pictures delivered**, top five shortcuts and longcuts per stable or scoring route, each on its
+own clock: `render/subpaths/dabeone-609cffdb84be218c-{shortcuts,longcuts}.png`.
+
+**The user slept on it and found the fitness wanting**, recorded verbatim-near in `ROADMAP.md`
+§0i (handoff dated 2026-09-14) and `EDGES.md` §2a: (1) shortcuts are rewarded for starting where
+a boid is veering toward a longcut, picking up low starting tau without committing — a psyboid on
+the short line would have to veer toward the long one first — most likely the same thing as the
+winners being arcs of bends, not bends; (2) the denominator favours paths starting and ending in
+the middle of the cross-section blob; (3) turning a canonical path into a phase-complete subpath
+is a prerequisite, and the existing construction only translates the path and hopes the veto
+leaves it alone. **The next session starts with (3), then a fitness answering (1) and (2);
+nothing found so far becomes a zone.** Context exhausted; no more built.
+
+**Changed on disk.** `ROADMAP.md` (handoff, status), `EDGES.md` §2a (known defects), `HINTS.md`
+§13, `README.md` status, this entry. No code.
+
 ## 2026-09-13 — one version of each thing
 
 **The weighting decision, confirmed from both sides.** The user went back to the transcripts and

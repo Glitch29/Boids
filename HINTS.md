@@ -1246,6 +1246,11 @@ Documents:
 - **Three-way joints.** Settled 2026-09-12 that a bifurcated `E⊥S` cannot be kept as two edges —
   the joint braids, §3a. What is open is whether an altered rule, or a sub-edge structure beneath
   the decomposition, could carry a one-to-three joint without braiding. Parked, not planned.
+- **Where a shortcut should run.** The first fitness — tau gained beyond one a tick over the
+  path's footprint — finds lanes along the insides and outsides of bends, but rewards a path for
+  starting where a boid is veering toward the *long* line, and for starting and ending in the
+  middle of the cross-section. And a found path is canonical, not phase-complete; making it one
+  properly comes first. `EDGES.md` §2a, "Placing a subpath".
 - Constructing a cut on a map that is not phase-locked. Drawing one at constant `d` works where
   the corridor is straight and locked; elsewhere the cut has to be found. One definition: score a
   one-tick band of tunnel −1 to 1 per state and choose the removal maximising the sum of squared

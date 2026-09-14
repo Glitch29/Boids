@@ -1,8 +1,9 @@
 # What is being built now
 
-**Status:** 2026-09-13. `README.md` has the inventory; this file has the work in front of us
-and the specifications for it. **§0i is the live thread — read that first**; its last subsection
-records that braiding closed the `E⊥S` question. §0h is closed; its handoff is kept as the record
+**Status:** 2026-09-14. `README.md` has the inventory; this file has the work in front of us
+and the specifications for it. **§0i is the live thread — read that first**, and within it the
+handoff dated 2026-09-14: the placement fitness has three known defects and phase-complete
+pathing is the prerequisite. §0h is closed; its handoff is kept as the record
 of what the benchmark measured and why that search was abandoned.
 
 ---
@@ -1972,6 +1973,49 @@ the footprint being cut short by the edge boundary, not the clock. Edge 2's tail
 the `2→1` exit (+0.10/tick over 28 ticks, `F` 0.00056) is the best on the exit route and runs
 into the exit zone; whether that can be a subpath is the exit-saturation question. `EDGES.md`
 §2a "Placing a subpath".
+
+### Where this stands, and what the next session starts with — 2026-09-14
+
+**Handoff.** The session of 2026-09-12 to 14 built, in order: braiding (§0i above; the `E⊥S`
+question closed); subpath decision zones and the subpath override (`EDGES.md` §2a "Subpaths");
+the clock on one route, then read as one continuous coordinate `T` (`EDGES.md` §5); the cleanup
+(below); and three passes at a placement search, `SubpathSearch` (`EDGES.md` §2a "Placing a
+subpath"), which now finds the top five shortcuts and longcuts per stable or scoring route on
+the route's own clock, no margin, footprint over the route, and draws them —
+`render/subpaths/dabeone-609cffdb84be218c-{shortcuts,longcuts}.png`. Every winner is a lane
+along the inside or outside of a bend, and the two directions of one corridor find the same lane.
+
+**The user slept on it and found the fitness wanting. Start here, and do not build on the
+search as it stands.** Three things, in the user's words as near as makes no difference:
+
+1. **Shortcuts are incentivised to start where a boid is beginning to veer toward a longcut** —
+   picking up a low starting tau without committing to the long line — so a psyboid already on
+   the short line would have to veer toward the long one before the shortcut begins. Undesirable.
+   Probably the same defect as shortcuts rounding only part of a corner rather than the whole
+   bend: the pictures show most winners as arcs of a bend, not the bend.
+2. **The denominator encourages paths that start and end in the middle of the cross-section**,
+   the strafe × heading blob, rather than at its edges where a lane actually runs.
+3. **Converting a path to a phase-complete path is a prerequisite and has not been done
+   properly.** What exists — `DecisionZone.subpath`, `S_1` the partial tick of the first
+   transition and each `S_{k+1}` the forward image of `S_k` under the path's turn, veto
+   alterations counted (`veto-altered`) and not resolved — translates the canonical path and
+   hopes the collision physics does not disturb it too much. It held on dabeone edge 4 (chain
+   breaks 0, every phase followed), which is evidence about one edge, not a construction.
+
+So the next session's first job is (3), then a fitness that answers (1) and (2), then placement
+again. Nothing found by the current search should be turned into a zone.
+
+**What not to redo.** Positions on a route are `T`, never an edge's own tau on the route fit
+(`EDGES.md` §5). The footprint on a route is measured over the route with the cut as its only
+boundary, or paths that hug a crossing win by a halved denominator. A margin in graph distance
+was tried and is not a fix for anything. Edge 8 is self-inverse and excluded until pathing is
+phase-complete. The search machinery that stands — seeds from six-step runs by dynamic
+programme, one- and three-step growth with try-and-roll-back, ranking by `F` — is sound as
+machinery and can carry a different fitness.
+
+**Still open from before.** Subpaths that run into an exit zone (edge 2's tail lane toward
+`2→1` is the strongest thing found and does); cross-border subpaths; a real `insert` with the
+reachability assertion; the cut construction for unlocked maps; §0i's questions (1) and (3).
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
 
