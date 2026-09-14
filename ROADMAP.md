@@ -1948,6 +1948,24 @@ lengths shift by up to 13 ticks, all gauge), totals agree to 0.2 ticks, spans to
 tick within any edge changes by a per-edge constant to within 0.7. **The map-wide clock is the
 one to read subpath lengths and route phase off**; no per-route clock is needed.
 
+### A discrete set of shortcuts and longcuts per map — first try, **built** 2026-09-13
+
+**`SubpathSearch`, driven by `SimTest.subpathSearch`; renders to `render/subpaths/`; canonical
+in `EDGES.md` §2a "Placing a subpath".** The user's first idea for choosing where a subpath should run: grow an
+`N`-step path `P` that maximises `F = (tau gained − N) / |⋃ᵢ (E⊥Sᵢ ∪ Sᵢ)|`, with `Sᵢ` the partial
+tick of step `i` — an average with a fixed cost in the denominator, so it should settle at a
+finite length. Seed with the single on-edge tick that spans the most tau; grow by adding the
+highest-tau tick at either end, recomputing `F`, and stop when neither end improves it. A found
+path's tau range is excluded from seeding the next (growth into it is allowed, to see whether it
+happens). Two shortcuts, then two longcuts with the sign flipped; draw them on the map. Finding
+only — the path is not phase-complete and is not turned into a decision zone.
+
+**Result.** It settles, at 2 to 19 steps. The one long path is a real lane: edge 1, tau 30.4 to
+52.2, +2.79 tau beyond one a tick over nineteen ticks, `F` rising monotonically to the stop.
+Three things to decide next, in `EDGES.md`: seeds go to boundary artifacts unless kept ~15 ticks
+from an end; a single-tick seed is an outlier and the lane was found second; and a self-inverse
+edge's footprint carries the other direction of travel, which makes its `F` incomparable.
+
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
 
 The user asked for every case of two versions of one thing to be reduced to the winner, with the

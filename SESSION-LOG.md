@@ -44,9 +44,27 @@ result that had only lived in commit `e616a54`'s message written into `EDGES.md`
 **Changed on disk.** Code as above; `README.md`, `GLOSSARY.md`, `EDGES.md`, `HINTS.md`,
 `PIPELINE.md`, `ROADMAP.md` updated and dated.
 
-**Open.** Unchanged from 2026-09-12: subpath placement, cross-border subpaths, the search over
-decisions; a real `insert` with the reachability assertion; the cut construction for unlocked maps;
-§0i's questions (1) and (3).
+**Then: the first placement search.** The user's spec: grow an `N`-step path maximising
+`F = ±(tau gained − N) / |⋃ᵢ (E⊥Sᵢ ∪ Sᵢ)|`, seeded at the single tick spanning the most tau,
+extended at whichever end raises `F`, stopped when neither does; a found range excluded from
+seeding the next; two shortcuts, two longcuts, drawn. Built as `SubpathSearch` + 
+`SimTest.subpathSearch`, ~5 s a run. (The user's formula read `tau(P_0) − tau(P_N) − N`, which is
+negative for any forward path; taken as `tau(P_N) − tau(P_0) − N`, sign flipped for a longcut.)
+**It settles**, at 2–19 steps. Seeded anywhere, the seeds go to boundary artifacts — tau 0.3 of
+edge 8, tau 162 of a 158-long edge — so a seeding margin was added (states past an edge's length
+are excluded even at margin 0, which is the one departure from the literal spec). At 15 ticks the
+second shortcut is a real lane: **edge 1, tau 30.4 → 52.2, 19 steps, +2.79 tau beyond one a
+tick, `F` 0.00055 rising monotonically**, the inside of the bend where the diagonal meets the
+left loop. Longcuts: two adjacent short ones on edge 0 at tau 29–35; the second did not grow into
+the first's range. Edge 8's footprint is 10,195 of 14,280 because it is self-inverse and the
+other direction sits in every `E⊥S`. Recorded in `EDGES.md` §2a "Placing a subpath",
+`ROADMAP.md` §0i; renders at `render/subpaths/dabeone-609cffdb84be218c-margin{0,15}.png`.
+
+**Open.** For the search: seed by a short run rather than a single tick (the lane was found
+second, from a weaker seed); footprint within the direction of travel on self-inverse edges; then
+translating a found path into a phase-complete subpath. Unchanged from 2026-09-12: cross-border
+subpaths, the search over decisions; a real `insert` with the reachability assertion; the cut
+construction for unlocked maps; §0i's questions (1) and (3).
 
 ## 2026-09-12 — braiding: why one-to-three junctions do not settle, and it is not a bug
 

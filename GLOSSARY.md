@@ -411,6 +411,11 @@ a chain of sets `S_1 … S_N`, one per transition — `S_1` the partial tick of 
 does not stay in `E<S_k` or enter `S_k`. `DecisionZone.subpath`; options `SKIP` and `TAKE`.
 `EDGES.md` §2a.
 
+**footprint** (of a subpath) — `|⋃ᵢ (E⊥Sᵢ ∪ Sᵢ)|`: the states of the edge level with the path
+rather than committed to it, one slab per step, some fifteen to twenty ticks of corridor each.
+The denominator of the subpath **fitness** `F = ±(tau gained − N) / footprint`, whose fixed cost
+is what makes a greedily grown path settle at a finite length. `SubpathSearch`; `EDGES.md` §2a.
+
 **phantom edges** — the four pieces `E<S`, `S`, `E⊥S`, `E>S` that edge insertion makes of an edge
 around a set `S`, used by navigation logic without ever joining the decomposition. A subpath
 zone works with four at a time, one `S_k` after another.
@@ -743,6 +748,7 @@ anything not listed.
 | exit decision zones | `DecisionZone.exits`, flown by `DecisionOverride`, checked by `SimTest.zones` | in memory; printed |
 | subpath decision zones | `DecisionZone.subpath`, flown by `DecisionOverride`, checked by `SimTest.subpaths` | in memory; printed |
 | the clock on one route | `SimTest.routeClock` — refit on a loop alone, compared three ways | printed |
+| subpath search | `SubpathSearch`, driven by `SimTest.subpathSearch` — grow paths by `F` = tau gained over footprint | `render/subpaths/<map>-<hash>-margin<m>.png` |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

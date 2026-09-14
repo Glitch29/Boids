@@ -562,7 +562,55 @@ Place `S_1` inside the saturation floor and it opens onto the entrance itself (t
 follow the path only on the phases that can reach it.
 
 **Not yet.** Subpaths that cross an edge border, which the user expects to be possible with more
-manipulation; and choosing where a subpath should run to be a shortcut or a longcut.
+manipulation.
+
+### Placing a subpath: the fitness search, first try
+
+**Specified by the user and built 2026-09-13** — `SubpathSearch`, driven by
+`SimTest.subpathSearch`, drawn to `render/subpaths/`. Finding only: what comes out is a path, not
+a phase-complete subpath, and is not turned into a zone.
+
+**The score.** For an `N`-step path `P` along one edge, `F = ±(tau(P_N) − tau(P_0) − N) /
+|⋃ᵢ (E⊥Sᵢ ∪ Sᵢ)|` — tau gained beyond one per tick (sign flipped for a longcut) over the path's
+**footprint**, the states level with it rather than committed to it, with `Sᵢ` the partial tick
+of step `i`. The footprint of a single step is a slab of some fifteen to twenty ticks of corridor
+(1,500–2,600 states on dabeone's long edges), which is the fixed cost that makes the ratio settle
+at a finite length. **Grown greedily**: seed with the on-edge tick spanning the most tau; each
+round score the best tick off either end and take it if it raises `F`; stop when neither does. A
+found path's tau range on its edge is excluded from seeding the next of its kind.
+
+**Measured, dabeone `609cffdb84be218c`, two of each kind.**
+
+| seeds | kind | edge | steps | tau | beyond one a tick | footprint | `F` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| anywhere | shortcut | 8 | 10 | 0.3 → 10.9 | +0.67 | **10,195** | 0.00007 |
+| | shortcut | 0 | 4 | 69.9 → 74.6 | +0.67 | 2,570 | 0.00026 |
+| ≥ 15 ticks from an end | shortcut | 0 | 4 | 69.9 → 74.6 | +0.67 | 2,570 | 0.00026 |
+| | **shortcut** | **1** | **19** | **30.4 → 52.2** | **+2.79** | 5,101 | **0.00055** |
+| either | longcut | 0 | 4 | 32.2 → 35.5 | −0.70 | 1,967 | 0.00036 |
+| | longcut | 0 | 2 | 29.0 → 30.3 | −0.67 | 2,007 | 0.00034 |
+
+**It settles, as predicted** — at 2 to 19 steps, with `F` rising monotonically to the stop on
+the one long path. That path is the finding: **edge 1, tau 30.4 to 52.2, nineteen ticks gaining
+2.79 tau beyond one a tick, about 15% a tick sustained** — a lane along the inside of the bend
+where the diagonal corridor meets the left loop, and the best `F` of anything found.
+
+**Three things the first try showed.**
+
+1. **Seeded anywhere, the seeds go to the clock's boundary artifacts** — tau 0.3 of edge 8, and
+   tau 162 on an edge 158 long (§8, extremes at crossings). A single tick there reads as 1.7 tau
+   and is not a lane. Seeding at least fifteen ticks from either end is what found the edge-1
+   lane; that margin is a parameter, and the unrestricted run is kept beside it for the record.
+2. **The seed is a single-tick outlier, and a lane is not made of outliers.** The best single tick
+   on the map (+0.67) grew to four steps; the lane was found second, from a seed of +0.3, and
+   only because the first's range was excluded. Seeding by the best short *run* of ticks, or
+   growing several seeds and ranking by the `F` they settle at, would find it first.
+3. **A self-inverse edge inflates the footprint.** Edge 8 holds both directions of the scoring
+   corridor, and the other direction is in every `E⊥S`, so its footprint is 10,195 of 14,280
+   states and its `F` is a fifth of anything comparable. Either the footprint should be taken
+   within the direction of travel, or the inverse half discounted.
+
+The second longcut seeded adjacent to the first's excluded range and did not grow into it.
 
 ---
 

@@ -2265,6 +2265,46 @@ picks, never in what is available to it.
         }
     }
 
+    /**
+     * Finds {@code count} shortcuts and {@code count} longcuts on the map with
+     * {@link SubpathSearch}, prints each with the fitness it grew through, and draws them all on
+     * the map at {@code render/subpaths/<map>-<hash>.png}.
+     */
+    public static void subpathSearch(PresetScenarioParameter preset, SolverFacts.Gate gate, int count,
+                                     double margin) throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        SolverFacts f = b.facts();
+        NavMap map = b.labelling().map();
+        List<SubpathSearch.Found> all = new ArrayList<>();
+        for (SubpathSearch.Kind kind : SubpathSearch.Kind.values()) {
+            System.out.printf("%n=== %s @%s: %d %ss, seeds at least %.0f ticks from an end ===%n",
+                    preset.name(), preset.ingest().hash(), count,
+                    kind.name().toLowerCase(java.util.Locale.ROOT), margin);
+            List<SubpathSearch.Found> found = SubpathSearch.find(map, f, kind, count, margin);
+            for (SubpathSearch.Found p : found) {
+                System.out.println("  " + p.summary());
+                StringBuilder trace = new StringBuilder("    F by length:");
+                double[] t = p.trace();
+                for (int i = 0; i < t.length; i++) {
+                    if (i < 8 || i >= t.length - 3 || i % Math.max(1, t.length / 8) == 0) {
+                        trace.append(String.format(" %d:%.5f", i + 1, t[i]));
+                    }
+                }
+                System.out.println(trace);
+                int[] path = p.path();
+                int turns = Params.TURNS, w = map.width();
+                int a = path[0] / turns, z = path[path.length - 1] / turns;
+                System.out.printf("    from (%d,%d,%d) to (%d,%d,%d)%n", a % w, a / w, path[0] % turns,
+                        z % w, z / w, path[path.length - 1] % turns);
+            }
+            all.addAll(found);
+        }
+        Path out = Path.of("render", "subpaths", preset.name().toLowerCase(java.util.Locale.ROOT)
+                + "-" + preset.ingest().hash() + "-margin" + (int) margin + ".png");
+        SubpathSearch.draw(preset, map, all, 3, out);
+        System.out.printf("%nwrote %s%n", out);
+    }
+
     /** The value after {@code name} in a {@link DecisionZone#report}. */
     private static String field(String report, String name) {
         int at = report.indexOf(name + " ");
@@ -2279,7 +2319,7 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        zones(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, 4000);
+        subpathSearch(PresetScenarioParameter.DABEONE, dab, 2, 15);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */
