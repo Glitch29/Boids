@@ -2229,7 +2229,9 @@ picks, never in what is available to it.
      * draws each set on the map at {@code render/subpaths/<map>-<hash>-<clock>.png}.
      *
      * @param skip   edges left alone — the self-inverse ones, until phase-complete pathing
-     * @param margin steps from either end of an edge a seed may not lie within, as graph distance
+     * @param margin ticks from either end of an edge a seed may not lie within on the map-wide
+     *               clock, where the ends carry the fit's strain. A route's own clock has no edge
+     *               boundaries and is searched with none
      */
     public static void subpathSearch(PresetScenarioParameter preset, SolverFacts.Gate gate,
                                      int[][] routes, int[] skip, int count, int margin)
@@ -2243,7 +2245,7 @@ picks, never in what is available to it.
 
         List<SubpathSearch.Found> mapWide = new ArrayList<>();
         for (SubpathSearch.Kind kind : SubpathSearch.Kind.values()) {
-            System.out.printf("%n=== %s @%s: %ss on the map-wide clock, edges %s skipped, seeds %d+ steps from an end ===%n",
+            System.out.printf("%n=== %s @%s: %ss on the map-wide clock, edges %s skipped, seeds %d+ ticks from an end ===%n",
                     preset.name(), preset.ingest().hash(), kind.name().toLowerCase(java.util.Locale.ROOT),
                     Arrays.toString(skip), margin);
             List<SubpathSearch.Found> found = SubpathSearch.find(map, f, skip, kind, count, margin);
@@ -2256,10 +2258,10 @@ picks, never in what is available to it.
             RouteClock.Fit fit = RouteClock.of(map, l, route);
             List<SubpathSearch.Found> onRoute = new ArrayList<>();
             for (SubpathSearch.Kind kind : SubpathSearch.Kind.values()) {
-                System.out.printf("%n=== %s @%s: %ss on route %s's own clock ===%n", preset.name(),
-                        preset.ingest().hash(), kind.name().toLowerCase(java.util.Locale.ROOT),
-                        Arrays.toString(route));
-                List<SubpathSearch.Found> found = SubpathSearch.find(map, fit, skip, kind, count, margin);
+                System.out.printf("%n=== %s @%s: %ss on route %s's own clock, lap %.2f, no margin ===%n",
+                        preset.name(), preset.ingest().hash(), kind.name().toLowerCase(java.util.Locale.ROOT),
+                        Arrays.toString(route), fit.lap());
+                List<SubpathSearch.Found> found = SubpathSearch.find(map, fit, skip, kind, count, 0);
                 reportFound(found, count, map);
                 onRoute.addAll(found.subList(0, Math.min(count, found.size())));
             }

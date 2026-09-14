@@ -78,6 +78,24 @@ excludes edge 2's tail lane toward `2→1` (31 steps, +0.073/tick map-wide, +0.0
 the best `F` seen at 0.00072) as within fifteen steps of the exit zone — a real lane that runs
 into the branch. ~33 s for four clocks. Recorded in `EDGES.md` §2a, `ROADMAP.md` §0i.
 
+**Third pass, after the user stopped the second.** The graph-distance margin was a patch, and
+the user was right that it was arbitrary. The actual defect: the route fit keeps a length per
+edge, the split of the lap between them is gauge, so each edge's own tau on that fit has an
+arbitrary zero — and I had been reporting and windowing positions in it. Fixed by reading
+positions off `T = tau_e + Σ lengths before e`, gauge-free and continuous round the loop with one
+cut — which is the user's single-cut, single-distance clock, the residuals being identical.
+`RouteClock.Fit.tau` is now `T`. Then, with no margin on the route clocks, the winners hugged
+crossings with footprints of 1,600–2,200 against 3,400–6,200 in the interior: **the footprint
+was being cut short by the decomposition's edge boundary**, halving the denominator. Fixed by
+measuring `E⊥S` over the whole route with the cut as its only boundary. With that: interior
+lanes identical across clocks (edge 1's lane 0.00053 on both; edge 0's lane 0.00049; the edge 0
+and edge 1 longcuts 0.00043–0.00044); the crossing-huggers deflated (0.00053 → 0.00038, 0.00047
+→ 0.00036, one gone); nothing short with a large single-tick gain at any crossing on any route's
+clock with no margin. So: **a route's own tau has no shortcut artifacts**, and the map-wide
+margin was guarding the footprint's truncation as much as the fit. Edge 2's tail lane toward
+`2→1` stands as the best on the exit route (28 steps, +0.100/tick, 0.00056). Recorded in
+`EDGES.md` §2a and §5, `ROADMAP.md` §0i.
+
 **Open.** Whether a lane that runs into the exit zone can be a subpath (exit saturation);
 translating a found path into a phase-complete subpath; then the search over decisions.
 Unchanged from 2026-09-12: cross-border subpaths; a real `insert` with the reachability

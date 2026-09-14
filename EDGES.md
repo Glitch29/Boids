@@ -585,65 +585,79 @@ it found came second, from a weaker seed, only because the first's range was exc
 anywhere it went to the clock's boundary artifacts — tau 0.3 of an edge, tau 162 of one 158 long
 (§8) — where a tick reads as 1.7 tau. So now, per edge: a dynamic programme over the edge's
 transitions (acyclic, every orbit being cut) finds the best six-step run ending at every state;
-the top four runs by gain per step, disjoint in tau and at least fifteen **steps** from either
-end, are seeds; each is grown by the best one- or three-step extension at either end — three, so
+the top four runs by gain per step, disjoint in tau — and on the map-wide clock at least fifteen
+ticks from either end of the edge, where that clock carries the strain of fitting every route at
+once — are seeds; each is grown by the best one- or three-step extension at either end — three, so
 one poor tick does not end a lane; every grown path is scored; the best `F` wins, and a winner's
 tau range excludes overlapping candidates. Edge 8 is skipped: it is self-inverse, so the other
 direction of travel sits in every `E⊥S` and its footprint is 10,195 of 14,280 whatever the path.
 Phase-complete pathing would resolve that; until then it is left out.
 
-**The margin is graph distance, not tau, and that matters.** Tau on one edge differs between
-clocks by a constant — the gauge, up to +16 ticks on edge 2 under `[2, 7, 4]` — so a margin in
-tau cuts at a different place on each clock, and the first comparison across clocks was mostly
-the margin: the route clocks "found" shortcuts at edge entrances the map-wide clock did not,
-because their seed windows started ten ticks earlier in the corridor. Measured in steps from the
-nearest state with an off-edge predecessor, or to the nearest with an off-edge successor, the
-window is the same states whichever clock is asked.
+**On a route, one clock and one footprint, with one cut.** The route fit is done edge by edge
+with a length per edge, and on a lone cycle the split of the total between those lengths is
+gauge — so each edge's own tau has an arbitrary zero and is the wrong thing to read a position
+off. The right coordinate is `T = tau_e + Σ lengths before e`, gauge-free up to a constant and
+continuous round the route, wrapping by the lap at one cut: the crossing from the route's last
+edge back into its first. That is the clock the user described — one cut placed anywhere, one
+distance on every transition crossing it, no edge boundaries — and it is the same least squares
+reparametrised, since every crossing's residual `t(u) − t(s) − 1 + L_e` is `T(u) − T(s) − 1`.
+`RouteClock.Fit.tau` is `T`. **The footprint follows the same rule**: on a route's clock `E⊥S` is
+measured over the whole route, bounded only by the cut. Measured within the decomposition edge it
+is cut short near the edge's ends — a step by a crossing loses the half of its slab that lies
+beyond — which halves the denominator and doubles `F` for any path that hugs a crossing. On the
+map-wide clock the footprint stays within the edge, and seeds keep fifteen ticks from its ends.
+
+**Two false starts on the way, recorded so they are not repeated.** Reporting and windowing the
+route fit in each edge's own tau made the route clocks appear to find shortcuts at edge entrances
+that the map-wide clock did not; that was the seed window starting at a different place on each
+clock, nothing else. Replacing the tau margin with graph distance from the boundary made the
+clocks agree, but only by hiding the question — the user rightly called it arbitrary. With `T`
+and the route-wide footprint the route clocks are searched with **no margin at all**, which is
+the honest test of whether a route's tau has artifacts at the ends.
 
 **Measured, dabeone `609cffdb84be218c`, two of each kind per clock, edge 8 skipped, ~8 s a
-clock.**
+clock.** Route positions are `T`.
 
-| clock | kind | edge | steps | tau | beyond one a tick | footprint | `F` | where |
+| clock | kind | edge | steps | position | beyond one a tick | footprint | `F` | where |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| map-wide | shortcut | 1 | 17 | 32.1 → 51.6 | +2.48 (+0.146/tick) | 4,703 | 0.00053 | inside of the bend where the diagonal meets the left loop |
-| | shortcut | 0 | 18 | 111.0 → 131.5 | +2.48 (+0.138/tick) | 5,027 | 0.00049 | **the same lane, flown the other way** |
-| | longcut | 0 | 20 | 128.6 → 147.0 | −1.54 (−0.077/tick) | 3,464 | 0.00044 | outside of the left loop |
+| map-wide, margin 15 | shortcut | 2 | 31 | 66.0 → 99.3 | +2.25 (+0.073/tick) | 4,194 | 0.00054 | inside of the lower-left loop, toward the `2→1` exit |
+| | shortcut | 1 | 17 | 32.1 → 51.6 | +2.48 (+0.146/tick) | 4,703 | 0.00053 | inside of the bend where the diagonal meets the left loop |
 | | longcut | 1 | 24 | 98.6 → 121.1 | −1.55 (−0.064/tick) | 3,568 | 0.00043 | outside of the top loop |
-| `[4, 2, 1, 5, 8]` | shortcut | 1 | 17 | 30.0 → 49.5 | +2.47 | 4,703 | 0.00053 | the same states as map-wide |
-| | shortcut | 1 | 25 | 50.2 → 78.0 | +2.83 (+0.113/tick) | 6,159 | 0.00046 | the map-wide runner-up, same states |
-| | longcut | 1 | 24 | 96.5 → 119.0 | −1.58 | 3,568 | 0.00044 | the same states as map-wide |
-| | longcut | 5 | 31 | 61.3 → 90.3 | −2.01 (−0.065/tick) | 4,679 | 0.00043 | outside of the right loop; map-wide 0.00042 on the same states |
-| `[4, 0, 3, 5, 8]` | shortcut | 0 | 18 | 110.9 → 131.4 | +2.47 | 5,027 | 0.00049 | the same states as map-wide |
-| | shortcut | 0 | 9 | 82.5 → 92.7 | +1.19 (+0.133/tick) | 3,426 | 0.00035 | the same states as map-wide |
-| | longcut | 0 | 21 | 127.5 → 146.9 | −1.61 | 3,625 | 0.00044 | the map-wide path, two pixels off |
-| | longcut | 0 | 23 | 34.5 → 56.0 | −1.46 | 3,380 | 0.00043 | the same states as map-wide |
-| `[2, 7, 4]` | shortcut | 7 | 21 | 72.7 → 94.7 | +0.96 (+0.046/tick) | 3,229 | 0.00030 | the map-wide edge-7 candidate, same states |
-| | shortcut | 2 | 22 | 31.5 → 55.5 | +2.09 (+0.095/tick) | 7,022 | 0.00030 | the map-wide edge-2 candidate, same states |
-| | longcut | 4 | 41 | 1.6 → 41.1 | −1.51 (−0.037/tick) | 4,321 | 0.00035 | |
+| | longcut | 0 | 23 | 34.5 → 56.1 | −1.45 (−0.063/tick) | 3,380 | 0.00043 | outside of the top loop, the other way |
+| `[4, 2, 1, 5, 8]`, lap 528.45, no margin | shortcut | 2 | 28 | 165.0 → 195.8 | +2.80 (+0.100/tick) | 4,965 | 0.00056 | the same lane as map-wide edge 2 |
+| | shortcut | 1 | 17 | 231.2 → 250.7 | +2.47 | 4,703 | 0.00053 | the same states as map-wide |
+| | longcut | 1 | 24 | 297.7 → 320.1 | −1.58 | 3,568 | 0.00044 | the same states as map-wide |
+| | longcut | 4 | 30 | 7.2 → 35.5 | −1.67 (−0.056/tick) | 4,312 | 0.00039 | outside of edge 4's bend |
+| `[4, 0, 3, 5, 8]`, lap 528.38, no margin | shortcut | 0 | 18 | 213.8 → 234.3 | +2.47 (+0.137/tick) | 5,027 | 0.00049 | **edge 1's lane, flown the other way** |
+| | shortcut | 3 | 29 | 269.2 → 300.5 | +2.32 (+0.080/tick) | 5,113 | 0.00045 | inside of the lower-left loop, entered from 0 |
+| | longcut | 0 | 23 | 137.4 → 158.9 | −1.46 | 3,380 | 0.00043 | the same states as map-wide |
+| | longcut | 0 | 21 | 230.4 → 249.8 | −1.61 (−0.077/tick) | 3,773 | 0.00043 | outside of the left loop |
+| `[2, 7, 4]`, lap 275.29, no margin | shortcut | 7 | 8 | 177.2 → 186.3 | +1.05 (+0.131/tick) | 2,611 | 0.00040 | the last eight ticks of edge 7 |
+| | shortcut | 2 | 19 | 6.4 → 27.7 | +2.37 (+0.125/tick) | 6,212 | 0.00038 | edge 2 from its entrance |
 | | longcut | 2 | 21 | 57.3 → 76.8 | −1.56 (−0.074/tick) | 5,015 | 0.00031 | |
+| | longcut | 2 | 19 | 35.1 → 52.7 | −1.40 (−0.074/tick) | 4,634 | 0.00030 | |
 
-**What it finds are lanes.** Every winner is 17–41 ticks of sustained +0.05 to +0.15 (or −0.04
-to −0.08) tau beyond one a tick, with `F` rising monotonically to its stop, and on the map they
-are the inside and outside lines of bends. Edge 0's shortcut is edge 1's lane flown the other
-way — the same pixels, `(64,138) → (29,210)` against `(31,204) → (65,136)` — found from an
+**What it finds are lanes.** Every winner but one is 17–31 ticks of sustained +0.06 to +0.15
+(or −0.05 to −0.08) tau beyond one a tick, `F` rising monotonically to its stop, and on the map
+they are the inside and outside lines of bends. Edge 0's shortcut is edge 1's lane flown the
+other way — the same pixels, `(64,138) → (29,210)` against `(31,204) → (65,136)` — found from an
 inverse edge's own seeds, which is the free correctness check of §5 in another form.
 
-**The route clocks and the map-wide clock find the same paths.** With the margin in steps,
-every winner on a route's own clock is the same states, the same footprint and `F` within
-0.00001 of what the map-wide clock finds on that edge, or the map-wide runner-up where a route
-restricts which edges are on offer. The user's guess was that a route's own tau would be free of
-shortcut artifacts; what the measurement says is that once the boundary zone is excluded the
-same way on every clock, there is nothing a route's tau sees that the map-wide tau does not —
-consistent with §5, where the two differ within an edge by a constant to within 0.7 ticks. So
-**the map-wide clock will do for placement**, and a route only decides which edges to search.
+**The route clocks agree with the map-wide clock, and with no margin show no artifacts.** Every
+interior lane is the same states, the same footprint and the same `F` to 0.00001 on a route's own
+clock as on the map-wide one. What the route-wide footprint changed is at the crossings: the
+paths that had hugged a crossing with a half-size footprint fell back to where they belong —
+edge 2's tail longcut 0.00053 → 0.00038, edge 1's first ten steps 0.00047 → 0.00036, an
+eight-step longcut ending on the `4→0` crossing out of the top eight altogether — and nothing
+short with a large single-tick gain appears anywhere near a crossing on any route's clock. So
+the user's guess holds: a route's own tau has no shortcut artifacts, and the map-wide clock's
+margin was guarding against the footprint's truncation as much as against the fit. Two things
+stay near crossings and look real: **edge 2's tail lane** toward the `2→1` exit — 28 to 31
+ticks at +0.07 to +0.10 a tick, the best `F` on the exit route and also on the map-wide clock —
+and edge 7's last eight ticks on the stable route, which is a short edge with little else on
+offer. Whether a lane that runs into an exit zone can be a subpath is the exit-saturation
+question of the section above, not a placement one.
 
-**What the step margin excluded, and should be looked at.** With the margin in tau, both the
-map-wide clock and `[4, 2, 1, 5, 8]`'s found a 31-step shortcut along edge 2's tail — map-wide
-tau 66.0 → 99.3, +2.25 beyond one a tick; on the route +2.94 and the best `F` of anything,
-0.00072 — hugging the inside of the lower-left loop on the way to the `2→1` exit. In steps it
-sits within fifteen of the exit zone and is not seeded. Thirty-one ticks of +0.07 to +0.10 a
-tick is not an artifact; it is a lane that runs into the branch, and whether such a lane can be
-a subpath is the exit-saturation question of the section above rather than a placement one.
 
 
 
@@ -787,6 +801,12 @@ putting every length at its route's own shortest-path estimate plus an equal sha
 (the per-route lengths on a loop all carry the same fractional part). Map-wide, the class
 structure at branches and merges pins some of that freedom, which is why the two conventions
 differ — not because either clock disagrees about anything a boid can feel.
+
+**So on a route, read positions off `T = tau_e + Σ lengths before e`, never off an edge's own
+tau.** `T` is gauge-free up to one constant and continuous round the loop, wrapping by the lap at
+one cut; it is what a single-edge fit with one cut and one distance would give, the residuals
+being identical. `RouteClock.Fit.tau` is `T`. Reading a route's per-edge tau as a position was
+the mistake behind a false finding on 2026-09-13 (§2a, placing a subpath).
 
 **What is not gauge barely moves.** Totals agree to 0.2 ticks. The span of each edge — clock time
 from the route's canonical entry to its exit, gauge-free — agrees to 0.3. And the change in tick

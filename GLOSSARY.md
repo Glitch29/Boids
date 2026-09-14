@@ -749,7 +749,7 @@ anything not listed.
 | subpath decision zones | `DecisionZone.subpath`, flown by `DecisionOverride`, checked by `SimTest.subpaths` | in memory; printed |
 | the clock on one route | `SimTest.routeClock` — refit on a loop alone, compared three ways | printed |
 | subpath search | `SubpathSearch`, driven by `SimTest.subpathSearch` — seeds from the best six-step runs, grown by `F` = tau gained over footprint, on the map-wide clock and each route's own | `render/subpaths/<map>-<hash>-{mapwide,route-…}.png` |
-| the clock on one route (fit) | `RouteClock.of` — the corridor and the refit, shared by `routeClock` and the search | in memory |
+| the clock on one route (fit) | `RouteClock.of` — the corridor and the refit; `Fit.tau` is `T`, one continuous coordinate round the loop | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

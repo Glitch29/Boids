@@ -100,21 +100,31 @@ public final class SubpathSearch {
     private static final class Ground {
         final NavMap map;
         final int[] edgeOf, live;
+        /** Per state, the region a footprint is measured within: the edge on the map-wide clock, the
+         * whole route on a route's own, where the only boundary is the cut. */
+        final int[] region;
+        /** Transitions a footprint closure may not cross: the route's cut, {@code (from edge, to edge)}. */
+        final int cutFrom, cutTo;
         final int liveCount;
-        final double[] tau, length;
+        final double[] tau, lo, hi;
         final int turns, width;
         /** Scratch for closures: a stamp per state, so nothing is cleared between walks. */
         final int[] stamp;
         int version;
         final int[] queue;
 
-        Ground(NavMap map, int[] edgeOf, int[] live, int liveCount, double[] tau, double[] length) {
+        Ground(NavMap map, int[] edgeOf, int[] region, int cutFrom, int cutTo, int[] live, int liveCount,
+               double[] tau, double[] lo, double[] hi) {
             this.map = map;
             this.edgeOf = edgeOf;
+            this.region = region;
+            this.cutFrom = cutFrom;
+            this.cutTo = cutTo;
             this.live = live;
             this.liveCount = liveCount;
             this.tau = tau;
-            this.length = length;
+            this.lo = lo;
+            this.hi = hi;
             this.turns = Params.TURNS;
             this.width = map.width();
             this.stamp = new int[edgeOf.length];
@@ -151,13 +161,19 @@ public final class SubpathSearch {
                 int mx = x + sweep[q], my = y + sweep[q + 1];
                 if (mx < 0 || my < 0 || mx >= width || my >= map.height() || !map.alive(mx, my, nd)) continue;
                 int st = map.index(mx, my, nd);
-                if (edgeOf[st] == e) out[n++] = st;
+                if (region[st] == region[s]) out[n++] = st;
             }
             return Arrays.copyOf(out, n);
         }
 
-        /** Stamps everything reachable from {@code seeds} within edge {@code e}, one way, with {@code mark}. */
+        /** Whether {@code s → u} crosses the cut, which no footprint closure may. */
+        boolean cut(int s, int u) {
+            return cutFrom >= 0 && edgeOf[s] == cutFrom && edgeOf[u] == cutTo;
+        }
+
+        /** Stamps everything reachable from {@code seeds} within their region, one way, with {@code mark}. */
         void close(int[] seeds, int e, boolean forward, int mark) {
+            int r = region[seeds[0]];
             int head = 0, tail = 0;
             int[] out = new int[3];
             for (int s : seeds) {
@@ -170,7 +186,8 @@ public final class SubpathSearch {
                 int k = forward ? map.steeredSuccessors(s, out) : map.steeredPredecessors(s, out);
                 for (int j = 0; j < k; j++) {
                     int u = out[j];
-                    if (edgeOf[u] != e || stamp[u] == mark) continue;
+                    if (region[u] != r || stamp[u] == mark) continue;
+                    if (forward ? cut(s, u) : cut(u, s)) continue;
                     stamp[u] = mark;
                     queue[tail++] = u;
                 }
@@ -189,7 +206,7 @@ public final class SubpathSearch {
             int n = 0;
             for (int i = 0; i < liveCount; i++) {
                 int st = live[i];
-                if (edgeOf[st] != e || footprint[st]) continue;
+                if (region[st] != region[s[0]] || footprint[st]) continue;
                 int m = stamp[st];
                 if (m == inS || (m != before && m != after)) out[n++] = st;
             }
@@ -316,56 +333,15 @@ public final class SubpathSearch {
     private record Seed(int edge, int[] path, double gain) {}
 
     /**
-     * Per state of {@code on}, its graph distance from the edge's boundary: forwards, steps
-     * from the nearest state with an off-edge predecessor; backwards, steps to the nearest with an
-     * off-edge successor. States on the route’s corridor only, so on a route clock a
-     * predecessor on an edge not in the route counts as off-edge, which is right.
-     */
-    private static int[] boundaryDistance(Ground g, int[] on, int e, boolean fromEntry) {
-        int[] pos = new int[g.edgeOf.length];
-        Arrays.fill(pos, -1);
-        for (int i = 0; i < on.length; i++) pos[on[i]] = i;
-        int[] dist = new int[on.length];
-        Arrays.fill(dist, Integer.MAX_VALUE);
-        int[] out = new int[3];
-        int head = 0, tail = 0;
-        for (int i = 0; i < on.length; i++) {
-            int s = on[i];
-            int k = fromEntry ? g.map.steeredPredecessors(s, out) : g.map.steeredSuccessors(s, out);
-            for (int j = 0; j < k; j++) {
-                if (g.edgeOf[out[j]] != e) { dist[i] = 0; g.queue[tail++] = s; break; }
-            }
-        }
-        while (head < tail) {
-            int s = g.queue[head++];
-            int k = fromEntry ? g.map.steeredSuccessors(s, out) : g.map.steeredPredecessors(s, out);
-            for (int j = 0; j < k; j++) {
-                int u = out[j];
-                if (pos[u] < 0 || dist[pos[u]] != Integer.MAX_VALUE) continue;
-                dist[pos[u]] = dist[pos[s]] + 1;
-                g.queue[tail++] = u;
-            }
-        }
-        return dist;
-    }
-
-    /**
-     * The best {@code K}-step runs on edge {@code e} by gain per step, disjoint in tau, at least
-     * {@code margin} steps from either end of the edge: a dynamic programme over the edge's
-     * transitions.
-     * <p>
-     * The margin is graph distance — steps from the nearest state with an off-edge predecessor,
-     * or to the nearest with an off-edge successor — and not tau, because tau on one edge differs
-     * between clocks by a constant, up to sixteen ticks on dabeone, so a margin in tau would cut
-     * at a different place on each clock and any difference between clocks near the ends would
-     * be the margin's. Measured in steps it is the same states whichever clock is asked.
+     * The best {@code K}-step runs on edge {@code e} by gain per step, disjoint in tau, within
+     * {@code margin} ticks of neither end of the edge's stretch of the clock: a dynamic programme
+     * over the edge's transitions.
      */
     private static List<Seed> seeds(Ground g, Kind kind, int e, int margin, int perEdge) {
         int n = 0;
         int[] on = new int[g.liveCount];
         for (int i = 0; i < g.liveCount; i++) if (g.usable(g.live[i], e)) on[n++] = g.live[i];
         on = Arrays.copyOf(on, n);
-        int[] fromEntry = boundaryDistance(g, on, e, true), toExit = boundaryDistance(g, on, e, false);
         int[] pos = new int[g.edgeOf.length];
         Arrays.fill(pos, -1);
         for (int i = 0; i < n; i++) pos[on[i]] = i;
@@ -402,7 +378,7 @@ public final class SubpathSearch {
                 if (k > 0) at = back[k][at];
             }
             double lo = Math.min(g.tau[path[0]], g.tau[path[K]]), hi = Math.max(g.tau[path[0]], g.tau[path[K]]);
-            if (fromEntry[pos[path[0]]] < margin || toExit[pos[path[K]]] < margin) continue;
+            if (lo < g.lo[e] + margin || hi > g.hi[e] - margin) continue;
             boolean clash = false;
             for (Seed s : out) {
                 double slo = Math.min(g.tau[s.path()[0]], g.tau[s.path()[K]]);
@@ -456,12 +432,18 @@ public final class SubpathSearch {
      *
      * @param edges  the edges to search
      * @param skip   edges to leave alone, self-inverse ones for now
-     * @param margin steps from either end of an edge a seed may not lie within (graph distance)
+     * @param region per state, what a footprint is measured within — the edge on the map-wide
+     *               clock; the whole route on a route's own, whose one boundary is the cut
+     * @param cutFrom the edge the cut is left from, and {@code cutTo} the edge it enters, or -1
+     * @param lo     per edge, where its stretch of the clock begins; {@code hi} where it ends
+     * @param margin ticks of the clock from either end of an edge a seed may not lie within; 0
+     *               for none, which on a route's own clock is the honest setting, there being no
+     *               edge boundaries in that clock to keep away from
      */
-    public static List<Found> find(NavMap map, int[] edgeOf, int[] live, int liveCount, double[] tau,
-                                   double[] length, int[] edges, int[] skip, Kind kind, int count,
-                                   int margin) {
-        Ground g = new Ground(map, edgeOf, live, liveCount, tau, length);
+    public static List<Found> find(NavMap map, int[] edgeOf, int[] region, int cutFrom, int cutTo,
+                                   int[] live, int liveCount, double[] tau, double[] lo, double[] hi,
+                                   int[] edges, int[] skip, Kind kind, int count, int margin) {
+        Ground g = new Ground(map, edgeOf, region, cutFrom, cutTo, live, liveCount, tau, lo, hi);
         List<Found> grown = new ArrayList<>();
         for (int e : edges) {
             if (Arrays.stream(skip).anyMatch(x -> x == e)) continue;
@@ -486,15 +468,27 @@ public final class SubpathSearch {
         DecisionZone.Kernel k = DecisionZone.Kernel.of(f);
         int[] edges = new int[f.edges()];
         for (int e = 0; e < edges.length; e++) edges[e] = e;
-        return find(map, k.edgeOf(), k.live(), k.liveCount(), f.tickOf(), f.length(), edges, skip,
-                kind, count, margin);
+        return find(map, k.edgeOf(), k.edgeOf(), -1, -1, k.live(), k.liveCount(), f.tickOf(),
+                new double[f.edges()], f.length(), edges, skip, kind, count, margin);
     }
 
-    /** The same on a route's own clock, over the route's edges. */
+    /**
+     * The same on a route's own clock, over the route's edges, with the footprint measured over
+     * the whole route and bounded only by the cut — the crossing from the route's last edge into
+     * its first. Within a decomposition edge the footprint of a step near the edge's end is
+     * otherwise cut short by the boundary, which halves the denominator and doubles {@code F} for
+     * paths that hug a crossing; on the route there is no boundary there.
+     */
     public static List<Found> find(NavMap map, RouteClock.Fit fit, int[] skip, Kind kind, int count,
                                    int margin) {
-        return find(map, fit.edgeOf(), fit.live(), fit.liveCount(), fit.tau(), fit.length(),
-                fit.route(), skip, kind, count, margin);
+        double[] hi = new double[fit.lo().length];
+        for (int e = 0; e < hi.length; e++) hi[e] = fit.lo()[e] + fit.length()[e];
+        int[] region = new int[fit.edgeOf().length];
+        Arrays.fill(region, -1);
+        for (int s : fit.live()) region[s] = 0;
+        int m = fit.route().length;
+        return find(map, fit.edgeOf(), region, fit.route()[m - 1], fit.route()[0], fit.live(),
+                fit.liveCount(), fit.tau(), fit.lo(), hi, fit.route(), skip, kind, count, margin);
     }
 
     /** The colours the paths are drawn in: warm for shortcuts, cool for longcuts. */

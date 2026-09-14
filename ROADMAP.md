@@ -1960,15 +1960,18 @@ path's tau range is excluded from seeding the next (growth into it is allowed, t
 happens). Two shortcuts, then two longcuts with the sign flipped; draw them on the map. Finding
 only — the path is not phase-complete and is not turned into a decision zone.
 
-**Result, after the same day's second pass** (seeds from the best six-step runs by a dynamic
-programme, one- and three-step growth, a margin in graph steps, edge 8 skipped, run on the
-map-wide clock and on each route's own via `RouteClock`): it settles at 17–41 steps, every winner
-is a lane along the inside or outside of a bend at a sustained +0.05 to +0.15 tau beyond one a
-tick, edge 0 finds edge 1's lane flown the other way, and **the route clocks find the same paths
-as the map-wide clock** — same states, same footprints, `F` within 0.00001. The map-wide clock
-will do for placement; a route only decides which edges to search. One strong lane, edge 2's
-tail toward the `2→1` exit, is excluded by the step margin and wants the exit-saturation
-question answered. `EDGES.md` §2a "Placing a subpath".
+**Result, after the same day's second and third passes** (seeds from the best six-step runs by
+a dynamic programme, one- and three-step growth, edge 8 skipped; on each route's own clock read
+as one continuous coordinate `T` round the loop with the footprint measured over the route and
+bounded only by the cut, and no margin; on the map-wide clock within the edge with a 15-tick
+margin): it settles at 17–31 steps, every winner is a lane along the inside or outside of a bend
+at a sustained +0.06 to +0.15 tau beyond one a tick, edge 0 finds edge 1's lane flown the other
+way, and **the route clocks find the same interior lanes as the map-wide clock and show no
+artifacts at crossings with no margin** — the crossing-hugging winners of an earlier pass were
+the footprint being cut short by the edge boundary, not the clock. Edge 2's tail lane toward
+the `2→1` exit (+0.10/tick over 28 ticks, `F` 0.00056) is the best on the exit route and runs
+into the exit zone; whether that can be a subpath is the exit-saturation question. `EDGES.md`
+§2a "Placing a subpath".
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
 
