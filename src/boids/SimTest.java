@@ -2151,14 +2151,12 @@ picks, never in what is available to it.
     /**
      * The clock refitted on one route at a time, against the map-wide clock.
      * <p>
-     * A route is a simple loop of edges. Its <b>corridor</b> is, on each edge, the states
-     * reachable from the crossing in from the previous edge that can also reach the crossing out
-     * to the next — what a boid on that route can occupy. The same least squares is run on the
-     * corridor alone, with the route's own crossings and no others, and compared with the
-     * map-wide fit three ways: the edge lengths, which on a lone cycle are gauge apart from
-     * their sum; the <b>spans</b>, the clock time from the route's canonical entry of each edge
-     * to its exit, which are not gauge; and the spread across each edge's corridor of the change
-     * in tick, which is the most any within-edge distance moves.
+     * A route is a simple loop of edges; {@link RouteClock} refits the clock on its corridor
+     * alone, with the route's own crossings and no others. Compared with the map-wide fit three
+     * ways: the edge lengths, which on a lone cycle are gauge apart from their sum; the
+     * <b>spans</b>, the clock time from the route's canonical entry of each edge to its exit,
+     * which are not gauge; and the spread across each edge of the change in tick, which is the
+     * most any within-edge distance moves.
      *
      * @param routes each a cycle of edges, every one an arc of the one before
      */
@@ -2168,55 +2166,14 @@ picks, never in what is available to it.
         SolverFacts f = b.facts();
         EdgeDecomposition.Labelling l = b.labelling();
         NavMap map = l.map();
-        int[] edgeOf = l.edge();
         DecisionZone[] exits = DecisionZone.exits(map, f);
 
         for (int[] route : routes) {
             int m = route.length;
             System.out.printf("%n=== %s @%s: the clock on route %s alone ===%n", preset.name(),
                     preset.ingest().hash(), Arrays.toString(route));
-
-            // The corridor: on each edge, reachable from the way in and reaching the way out.
-            int[] edge2 = new int[edgeOf.length];
-            Arrays.fill(edge2, -1);
-            int[] out = new int[3];
-            for (int i = 0; i < m; i++) {
-                int e = route[i], prev = route[(i + m - 1) % m], next = route[(i + 1) % m];
-                boolean[] fromIn = new boolean[edgeOf.length], toOut = new boolean[edgeOf.length];
-                ArrayDeque<Integer> queue = new ArrayDeque<>();
-                for (int k = 0; k < l.liveCount(); k++) {
-                    int s = l.live()[k];
-                    if (edgeOf[s] != e) continue;
-                    int c = map.steeredPredecessors(s, out);
-                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == prev) { fromIn[s] = true; queue.add(s); break; }
-                }
-                while (!queue.isEmpty()) {
-                    int s = queue.poll();
-                    int c = map.steeredSuccessors(s, out);
-                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == e && !fromIn[out[j]]) { fromIn[out[j]] = true; queue.add(out[j]); }
-                }
-                for (int k = 0; k < l.liveCount(); k++) {
-                    int s = l.live()[k];
-                    if (edgeOf[s] != e) continue;
-                    int c = map.steeredSuccessors(s, out);
-                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == next) { toOut[s] = true; queue.add(s); break; }
-                }
-                while (!queue.isEmpty()) {
-                    int s = queue.poll();
-                    int c = map.steeredPredecessors(s, out);
-                    for (int j = 0; j < c; j++) if (edgeOf[out[j]] == e && !toOut[out[j]]) { toOut[out[j]] = true; queue.add(out[j]); }
-                }
-                for (int k = 0; k < l.liveCount(); k++) {
-                    int s = l.live()[k];
-                    if (fromIn[s] && toOut[s]) edge2[s] = i;
-                }
-            }
-            int count = 0;
-            for (int k = 0; k < l.liveCount(); k++) if (edge2[l.live()[k]] >= 0) count++;
-            int[] live2 = new int[count];
-            for (int k = 0, at = 0; k < l.liveCount(); k++) if (edge2[l.live()[k]] >= 0) live2[at++] = l.live()[k];
-
-            EdgeMetric.Metric alone = EdgeMetric.compute(map, edge2, live2, count, m);
+            RouteClock.Fit fit = RouteClock.of(map, l, route);
+            EdgeMetric.Metric alone = fit.alone();
             System.out.println("  " + EdgeMetric.lastSolve());
 
             // The lap as flown, for the total to be read against.
@@ -2248,8 +2205,8 @@ picks, never in what is available to it.
                 double spanRoute = alone.tick()[exit] - alone.tick()[entry] + 1;
                 double lo = Double.MAX_VALUE, hi = -Double.MAX_VALUE, sum = 0;
                 int n = 0;
-                for (int st : live2) {
-                    if (edge2[st] != i) continue;
+                for (int st : fit.live()) {
+                    if (fit.edgeOf()[st] != e) continue;
                     double d = alone.tick()[st] - f.tickOf()[st];
                     lo = Math.min(lo, d); hi = Math.max(hi, d); sum += d; n++;
                 }
@@ -2266,43 +2223,75 @@ picks, never in what is available to it.
     }
 
     /**
-     * Finds {@code count} shortcuts and {@code count} longcuts on the map with
-     * {@link SubpathSearch}, prints each with the fitness it grew through, and draws them all on
-     * the map at {@code render/subpaths/<map>-<hash>.png}.
+     * Finds {@code count} shortcuts and {@code count} longcuts with {@link SubpathSearch} — once
+     * on the map-wide clock over every edge, then on each route's own clock over that route's
+     * edges — prints the winners with the {@code F} they grew through and the runners-up, and
+     * draws each set on the map at {@code render/subpaths/<map>-<hash>-<clock>.png}.
+     *
+     * @param skip   edges left alone — the self-inverse ones, until phase-complete pathing
+     * @param margin steps from either end of an edge a seed may not lie within, as graph distance
      */
-    public static void subpathSearch(PresetScenarioParameter preset, SolverFacts.Gate gate, int count,
-                                     double margin) throws IOException {
+    public static void subpathSearch(PresetScenarioParameter preset, SolverFacts.Gate gate,
+                                     int[][] routes, int[] skip, int count, int margin)
+            throws IOException {
         Pipeline.Built b = Pipeline.build(preset, gate);
         SolverFacts f = b.facts();
-        NavMap map = b.labelling().map();
-        List<SubpathSearch.Found> all = new ArrayList<>();
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+        String stem = "render/subpaths/" + preset.name().toLowerCase(java.util.Locale.ROOT) + "-"
+                + preset.ingest().hash();
+
+        List<SubpathSearch.Found> mapWide = new ArrayList<>();
         for (SubpathSearch.Kind kind : SubpathSearch.Kind.values()) {
-            System.out.printf("%n=== %s @%s: %d %ss, seeds at least %.0f ticks from an end ===%n",
-                    preset.name(), preset.ingest().hash(), count,
-                    kind.name().toLowerCase(java.util.Locale.ROOT), margin);
-            List<SubpathSearch.Found> found = SubpathSearch.find(map, f, kind, count, margin);
-            for (SubpathSearch.Found p : found) {
-                System.out.println("  " + p.summary());
-                StringBuilder trace = new StringBuilder("    F by length:");
+            System.out.printf("%n=== %s @%s: %ss on the map-wide clock, edges %s skipped, seeds %d+ steps from an end ===%n",
+                    preset.name(), preset.ingest().hash(), kind.name().toLowerCase(java.util.Locale.ROOT),
+                    Arrays.toString(skip), margin);
+            List<SubpathSearch.Found> found = SubpathSearch.find(map, f, skip, kind, count, margin);
+            reportFound(found, count, map);
+            mapWide.addAll(found.subList(0, Math.min(count, found.size())));
+        }
+        SubpathSearch.draw(preset, map, mapWide, 3, Path.of(stem + "-mapwide.png"));
+
+        for (int[] route : routes) {
+            RouteClock.Fit fit = RouteClock.of(map, l, route);
+            List<SubpathSearch.Found> onRoute = new ArrayList<>();
+            for (SubpathSearch.Kind kind : SubpathSearch.Kind.values()) {
+                System.out.printf("%n=== %s @%s: %ss on route %s's own clock ===%n", preset.name(),
+                        preset.ingest().hash(), kind.name().toLowerCase(java.util.Locale.ROOT),
+                        Arrays.toString(route));
+                List<SubpathSearch.Found> found = SubpathSearch.find(map, fit, skip, kind, count, margin);
+                reportFound(found, count, map);
+                onRoute.addAll(found.subList(0, Math.min(count, found.size())));
+            }
+            StringBuilder name = new StringBuilder(stem).append("-route");
+            for (int e : route) name.append('-').append(e);
+            SubpathSearch.draw(preset, map, onRoute, 3, Path.of(name + ".png"));
+        }
+        System.out.printf("%nwrote %s-*.png%n", stem);
+    }
+
+    private static void reportFound(List<SubpathSearch.Found> found, int count, NavMap map) {
+        int turns = Params.TURNS, w = map.width();
+        for (int i = 0; i < found.size(); i++) {
+            SubpathSearch.Found p = found.get(i);
+            if (i == count) System.out.println("  -- runners-up --");
+            if (i >= count + 6) { System.out.printf("  ... and %d more%n", found.size() - i); break; }
+            System.out.println("  " + p.summary());
+            if (i < count) {
+                StringBuilder trace = new StringBuilder("    F by extension:");
                 double[] t = p.trace();
-                for (int i = 0; i < t.length; i++) {
-                    if (i < 8 || i >= t.length - 3 || i % Math.max(1, t.length / 8) == 0) {
-                        trace.append(String.format(" %d:%.5f", i + 1, t[i]));
+                for (int k = 0; k < t.length; k++) {
+                    if (k < 6 || k >= t.length - 3 || k % Math.max(1, t.length / 8) == 0) {
+                        trace.append(String.format(" %d:%.5f", k, t[k]));
                     }
                 }
-                System.out.println(trace);
                 int[] path = p.path();
-                int turns = Params.TURNS, w = map.width();
                 int a = path[0] / turns, z = path[path.length - 1] / turns;
+                System.out.println(trace);
                 System.out.printf("    from (%d,%d,%d) to (%d,%d,%d)%n", a % w, a / w, path[0] % turns,
                         z % w, z / w, path[path.length - 1] % turns);
             }
-            all.addAll(found);
         }
-        Path out = Path.of("render", "subpaths", preset.name().toLowerCase(java.util.Locale.ROOT)
-                + "-" + preset.ingest().hash() + "-margin" + (int) margin + ".png");
-        SubpathSearch.draw(preset, map, all, 3, out);
-        System.out.printf("%nwrote %s%n", out);
     }
 
     /** The value after {@code name} in a {@link DecisionZone#report}. */
@@ -2319,7 +2308,8 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        subpathSearch(PresetScenarioParameter.DABEONE, dab, 2, 15);
+        subpathSearch(PresetScenarioParameter.DABEONE, dab,
+                new int[][]{{2, 7, 4}, {4, 2, 1, 5, 8}, {4, 0, 3, 5, 8}}, new int[]{8}, 2, 15);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

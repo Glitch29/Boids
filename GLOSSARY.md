@@ -69,8 +69,8 @@ hand, since `EdgeInfluence.steer` *is* the aggregation at one neighbour and the 
 
 **aggregation** — how several neighbours are condensed into one desired direction, as opposed to
 what each rule wants from one neighbour. `Aggregation`, with `SIMULATION` naming the one the
-flock flies (physics 3: `RULE_SUM_CLAMP`), `RULE_NORMALISE` the physics-2 record, and five more
-surveyed beside them. **The rules are not where implementations differ; the aggregation is.**
+flock flies (physics 3: `RULE_SUM_CLAMP`) and `RULE_NORMALISE` the physics-2 record; five more
+were surveyed beside them and removed 2026-09-13. **The rules are not where implementations differ; the aggregation is.**
 
 **cancellation ratio** — for one rule, `sum of the contributions' lengths / length of their sum`.
 One is unanimity; ten means the neighbours nearly cancelled and only a short residue survived.
@@ -748,7 +748,8 @@ anything not listed.
 | exit decision zones | `DecisionZone.exits`, flown by `DecisionOverride`, checked by `SimTest.zones` | in memory; printed |
 | subpath decision zones | `DecisionZone.subpath`, flown by `DecisionOverride`, checked by `SimTest.subpaths` | in memory; printed |
 | the clock on one route | `SimTest.routeClock` — refit on a loop alone, compared three ways | printed |
-| subpath search | `SubpathSearch`, driven by `SimTest.subpathSearch` — grow paths by `F` = tau gained over footprint | `render/subpaths/<map>-<hash>-margin<m>.png` |
+| subpath search | `SubpathSearch`, driven by `SimTest.subpathSearch` — seeds from the best six-step runs, grown by `F` = tau gained over footprint, on the map-wide clock and each route's own | `render/subpaths/<map>-<hash>-{mapwide,route-…}.png` |
+| the clock on one route (fit) | `RouteClock.of` — the corridor and the refit, shared by `routeClock` and the search | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |
 | transition weights | `EdgeWeights` | in the clock |

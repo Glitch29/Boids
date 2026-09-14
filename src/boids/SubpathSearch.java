@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -26,16 +27,23 @@ import java.util.List;
  * part of the edge that is level with it rather than committed to it. The footprint carries a
  * fixed cost — the slab around a single step is tens of ticks of corridor — so the ratio is an
  * average with an overhead, and it settles at a finite length rather than growing forever.
+ *
+ * <h2>How the best {@code F} is looked for</h2>
+ * The first version seeded at the single tick spanning the most tau and grew one tick at a time.
+ * The best single tick is an outlier, not a lane: it grew to four steps, and the one real lane
+ * on dabeone was found second, from a weaker seed, only because the first's range was excluded.
+ * So now, per edge, a dynamic programme over the edge's transitions — acyclic, since every orbit
+ * has been cut — finds the best {@code K}-step run ending at every state, the top few runs by
+ * gain per step with disjoint tau ranges are taken as seeds, each is grown by the best one- or
+ * three-step extension at either end (three, so a single poor tick does not end a lane), every
+ * grown path is scored, and the best {@code F} wins. A found path's tau range on its edge
+ * excludes overlapping candidates, so the set that comes back is disjoint.
  * <p>
- * <b>Grown greedily from the best single tick.</b> The seed is the on-edge transition spanning
- * the most tau (least, for a longcut). Each round the best transition off either end — the
- * successor of {@code P_N}, or the predecessor of {@code P_0}, with the largest gain — is scored
- * as an extension; the better of the two is taken if it raises {@code F}, and the path is done
- * when neither does. A found path's tau range on its edge is excluded from seeding the next of
- * its kind; growing into it is allowed, to see whether that happens.
- * <p>
+ * Runs on whatever tau it is handed: the map-wide clock, or a route's own ({@link RouteClock}).
+ * Self-inverse edges hold the other direction of travel in every {@code E⊥S}, which inflates
+ * their footprint; they are excluded by the caller until phase-complete pathing resolves them.
  * What comes out is a path, not a phase-complete subpath, so it is drawn and reported rather
- * than turned into a {@link DecisionZone}. Every tau is the map-wide clock's.
+ * than turned into a {@link DecisionZone}.
  */
 public final class SubpathSearch {
     private SubpathSearch() {}
@@ -51,56 +59,75 @@ public final class SubpathSearch {
         Kind(int sign) { this.sign = sign; }
     }
 
+    /** Steps in a seed run. Long enough to be a rate rather than an outlier, short enough to be local. */
+    public static final int SEED_STEPS = 6;
+
+    /** Seeds grown per edge, disjoint in tau. */
+    public static final int SEEDS_PER_EDGE = 4;
+
+    /** The longer of the two extensions tried at each end. */
+    public static final int CHUNK = 3;
+
     /**
      * One found path.
      *
      * @param path      the states, {@code P_0 … P_N}
      * @param footprint {@code |⋃ᵢ (E⊥Sᵢ ∪ Sᵢ)|}
      * @param fitness   {@code F} at the length it settled at
+     * @param seedRate  gain per step of the run it grew from
      * @param trace     {@code F} after each extension, seed first
      */
     public record Found(Kind kind, int edge, int[] path, double tau0, double tauN, int footprint,
-                        double fitness, double[] trace) {
+                        double fitness, double seedRate, double[] trace) {
         public int steps() { return path.length - 1; }
 
         /** Tau gained beyond one per tick, signed for the kind. */
         public double gain() { return kind.sign * (tauN - tau0 - steps()); }
 
+        public double lo() { return Math.min(tau0, tauN); }
+
+        public double hi() { return Math.max(tau0, tauN); }
+
         public String summary() {
-            return String.format("%-8s edge %d: %3d steps, tau %6.1f -> %6.1f (%+.2f beyond one a tick),"
-                            + " footprint %6d, F = %.5f", kind, edge, steps(), tau0, tauN,
-                    kind.sign * gain(), footprint, fitness);
+            return String.format("%-8s edge %d: %3d steps, tau %6.1f -> %6.1f (%+.2f beyond one a tick,"
+                            + " %+.3f/tick), footprint %6d, F = %.5f, seed %+.3f/tick", kind, edge,
+                    steps(), tau0, tauN, kind.sign * gain(), kind.sign * gain() / steps(),
+                    footprint, fitness, seedRate);
         }
     }
 
-    /** The map's kernel and clock, shared across finds. */
+    /** The kernel and a clock, whichever clock it is. */
     private static final class Ground {
         final NavMap map;
         final int[] edgeOf, live;
         final int liveCount;
-        final double[] tau;
+        final double[] tau, length;
         final int turns, width;
         /** Scratch for closures: a stamp per state, so nothing is cleared between walks. */
         final int[] stamp;
         int version;
         final int[] queue;
 
-        Ground(NavMap map, SolverFacts f) {
+        Ground(NavMap map, int[] edgeOf, int[] live, int liveCount, double[] tau, double[] length) {
             this.map = map;
-            DecisionZone.Kernel k = DecisionZone.Kernel.of(f);
-            this.edgeOf = k.edgeOf();
-            this.live = k.live();
-            this.liveCount = k.liveCount();
-            this.tau = f.tickOf();
+            this.edgeOf = edgeOf;
+            this.live = live;
+            this.liveCount = liveCount;
+            this.tau = tau;
+            this.length = length;
             this.turns = Params.TURNS;
             this.width = map.width();
             this.stamp = new int[edgeOf.length];
             this.queue = new int[edgeOf.length];
         }
 
-        /** The gain of one transition, signed for the kind; NaN where either end has no tau. */
+        /** The gain of one transition, signed for the kind. */
         double gain(Kind kind, int s, int u) {
             return kind.sign * (tau[u] - tau[s] - 1);
+        }
+
+        boolean usable(int s, int e) {
+            return edgeOf[s] == e && !Double.isNaN(tau[s]);
         }
 
         /** The turn that takes {@code s} to {@code u} as a permitted transition, or 2 if none. */
@@ -129,11 +156,8 @@ public final class SubpathSearch {
             return Arrays.copyOf(out, n);
         }
 
-        /**
-         * Stamps everything reachable from {@code seeds} within edge {@code e}, forwards or
-         * backwards, with {@code mark}; returns how many were stamped, seeds included.
-         */
-        int close(int[] seeds, int e, boolean forward, int mark) {
+        /** Stamps everything reachable from {@code seeds} within edge {@code e}, one way, with {@code mark}. */
+        void close(int[] seeds, int e, boolean forward, int mark) {
             int head = 0, tail = 0;
             int[] out = new int[3];
             for (int s : seeds) {
@@ -151,13 +175,30 @@ public final class SubpathSearch {
                     queue[tail++] = u;
                 }
             }
-            return tail;
+        }
+
+        /** The states level with one step — {@code E⊥S ∪ S} — not yet in {@code footprint}. */
+        int[] slab(int e, int[] s, boolean[] footprint) {
+            int before = ++version;
+            close(s, e, false, before);
+            int after = ++version;
+            close(s, e, true, after);
+            int inS = ++version;
+            for (int st : s) stamp[st] = inS;
+            int[] out = new int[liveCount];
+            int n = 0;
+            for (int i = 0; i < liveCount; i++) {
+                int st = live[i];
+                if (edgeOf[st] != e || footprint[st]) continue;
+                int m = stamp[st];
+                if (m == inS || (m != before && m != after)) out[n++] = st;
+            }
+            return Arrays.copyOf(out, n);
         }
     }
 
     /** A path under construction, with its footprint. */
     private static final class Growth {
-        final Kind kind;
         final int edge;
         final List<Integer> path = new ArrayList<>();
         final boolean[] footprint;
@@ -165,146 +206,295 @@ public final class SubpathSearch {
         double gain;
         final List<Double> trace = new ArrayList<>();
 
-        Growth(Kind kind, int edge, int states) {
-            this.kind = kind;
+        Growth(int edge, int states) {
             this.edge = edge;
             this.footprint = new boolean[states];
         }
 
         double fitness() { return footprintSize == 0 ? 0 : gain / footprintSize; }
+
+        boolean has(int s) { return path.contains(s); }
     }
 
-    /**
-     * The states level with one step — {@code E⊥S ∪ S} — that are not yet in the footprint.
-     * Stamps them with a fresh mark and returns them, so a rejected candidate costs nothing.
-     */
-    private static int[] slab(Ground g, int e, int[] s, boolean[] footprint) {
-        int before = ++g.version;
-        g.close(s, e, false, before);
-        int after = ++g.version;
-        g.close(s, e, true, after);
-        int inS = ++g.version;
-        for (int st : s) g.stamp[st] = inS;
-        // Stamping S last means a state of S carries inS; the two closures include S too, so a
-        // state is level with S exactly when it carries neither closure's mark, or carries inS.
-        int[] out = new int[g.liveCount];
-        int n = 0;
-        for (int i = 0; i < g.liveCount; i++) {
-            int st = g.live[i];
-            if (g.edgeOf[st] != e || footprint[st]) continue;
-            int m = g.stamp[st];
-            if (m == inS || (m != before && m != after)) out[n++] = st;
+    /** A candidate extension, tried against the footprint and rolled back if not taken. */
+    private static final class Extension {
+        final int[] states;         // in path order, excluding the end they attach to
+        final boolean forward;
+        final double gain;
+        final List<int[]> added = new ArrayList<>();
+        double fitness = Double.NEGATIVE_INFINITY;
+
+        Extension(int[] states, boolean forward, double gain) {
+            this.states = states;
+            this.forward = forward;
+            this.gain = gain;
         }
-        return Arrays.copyOf(out, n);
+    }
+
+    /** Applies the extension's slabs to the footprint, records what was added, and scores it. */
+    private static void tryOn(Ground g, Growth gr, Extension x) {
+        int at = x.forward ? gr.path.get(gr.path.size() - 1) : gr.path.get(0);
+        int[] chain = x.states;
+        for (int i = 0; i < chain.length; i++) {
+            int from = x.forward ? (i == 0 ? at : chain[i - 1]) : chain[i];
+            int to = x.forward ? chain[i] : (i + 1 < chain.length ? chain[i + 1] : at);
+            int[] slab = g.slab(gr.edge, g.partialTick(from, to, gr.edge), gr.footprint);
+            for (int st : slab) gr.footprint[st] = true;
+            gr.footprintSize += slab.length;
+            x.added.add(slab);
+        }
+        x.fitness = gr.footprintSize == 0 ? 0 : (gr.gain + x.gain) / gr.footprintSize;
+    }
+
+    private static void rollBack(Growth gr, Extension x) {
+        for (int[] slab : x.added) {
+            for (int st : slab) gr.footprint[st] = false;
+            gr.footprintSize -= slab.length;
+        }
+        x.added.clear();
+    }
+
+    private static void keep(Growth gr, Extension x) {
+        gr.gain += x.gain;
+        if (x.forward) {
+            for (int s : x.states) gr.path.add(s);
+        } else {
+            for (int i = x.states.length - 1; i >= 0; i--) gr.path.add(0, x.states[i]);
+        }
     }
 
     /**
-     * Grows the {@code count} best paths of one kind, each seeded outside the tau ranges of
-     * those before it.
+     * The best chain of {@code n} steps off one end by total gain, or null if there is none:
+     * forward, successors of the head; backward, predecessors of the tail, listed in path order.
      */
-    public static List<Found> find(NavMap map, SolverFacts f, Kind kind, int count) {
-        return find(map, f, kind, count, 0);
+    private static Extension bestChain(Ground g, Growth gr, Kind kind, int n, boolean forward) {
+        int at = forward ? gr.path.get(gr.path.size() - 1) : gr.path.get(0);
+        int[] best = null;
+        double bestGain = Double.NEGATIVE_INFINITY;
+        int[] chain = new int[n];
+        int[][] outs = new int[n][3];
+        int[] counts = new int[n], at2 = new int[n];
+        // Depth-first over at most 3^n chains, which is 27 at n = 3.
+        int depth = 0;
+        int from = at;
+        counts[0] = forward ? g.map.steeredSuccessors(from, outs[0]) : g.map.steeredPredecessors(from, outs[0]);
+        at2[0] = 0;
+        while (depth >= 0) {
+            if (at2[depth] >= counts[depth]) { depth--; continue; }
+            int s = outs[depth][at2[depth]++];
+            int prev = depth == 0 ? at : chain[depth - 1];
+            if (!g.usable(s, gr.edge) || gr.has(s)) continue;
+            boolean repeat = false;
+            for (int i = 0; i < depth && !repeat; i++) repeat = chain[i] == s;
+            if (repeat) continue;
+            chain[depth] = s;
+            if (depth == n - 1) {
+                double gain = 0;
+                for (int i = 0; i < n; i++) {
+                    int a = i == 0 ? at : chain[i - 1], b = chain[i];
+                    gain += forward ? g.gain(kind, a, b) : g.gain(kind, b, a);
+                }
+                if (gain > bestGain) { bestGain = gain; best = chain.clone(); }
+            } else {
+                depth++;
+                counts[depth] = forward ? g.map.steeredSuccessors(s, outs[depth])
+                        : g.map.steeredPredecessors(s, outs[depth]);
+                at2[depth] = 0;
+            }
+        }
+        if (best == null) return null;
+        if (!forward) {
+            // Found tail-first; a backward extension is listed in path order, furthest first.
+            int[] ordered = new int[n];
+            for (int i = 0; i < n; i++) ordered[i] = best[n - 1 - i];
+            best = ordered;
+        }
+        return new Extension(best, forward, bestGain);
     }
 
+    /** A seed run: {@code K} steps ending at a state, with its gain. */
+    private record Seed(int edge, int[] path, double gain) {}
+
     /**
-     * The same, seeding only at least {@code margin} ticks of tau from either end of an edge.
-     * <p>
-     * With no margin the seeds land on the clock's boundary artifacts — a tick at tau 0.3 of an
-     * edge, or past its length at the far end — where tau is least trustworthy and a single
-     * tick can read as 1.7 tau. The interior is where a lane is a lane.
+     * Per state of {@code on}, its graph distance from the edge's boundary: forwards, steps
+     * from the nearest state with an off-edge predecessor; backwards, steps to the nearest with an
+     * off-edge successor. States on the route’s corridor only, so on a route clock a
+     * predecessor on an edge not in the route counts as off-edge, which is right.
      */
-    public static List<Found> find(NavMap map, SolverFacts f, Kind kind, int count, double margin) {
-        Ground g = new Ground(map, f);
-        List<Found> found = new ArrayList<>();
+    private static int[] boundaryDistance(Ground g, int[] on, int e, boolean fromEntry) {
+        int[] pos = new int[g.edgeOf.length];
+        Arrays.fill(pos, -1);
+        for (int i = 0; i < on.length; i++) pos[on[i]] = i;
+        int[] dist = new int[on.length];
+        Arrays.fill(dist, Integer.MAX_VALUE);
         int[] out = new int[3];
-        for (int round = 0; round < count; round++) {
-            // The seed: the on-edge transition with the most gain, outside every found range.
-            int seedFrom = -1, seedTo = -1;
-            double best = Double.NEGATIVE_INFINITY;
-            for (int i = 0; i < g.liveCount; i++) {
-                int s = g.live[i];
-                int e = g.edgeOf[s];
-                if (Double.isNaN(g.tau[s]) || excluded(found, e, g.tau[s])) continue;
-                if (g.tau[s] < margin || g.tau[s] > f.length()[e] - margin) continue;
-                int k = map.steeredSuccessors(s, out);
-                for (int j = 0; j < k; j++) {
-                    int u = out[j];
-                    if (g.edgeOf[u] != e || Double.isNaN(g.tau[u])) continue;
-                    double gain = g.gain(kind, s, u);
-                    if (gain > best) { best = gain; seedFrom = s; seedTo = u; }
+        int head = 0, tail = 0;
+        for (int i = 0; i < on.length; i++) {
+            int s = on[i];
+            int k = fromEntry ? g.map.steeredPredecessors(s, out) : g.map.steeredSuccessors(s, out);
+            for (int j = 0; j < k; j++) {
+                if (g.edgeOf[out[j]] != e) { dist[i] = 0; g.queue[tail++] = s; break; }
+            }
+        }
+        while (head < tail) {
+            int s = g.queue[head++];
+            int k = fromEntry ? g.map.steeredSuccessors(s, out) : g.map.steeredPredecessors(s, out);
+            for (int j = 0; j < k; j++) {
+                int u = out[j];
+                if (pos[u] < 0 || dist[pos[u]] != Integer.MAX_VALUE) continue;
+                dist[pos[u]] = dist[pos[s]] + 1;
+                g.queue[tail++] = u;
+            }
+        }
+        return dist;
+    }
+
+    /**
+     * The best {@code K}-step runs on edge {@code e} by gain per step, disjoint in tau, at least
+     * {@code margin} steps from either end of the edge: a dynamic programme over the edge's
+     * transitions.
+     * <p>
+     * The margin is graph distance — steps from the nearest state with an off-edge predecessor,
+     * or to the nearest with an off-edge successor — and not tau, because tau on one edge differs
+     * between clocks by a constant, up to sixteen ticks on dabeone, so a margin in tau would cut
+     * at a different place on each clock and any difference between clocks near the ends would
+     * be the margin's. Measured in steps it is the same states whichever clock is asked.
+     */
+    private static List<Seed> seeds(Ground g, Kind kind, int e, int margin, int perEdge) {
+        int n = 0;
+        int[] on = new int[g.liveCount];
+        for (int i = 0; i < g.liveCount; i++) if (g.usable(g.live[i], e)) on[n++] = g.live[i];
+        on = Arrays.copyOf(on, n);
+        int[] fromEntry = boundaryDistance(g, on, e, true), toExit = boundaryDistance(g, on, e, false);
+        int[] pos = new int[g.edgeOf.length];
+        Arrays.fill(pos, -1);
+        for (int i = 0; i < n; i++) pos[on[i]] = i;
+
+        int K = SEED_STEPS;
+        double[][] best = new double[K + 1][n];
+        int[][] back = new int[K + 1][n];
+        for (double[] row : best) Arrays.fill(row, Double.NEGATIVE_INFINITY);
+        Arrays.fill(best[0], 0);
+        int[] preds = new int[3];
+        for (int k = 1; k <= K; k++) {
+            for (int i = 0; i < n; i++) {
+                int u = on[i];
+                int c = g.map.steeredPredecessors(u, preds);
+                for (int j = 0; j < c; j++) {
+                    int p = preds[j];
+                    if (pos[p] < 0 || best[k - 1][pos[p]] == Double.NEGATIVE_INFINITY) continue;
+                    double v = best[k - 1][pos[p]] + g.gain(kind, p, u);
+                    if (v > best[k][i]) { best[k][i] = v; back[k][i] = pos[p]; }
                 }
             }
-            if (seedFrom < 0) break;
-            int e = g.edgeOf[seedFrom];
+        }
 
-            Growth gr = new Growth(kind, e, g.edgeOf.length);
-            gr.path.add(seedFrom);
-            gr.path.add(seedTo);
-            gr.gain = best;
-            commit(g, gr, slab(g, e, g.partialTick(seedFrom, seedTo, e), gr.footprint));
+        Integer[] order = new Integer[n];
+        for (int i = 0; i < n; i++) order[i] = i;
+        Arrays.sort(order, (a, b) -> Double.compare(best[K][b], best[K][a]));
+        List<Seed> out = new ArrayList<>();
+        for (int idx : order) {
+            if (best[K][idx] == Double.NEGATIVE_INFINITY) break;
+            int[] path = new int[K + 1];
+            int at = idx;
+            for (int k = K; k >= 0; k--) {
+                path[k] = on[at];
+                if (k > 0) at = back[k][at];
+            }
+            double lo = Math.min(g.tau[path[0]], g.tau[path[K]]), hi = Math.max(g.tau[path[0]], g.tau[path[K]]);
+            if (fromEntry[pos[path[0]]] < margin || toExit[pos[path[K]]] < margin) continue;
+            boolean clash = false;
+            for (Seed s : out) {
+                double slo = Math.min(g.tau[s.path()[0]], g.tau[s.path()[K]]);
+                double shi = Math.max(g.tau[s.path()[0]], g.tau[s.path()[K]]);
+                if (hi >= slo && lo <= shi) { clash = true; break; }
+            }
+            if (clash) continue;
+            out.add(new Seed(e, path, best[K][idx]));
+            if (out.size() >= perEdge) break;
+        }
+        return out;
+    }
+
+    /** Grows one seed to the length that maximises {@code F}. */
+    private static Found grow(Ground g, Kind kind, Seed seed) {
+        Growth gr = new Growth(seed.edge(), g.edgeOf.length);
+        for (int s : seed.path()) gr.path.add(s);
+        gr.gain = seed.gain();
+        for (int i = 0; i + 1 < seed.path().length; i++) {
+            int[] slab = g.slab(gr.edge, g.partialTick(seed.path()[i], seed.path()[i + 1], gr.edge), gr.footprint);
+            for (int st : slab) gr.footprint[st] = true;
+            gr.footprintSize += slab.length;
+        }
+        gr.trace.add(gr.fitness());
+
+        for (int round = 0; round < 2000; round++) {
+            Extension best = null;
+            for (boolean forward : new boolean[]{true, false}) {
+                for (int n : new int[]{1, CHUNK}) {
+                    Extension x = bestChain(g, gr, kind, n, forward);
+                    if (x == null) continue;
+                    tryOn(g, gr, x);
+                    rollBack(gr, x);
+                    if (best == null || x.fitness > best.fitness) best = x;
+                }
+            }
+            if (best == null || best.fitness <= gr.fitness()) break;
+            tryOn(g, gr, best);
+            keep(gr, best);
             gr.trace.add(gr.fitness());
+        }
+        int[] path = gr.path.stream().mapToInt(Integer::intValue).toArray();
+        double[] trace = gr.trace.stream().mapToDouble(Double::doubleValue).toArray();
+        return new Found(kind, gr.edge, path, g.tau[path[0]], g.tau[path[path.length - 1]],
+                gr.footprintSize, gr.fitness(), seed.gain() / SEED_STEPS, trace);
+    }
 
-            // Grow at whichever end raises F more, until neither does.
-            for (int step = 0; step < 2000; step++) {
-                int head = gr.path.get(gr.path.size() - 1), tail = gr.path.get(0);
-                int fwd = -1, bwd = -1;
-                double fwdGain = Double.NEGATIVE_INFINITY, bwdGain = Double.NEGATIVE_INFINITY;
-                int k = map.steeredSuccessors(head, out);
-                for (int j = 0; j < k; j++) {
-                    int u = out[j];
-                    if (g.edgeOf[u] != e || Double.isNaN(g.tau[u]) || gr.path.contains(u)) continue;
-                    double gain = g.gain(kind, head, u);
-                    if (gain > fwdGain) { fwdGain = gain; fwd = u; }
-                }
-                k = map.steeredPredecessors(tail, out);
-                for (int j = 0; j < k; j++) {
-                    int p = out[j];
-                    if (g.edgeOf[p] != e || Double.isNaN(g.tau[p]) || gr.path.contains(p)) continue;
-                    double gain = g.gain(kind, p, tail);
-                    if (gain > bwdGain) { bwdGain = gain; bwd = p; }
-                }
-                int[] fwdSlab = fwd < 0 ? null : slab(g, e, g.partialTick(head, fwd, e), gr.footprint);
-                int[] bwdSlab = bwd < 0 ? null : slab(g, e, g.partialTick(bwd, tail, e), gr.footprint);
-                double fwdF = fwd < 0 ? Double.NEGATIVE_INFINITY
-                        : (gr.gain + fwdGain) / (gr.footprintSize + fwdSlab.length);
-                double bwdF = bwd < 0 ? Double.NEGATIVE_INFINITY
-                        : (gr.gain + bwdGain) / (gr.footprintSize + bwdSlab.length);
-                double now = gr.fitness();
-                if (Math.max(fwdF, bwdF) <= now) break;
-                if (fwdF >= bwdF) {
-                    gr.path.add(fwd);
-                    gr.gain += fwdGain;
-                    commit(g, gr, fwdSlab);
-                } else {
-                    gr.path.add(0, bwd);
-                    gr.gain += bwdGain;
-                    commit(g, gr, bwdSlab);
-                }
-                gr.trace.add(gr.fitness());
+    /**
+     * Grows every seed on every edge and returns the grown paths, best {@code F} first, with
+     * the {@code count} winners — disjoint in tau on any one edge — at the front.
+     *
+     * @param edges  the edges to search
+     * @param skip   edges to leave alone, self-inverse ones for now
+     * @param margin steps from either end of an edge a seed may not lie within (graph distance)
+     */
+    public static List<Found> find(NavMap map, int[] edgeOf, int[] live, int liveCount, double[] tau,
+                                   double[] length, int[] edges, int[] skip, Kind kind, int count,
+                                   int margin) {
+        Ground g = new Ground(map, edgeOf, live, liveCount, tau, length);
+        List<Found> grown = new ArrayList<>();
+        for (int e : edges) {
+            if (Arrays.stream(skip).anyMatch(x -> x == e)) continue;
+            for (Seed s : seeds(g, kind, e, margin, SEEDS_PER_EDGE)) grown.add(grow(g, kind, s));
+        }
+        grown.sort(Comparator.comparingDouble((Found f) -> -f.fitness()));
+        List<Found> out = new ArrayList<>();
+        List<Found> rest = new ArrayList<>();
+        for (Found f : grown) {
+            boolean clash = false;
+            for (Found w : out) {
+                if (w.edge() == f.edge() && f.hi() >= w.lo() && f.lo() <= w.hi()) { clash = true; break; }
             }
-
-            int[] path = gr.path.stream().mapToInt(Integer::intValue).toArray();
-            double[] trace = gr.trace.stream().mapToDouble(Double::doubleValue).toArray();
-            found.add(new Found(kind, e, path, g.tau[path[0]], g.tau[path[path.length - 1]],
-                    gr.footprintSize, gr.fitness(), trace));
+            if (!clash && out.size() < count) out.add(f); else rest.add(f);
         }
-        return found;
+        out.addAll(rest);
+        return out;
     }
 
-    private static void commit(Ground g, Growth gr, int[] slab) {
-        for (int st : slab) {
-            if (!gr.footprint[st]) { gr.footprint[st] = true; gr.footprintSize++; }
-        }
+    /** The same on a solver's map-wide clock, over every edge. */
+    public static List<Found> find(NavMap map, SolverFacts f, int[] skip, Kind kind, int count, int margin) {
+        DecisionZone.Kernel k = DecisionZone.Kernel.of(f);
+        int[] edges = new int[f.edges()];
+        for (int e = 0; e < edges.length; e++) edges[e] = e;
+        return find(map, k.edgeOf(), k.live(), k.liveCount(), f.tickOf(), f.length(), edges, skip,
+                kind, count, margin);
     }
 
-    /** Whether a tau on an edge lies within a found path's range there. */
-    private static boolean excluded(List<Found> found, int e, double tau) {
-        for (Found f : found) {
-            if (f.edge() != e) continue;
-            double lo = Math.min(f.tau0(), f.tauN()), hi = Math.max(f.tau0(), f.tauN());
-            if (tau >= lo && tau <= hi) return true;
-        }
-        return false;
+    /** The same on a route's own clock, over the route's edges. */
+    public static List<Found> find(NavMap map, RouteClock.Fit fit, int[] skip, Kind kind, int count,
+                                   int margin) {
+        return find(map, fit.edgeOf(), fit.live(), fit.liveCount(), fit.tau(), fit.length(),
+                fit.route(), skip, kind, count, margin);
     }
 
     /** The colours the paths are drawn in: warm for shortcuts, cool for longcuts. */

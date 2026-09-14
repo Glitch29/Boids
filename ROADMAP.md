@@ -1960,11 +1960,15 @@ path's tau range is excluded from seeding the next (growth into it is allowed, t
 happens). Two shortcuts, then two longcuts with the sign flipped; draw them on the map. Finding
 only — the path is not phase-complete and is not turned into a decision zone.
 
-**Result.** It settles, at 2 to 19 steps. The one long path is a real lane: edge 1, tau 30.4 to
-52.2, +2.79 tau beyond one a tick over nineteen ticks, `F` rising monotonically to the stop.
-Three things to decide next, in `EDGES.md`: seeds go to boundary artifacts unless kept ~15 ticks
-from an end; a single-tick seed is an outlier and the lane was found second; and a self-inverse
-edge's footprint carries the other direction of travel, which makes its `F` incomparable.
+**Result, after the same day's second pass** (seeds from the best six-step runs by a dynamic
+programme, one- and three-step growth, a margin in graph steps, edge 8 skipped, run on the
+map-wide clock and on each route's own via `RouteClock`): it settles at 17–41 steps, every winner
+is a lane along the inside or outside of a bend at a sustained +0.05 to +0.15 tau beyond one a
+tick, edge 0 finds edge 1's lane flown the other way, and **the route clocks find the same paths
+as the map-wide clock** — same states, same footprints, `F` within 0.00001. The map-wide clock
+will do for placement; a route only decides which edges to search. One strong lane, edge 2's
+tail toward the `2→1` exit, is excluded by the step margin and wants the exit-saturation
+question answered. `EDGES.md` §2a "Placing a subpath".
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
 

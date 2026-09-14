@@ -60,11 +60,28 @@ the first's range. Edge 8's footprint is 10,195 of 14,280 because it is self-inv
 other direction sits in every `E⊥S`. Recorded in `EDGES.md` §2a "Placing a subpath",
 `ROADMAP.md` §0i; renders at `render/subpaths/dabeone-609cffdb84be218c-margin{0,15}.png`.
 
-**Open.** For the search: seed by a short run rather than a single tick (the lane was found
-second, from a weaker seed); footprint within the direction of travel on self-inverse edges; then
-translating a found path into a phase-complete subpath. Unchanged from 2026-09-12: cross-border
-subpaths, the search over decisions; a real `insert` with the reachability assertion; the cut
-construction for unlocked maps; §0i's questions (1) and (3).
+**Then the second pass, on the user's three points.** Route-specific tau: `RouteClock` extracted
+from `routeClock` (corridor + refit), and the search run on the map-wide clock and on each
+route's own. Edge 8 skipped as self-inverse. Seeding and growth rebuilt: per edge a dynamic
+programme over the (acyclic) transitions gives the best six-step run ending at every state; the
+top four by rate, disjoint in tau, are seeds; growth tries the best one- and three-step
+extension at each end with try-and-roll-back on the footprint; all grown paths are ranked by `F`.
+**First comparison across clocks was confounded**: the margin was in tau, and tau differs per
+edge between clocks by a constant (+16 on edge 2 under `[2, 7, 4]`), so the route clocks "found"
+entrance shortcuts the map-wide clock did not — the margin's doing. Changed to graph distance
+from the edge boundary; then **every winner on a route's clock is the same states, footprint and
+`F` (±0.00001) as on the map-wide clock**, or the map-wide runner-up where the route limits the
+edges. Winners: edge 1's lane 17 steps +0.146/tick `F` 0.00053; edge 0 the same lane reversed
+(+0.138/tick, 0.00049); longcuts edge 0 128.6→147.0 (−0.077/tick, 0.00044) and edge 1
+98.6→121.1 (−0.064/tick, 0.00043); edge 5's 31-step longcut on the exit routes. The step margin
+excludes edge 2's tail lane toward `2→1` (31 steps, +0.073/tick map-wide, +0.095 on the route,
+the best `F` seen at 0.00072) as within fifteen steps of the exit zone — a real lane that runs
+into the branch. ~33 s for four clocks. Recorded in `EDGES.md` §2a, `ROADMAP.md` §0i.
+
+**Open.** Whether a lane that runs into the exit zone can be a subpath (exit saturation);
+translating a found path into a phase-complete subpath; then the search over decisions.
+Unchanged from 2026-09-12: cross-border subpaths; a real `insert` with the reachability
+assertion; the cut construction for unlocked maps; §0i's questions (1) and (3).
 
 ## 2026-09-12 — braiding: why one-to-three junctions do not settle, and it is not a bug
 

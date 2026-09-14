@@ -144,7 +144,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 59 files.
+One package, `src/boids`, 60 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -199,7 +199,8 @@ edge's exit decision, or a subpath along it, as gates — a region entered, proh
 per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone —
 **one step of lookahead is all of navigation** — stateless, label prefix `g`; the route pilot it
 replaced flew identically and was retired 2026-09-13) · `SubpathSearch` (where a subpath
-should run: grows paths by tau gained over footprint, and draws them; finding only) · `CorpusPreset` (named recipes, so a
+should run: grows paths by tau gained over footprint, and draws them; finding only) · `RouteClock` (the clock refitted on one
+route alone, for `routeClock` and the search) · `CorpusPreset` (named recipes, so a
 corpus is addressed by the settings that produced it). See `CORPUS.md`.
 
 > **Removed 2026-09-08, with the era they belonged to.** `PsyboidBits` (bit-string branch
@@ -250,7 +251,7 @@ ways → 6 edges.
 | `zones` | the exit decision zone of every edge, checked, then flown alone and in the flock: gates crossed in pairs, laps |
 | `subpaths` | three subpaths on one edge — coasting, left-hugging, right-hugging — each built as a zone, checked, and flown taken and skipped, alone and in a flock; plus the `S_1` saturation sweep |
 | `routeClock` | the clock refitted on one route at a time against the map-wide one: lengths, spans, and the within-edge spread of the change in tick |
-| `subpathSearch` | grows two shortcuts and two longcuts by the fitness `F`, prints each with its `F` by length, draws them on the map |
+| `subpathSearch` | two shortcuts and two longcuts per clock — the map-wide one and each route's own — seeded from the best six-step runs, grown by `F`, ranked, and drawn per clock |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` prints one sampled exit tick by tick, marking which

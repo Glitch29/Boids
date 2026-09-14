@@ -564,53 +564,88 @@ follow the path only on the phases that can reach it.
 **Not yet.** Subpaths that cross an edge border, which the user expects to be possible with more
 manipulation.
 
-### Placing a subpath: the fitness search, first try
+### Placing a subpath: the fitness search
 
 **Specified by the user and built 2026-09-13** — `SubpathSearch`, driven by
 `SimTest.subpathSearch`, drawn to `render/subpaths/`. Finding only: what comes out is a path, not
-a phase-complete subpath, and is not turned into a zone.
+a phase-complete subpath, and is not turned into a zone. **Per route**, on the route's own clock
+(`RouteClock`, §5), since a shortcut is a shortcut *toward somewhere*.
 
 **The score.** For an `N`-step path `P` along one edge, `F = ±(tau(P_N) − tau(P_0) − N) /
 |⋃ᵢ (E⊥Sᵢ ∪ Sᵢ)|` — tau gained beyond one per tick (sign flipped for a longcut) over the path's
 **footprint**, the states level with it rather than committed to it, with `Sᵢ` the partial tick
 of step `i`. The footprint of a single step is a slab of some fifteen to twenty ticks of corridor
 (1,500–2,600 states on dabeone's long edges), which is the fixed cost that makes the ratio settle
-at a finite length. **Grown greedily**: seed with the on-edge tick spanning the most tau; each
-round score the best tick off either end and take it if it raises `F`; stop when neither does. A
-found path's tau range on its edge is excluded from seeding the next of its kind.
+at a finite length. On a short edge it saturates at the edge — a 24-step longcut on edge 7 has a
+footprint of 11,150 of 16,138 — so short edges score low by construction.
 
-**Measured, dabeone `609cffdb84be218c`, two of each kind.**
+**Finding the best `F`.** The first try seeded at the single tick spanning the most tau and grew
+one tick at a time. That seed is an outlier, not a lane: it grew to four steps, and the one lane
+it found came second, from a weaker seed, only because the first's range was excluded. Seeded
+anywhere it went to the clock's boundary artifacts — tau 0.3 of an edge, tau 162 of one 158 long
+(§8) — where a tick reads as 1.7 tau. So now, per edge: a dynamic programme over the edge's
+transitions (acyclic, every orbit being cut) finds the best six-step run ending at every state;
+the top four runs by gain per step, disjoint in tau and at least fifteen **steps** from either
+end, are seeds; each is grown by the best one- or three-step extension at either end — three, so
+one poor tick does not end a lane; every grown path is scored; the best `F` wins, and a winner's
+tau range excludes overlapping candidates. Edge 8 is skipped: it is self-inverse, so the other
+direction of travel sits in every `E⊥S` and its footprint is 10,195 of 14,280 whatever the path.
+Phase-complete pathing would resolve that; until then it is left out.
 
-| seeds | kind | edge | steps | tau | beyond one a tick | footprint | `F` |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| anywhere | shortcut | 8 | 10 | 0.3 → 10.9 | +0.67 | **10,195** | 0.00007 |
-| | shortcut | 0 | 4 | 69.9 → 74.6 | +0.67 | 2,570 | 0.00026 |
-| ≥ 15 ticks from an end | shortcut | 0 | 4 | 69.9 → 74.6 | +0.67 | 2,570 | 0.00026 |
-| | **shortcut** | **1** | **19** | **30.4 → 52.2** | **+2.79** | 5,101 | **0.00055** |
-| either | longcut | 0 | 4 | 32.2 → 35.5 | −0.70 | 1,967 | 0.00036 |
-| | longcut | 0 | 2 | 29.0 → 30.3 | −0.67 | 2,007 | 0.00034 |
+**The margin is graph distance, not tau, and that matters.** Tau on one edge differs between
+clocks by a constant — the gauge, up to +16 ticks on edge 2 under `[2, 7, 4]` — so a margin in
+tau cuts at a different place on each clock, and the first comparison across clocks was mostly
+the margin: the route clocks "found" shortcuts at edge entrances the map-wide clock did not,
+because their seed windows started ten ticks earlier in the corridor. Measured in steps from the
+nearest state with an off-edge predecessor, or to the nearest with an off-edge successor, the
+window is the same states whichever clock is asked.
 
-**It settles, as predicted** — at 2 to 19 steps, with `F` rising monotonically to the stop on
-the one long path. That path is the finding: **edge 1, tau 30.4 to 52.2, nineteen ticks gaining
-2.79 tau beyond one a tick, about 15% a tick sustained** — a lane along the inside of the bend
-where the diagonal corridor meets the left loop, and the best `F` of anything found.
+**Measured, dabeone `609cffdb84be218c`, two of each kind per clock, edge 8 skipped, ~8 s a
+clock.**
 
-**Three things the first try showed.**
+| clock | kind | edge | steps | tau | beyond one a tick | footprint | `F` | where |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| map-wide | shortcut | 1 | 17 | 32.1 → 51.6 | +2.48 (+0.146/tick) | 4,703 | 0.00053 | inside of the bend where the diagonal meets the left loop |
+| | shortcut | 0 | 18 | 111.0 → 131.5 | +2.48 (+0.138/tick) | 5,027 | 0.00049 | **the same lane, flown the other way** |
+| | longcut | 0 | 20 | 128.6 → 147.0 | −1.54 (−0.077/tick) | 3,464 | 0.00044 | outside of the left loop |
+| | longcut | 1 | 24 | 98.6 → 121.1 | −1.55 (−0.064/tick) | 3,568 | 0.00043 | outside of the top loop |
+| `[4, 2, 1, 5, 8]` | shortcut | 1 | 17 | 30.0 → 49.5 | +2.47 | 4,703 | 0.00053 | the same states as map-wide |
+| | shortcut | 1 | 25 | 50.2 → 78.0 | +2.83 (+0.113/tick) | 6,159 | 0.00046 | the map-wide runner-up, same states |
+| | longcut | 1 | 24 | 96.5 → 119.0 | −1.58 | 3,568 | 0.00044 | the same states as map-wide |
+| | longcut | 5 | 31 | 61.3 → 90.3 | −2.01 (−0.065/tick) | 4,679 | 0.00043 | outside of the right loop; map-wide 0.00042 on the same states |
+| `[4, 0, 3, 5, 8]` | shortcut | 0 | 18 | 110.9 → 131.4 | +2.47 | 5,027 | 0.00049 | the same states as map-wide |
+| | shortcut | 0 | 9 | 82.5 → 92.7 | +1.19 (+0.133/tick) | 3,426 | 0.00035 | the same states as map-wide |
+| | longcut | 0 | 21 | 127.5 → 146.9 | −1.61 | 3,625 | 0.00044 | the map-wide path, two pixels off |
+| | longcut | 0 | 23 | 34.5 → 56.0 | −1.46 | 3,380 | 0.00043 | the same states as map-wide |
+| `[2, 7, 4]` | shortcut | 7 | 21 | 72.7 → 94.7 | +0.96 (+0.046/tick) | 3,229 | 0.00030 | the map-wide edge-7 candidate, same states |
+| | shortcut | 2 | 22 | 31.5 → 55.5 | +2.09 (+0.095/tick) | 7,022 | 0.00030 | the map-wide edge-2 candidate, same states |
+| | longcut | 4 | 41 | 1.6 → 41.1 | −1.51 (−0.037/tick) | 4,321 | 0.00035 | |
+| | longcut | 2 | 21 | 57.3 → 76.8 | −1.56 (−0.074/tick) | 5,015 | 0.00031 | |
 
-1. **Seeded anywhere, the seeds go to the clock's boundary artifacts** — tau 0.3 of edge 8, and
-   tau 162 on an edge 158 long (§8, extremes at crossings). A single tick there reads as 1.7 tau
-   and is not a lane. Seeding at least fifteen ticks from either end is what found the edge-1
-   lane; that margin is a parameter, and the unrestricted run is kept beside it for the record.
-2. **The seed is a single-tick outlier, and a lane is not made of outliers.** The best single tick
-   on the map (+0.67) grew to four steps; the lane was found second, from a seed of +0.3, and
-   only because the first's range was excluded. Seeding by the best short *run* of ticks, or
-   growing several seeds and ranking by the `F` they settle at, would find it first.
-3. **A self-inverse edge inflates the footprint.** Edge 8 holds both directions of the scoring
-   corridor, and the other direction is in every `E⊥S`, so its footprint is 10,195 of 14,280
-   states and its `F` is a fifth of anything comparable. Either the footprint should be taken
-   within the direction of travel, or the inverse half discounted.
+**What it finds are lanes.** Every winner is 17–41 ticks of sustained +0.05 to +0.15 (or −0.04
+to −0.08) tau beyond one a tick, with `F` rising monotonically to its stop, and on the map they
+are the inside and outside lines of bends. Edge 0's shortcut is edge 1's lane flown the other
+way — the same pixels, `(64,138) → (29,210)` against `(31,204) → (65,136)` — found from an
+inverse edge's own seeds, which is the free correctness check of §5 in another form.
 
-The second longcut seeded adjacent to the first's excluded range and did not grow into it.
+**The route clocks and the map-wide clock find the same paths.** With the margin in steps,
+every winner on a route's own clock is the same states, the same footprint and `F` within
+0.00001 of what the map-wide clock finds on that edge, or the map-wide runner-up where a route
+restricts which edges are on offer. The user's guess was that a route's own tau would be free of
+shortcut artifacts; what the measurement says is that once the boundary zone is excluded the
+same way on every clock, there is nothing a route's tau sees that the map-wide tau does not —
+consistent with §5, where the two differ within an edge by a constant to within 0.7 ticks. So
+**the map-wide clock will do for placement**, and a route only decides which edges to search.
+
+**What the step margin excluded, and should be looked at.** With the margin in tau, both the
+map-wide clock and `[4, 2, 1, 5, 8]`'s found a 31-step shortcut along edge 2's tail — map-wide
+tau 66.0 → 99.3, +2.25 beyond one a tick; on the route +2.94 and the best `F` of anything,
+0.00072 — hugging the inside of the lower-left loop on the way to the `2→1` exit. In steps it
+sits within fifteen of the exit zone and is not seeded. Thirty-one ticks of +0.07 to +0.10 a
+tick is not an artifact; it is a lane that runs into the branch, and whether such a lane can be
+a subpath is the exit-saturation question of the section above rather than a placement one.
+
+
 
 ---
 
