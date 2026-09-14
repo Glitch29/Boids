@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-357 prompts across 12 sessions.
+368 prompts across 13 sessions.
 
 ---
 
@@ -10534,3 +10534,130 @@ In the more general case where we aren't phase locked, I suspect we'll need a mo
 ### 30
 
 This is the end of this session. Please update HINTS.md, and any other docs. The next session is likely going to start by trying to confirm that a bifurcation of E⊥S with proper merging can avoid edge blowup downstream. I suspect the answer is no, meaning that E⊥S can have multiple parts for analysis purposes or psyboid logic purposes, but they can't be made to follow the edge axiom.
+
+---
+
+## Session 13 - 2026-09-12
+
+*Log `82b1ea93-55a4-4bad-b39b-4c4e5e612674`, 11 prompts.*
+
+### 1
+
+Boot up on the boids project.
+
+Note: Understanding the edge axiom how it relates to navigation is particularly important. Conceptualizing partially-constrained navigation through a 3-dimensional set of states is difficult. Edges are how that is done.
+
+### 2
+
+Awesome. Just wanted to make sure you read CLAUDE.md as well, since I didn't see that in the file list. (possible it just doesn't show up on my end)
+
+I also realized I had you on Low rather than Ultracode, so I'm giving you another turn just to poke around.
+
+Slight change of plans, although very much the same topic as the note you were left with from last session. We're going to look into edge blowup in the context of bug hunting refine().
+
+Right now it works fine when splitting to or merging from 2 edges, but frequently blows up when 3 edges are involved. The more I've thought about this the more I realize it should never be the case. If edge O leads to edges A, B, C, edge every state should be able to map to an edge based on which of A, B, C it can still reach, making the total number of edges in the system for the successor half of the axiom to hold at most 7: O, AB, AC, BC, A, B, C. Looking at the predecessor side, A, B, and C all have two possible sources, and can also be split as necessary into up to three edges {A_via_AB, A_via_AC, A}. The whole system, complete with the entire edge axiom should contain at most 13 edges, although some of those theoretical edges may contain zero actual.
+
+Up until a bug last session was fixed, it was understandable that these edges would not generate properly, as any edge which could in some places be skipped over in a single tick would cause the subsequent edge to have mismatched predecessors; sometimes seeing the thin edge and sometimes seeing its predecessor.
+
+After you're looking through the code, I'd like you to draw me a couple of directed edge graphs. One showing the maximum minimal edge graph that could be needed to satisfy the edge axiom for {X} -> {A, B, C}. Another to show the maximum minimal edge graph that could be needed to satisfy the edge axiom for {X, Y} -> {A, B}.
+
+### 3
+
+Argh! You're correct. {AB, C} and {A, BC} are different, as is {AC, B}. Then {{{AB,C},{A,BC}},{{AC,B}}} and {{{AB,C},{AC,B}},{{A,BC}}} and {{{AC,B}},{A,BC}},{{AB,C}}} are also all different. I should've given more trust to the past version of myself that came up with that same conclusion. Somehow, I didn't see this infinite "braiding" problem this time around, despite knowing that I'd verified it's existence earlier. Human-sided context loss.
+
+Good catch. That does resolve the E⊥S question. Splitting it is going to cause issues, since it will lead to 3 edges joining at once.
+
+There might one day be an alteration to the edge rule, or the introduction of a new sub-edge structure that can handle these joints. But for the moment this is a dead end.
+
+For right now, if O -> ABC splitting via edges cleanly requires that two of {A, BC}, {B, AC}, {C, AB} be empty sets. Theoretically the empty sets could be further up the braid. But those are the way that lead to simple edges.
+
+Make a note of braiding in the docs, as a reason that one-to-three intersections are problematic.
+
+### 4
+
+Next step is building gates specifically to manage psyboid logic. First for pathing between edges and then for shortcuts/longcuts.
+
+In both cases, we're looking for highly localized behavior, in the form of:
+
+* Psyboid crosses a gate that indicates the start of a decision zone
+* Depending on the decision, psyboid is given 1 or more gates that it will not cross
+* Psyboid crosses a gate that ends this behavior
+
+
+It might be possible to do this with state-based gates only, but transition-based gates makes constructing some of these much simpler. State-based gates can be converted into transition-based gates just by including all transitions into those states.
+
+Creating the decision gate for exits is as follows: Let S be the set of all states that can exit edge E, plus their forward closure on E. The decision gate is all transitions from E-S to S.
+
+The gate of prohibited travel is all transitions from E to whichever subsequent edge wasn't selected. The gate that ends this behavior is all transitions off of E.
+
+The gate that prompts the decision and the gate that ends the decision should both be gates on the same edge, with the decision gate being upstream of the ending gate. This guarantees that they will be crossed in pairs, and is functionally equivalent to them bounding a convex set of states. So they could alternately be represented as a region. I've got no strong feelings about how they're stored or implemented. I am noticing that these gates could be represented as states rather than transitions if stored this way. That will continue to be true for decision regions, but not for prohibited movement.
+
+Note: Convexity means that there's no local navigation from S to S-compliment back to S. Equivalently, any state that can forwards-navigate to S and backwards-navigate to S is in S without use of orbits.
+
+### 5
+
+We found out last session that E⊥S does not bifurcate easily, given that navigation through an edge has three full degrees of freedom (phase, d, strafing).
+
+But having given it more thought I realized that wasn't ever necessary. Prohibiting E<S → E⊥S, and thereby forcing E<S → S accomplishes the same thing more directly, while only dealing with 4 phantom edges at a time.
+
+I think that sensible way to do it is to define a shortcut/longcut as a subpath within an edge containing N state transitions. We define one subpath explicitly, and the alternate phases will end up falling out as we construct phase-complete phantom edges. For each transition along the subpath, we take the partial tick to be S.
+
+Figuring out exactly where to place these to be effective shortcut/longcuts is harder to specify, and can be broken off into a separate task. For right now I'm not particularly worried about how we're going to choose which path along an edge we'd like a boid to follow. I just want to see that we can specify a route and that it works.
+
+Using the exact same calculation as with edge navigation, the decision zone for this would begin with the states that can navigate across the first E⊥S or S, forward-closed on E<S. The decision zone ends with the transition off of the final E<S onto either the final E⊥S or the final S.
+
+Note: Constructing shortcuts that cross edge borders should be possible, but will require slightly more manipulation. I'm not going to fully spec it out this turn, and for the moment we can consider it to be a possible feature in the future. Let's stick to subpaths where the first and last partial tick saturate the entrance and exit, respectively, so we don't need to deal with edge borders at all.
+
+### 6
+
+Alright. I definitely think it makes the most sense to consider shortcuts/longcuts on a per route basis. If we haven't defined routes already, they're any simple loop. In practice we only care about stable routes (a.k.a. orbits) and scoring routes, as any route that doesn't have either of those features is almost never going to be used.
+
+We're currently defining tau based on a map-wide calculation. I'm not sure if that agrees with how tau would be calculated for just one route at a time. I suspect it won't, but I'd like to check. I'd also like to see how big of a difference it makes. Both whether edge lengths change, and the largest change of any single edge subpath. Note: The largest change of any single subpath is going to be a degenerate metric if edge lengths significantly change, so don't worry about it if that's the case.
+
+Note: I think the tau calculation machinery already takes into account certain edge length decisions being arbitrary. But they're going to be almost entirely arbitrary when calculating the whole route at once, with just one variable for total route length.
+
+### 7
+
+I went back and checked old transcripts to see what weighing scheme was most appropriate. And it turned out that CIRCULATION was the best. But that was before we'd established good record-keeping practices, so I think that information didn't get recorded.
+
+I'm confident enough in that decision to say it's not going to be revisited. Let's tear out MOMENTUM and any of the other non-winning weight configurations.
+
+I'll leave it to you to decide whether it's worth noting that they used to exist.
+
+Also - could you make sure there's no integer rounding left in that code? Edge lengths were being stored as integers at one point, which was a bug. But I'm not sure if that code was corrected or just written around. Either way, we shouldn't have anything be forced to integer lengths.
+
+While I'm thinking of it, now's a good time to take a look at anything else where we might have multiple versions of the same code in existence. Let me know if you spot any redundancies, and we can make sure that the reason for picking a winner is recorded, and all the losers are cleaned up.
+
+### 8
+
+I've confirmed that LIFTED was the actual winner, as you're saying. When searching through the transcripts, I saw that CIRCULATION was originally declared the winner without noticing a bug discovered afterward that invalidated that result.
+
+Go ahead and make the cleanup. I agree with your evaluation.
+
+### 9
+
+Awesome. Let's focus our attention to creating a discrete set of shortcuts for a map. I've got a couple things I want to try.
+
+The first focuses on creating a N-step path P that maximizes the fitness score F = (tau(P_0)-tau(P_N) - N)/size(union over all i of (R⊥S_i+S_i)) where S_i is the partial tick from P_i to P_i+1. Since this focuses on maximizing an average cost function with fixed costs involved, it should settle at a non-zero finite length.
+
+The idea would be to start with the single tick that spans the largest tau, and take it as P_0 and P_1. The progressively add the highest-tau tick on either side and recalculating F, breaking when addition to the path in either direction would lower F.
+
+Exclude the tau range in the shortcut from seeding future shortcuts. (Growth into them is okay for now, just because I'd like to test if that happens naturally. Hopefully it just doesn't without needing to be explicitly addressed.)
+
+For testing purposes, let's just terminate this after two shortcuts are found for now. And do the same with a longcut. Draw them all on a map.
+
+Don't worry about actually implementing the found shortcut as an actual shortcut for now. This algorithm generates a path rather than a phase-complete path, so it would need translation and we don't have a good way to do that at the moment.
+
+### 10
+
+Are you using tau calculated for the route specifically? I was suggesting route-specific search with the optimistic guess that there wouldn't be any shortcut artifacts. Longcuts are a bit harder to predict though.
+
+The self-inverse edge problem would resolve itself if we enforced phase-complete pathing. Self-inverse edges are identical to speed-based phase-locked edges. For now, let's just exclude edge 8 from analysis altogether. Once we know more about what we want to do, I'll find a way to make self-inverse edges fit in.
+
+Regardless of what tau measure we're using, I agree that it makes sense to look at longer stretches when figuring out where to start. Go ahead and use whatever method you think is best to find the best F, which might mean starting with a larger stretch, using alternate heuristics to jump directly to a conclusion, or considering multi-step path additions.
+
+### 11
+
+I'm a little bit lost, but it sounds like something went horribly wrong. Graph distance from edge boundary is a completely arbitrary metric, and I can't imagine any good data would come from it. If there were mismatches at edges, was it because you were mixing and matching parts of different clocks? Tau values from one, edge lengths from another?
+
+When measuring tau around a route, there doesn't even need to be more than one edge. There just needs to be a cut somewhere arbitrary, and a single distance variable to add to each transition that crosses the cut.

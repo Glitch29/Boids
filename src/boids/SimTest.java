@@ -2223,53 +2223,50 @@ picks, never in what is available to it.
     }
 
     /**
-     * Finds {@code count} shortcuts and {@code count} longcuts with {@link SubpathSearch} — once
-     * on the map-wide clock over every edge, then on each route's own clock over that route's
-     * edges — prints the winners with the {@code F} they grew through and the runners-up, and
-     * draws each set on the map at {@code render/subpaths/<map>-<hash>-<clock>.png}.
+     * Finds {@code count} shortcuts and {@code count} longcuts on each route's own clock with
+     * {@link SubpathSearch} — no margin, the footprint over the route — prints the winners with
+     * the {@code F} they grew through and the runners-up, and draws two pictures: every route's
+     * shortcuts on one map, every route's longcuts on another, coloured by route and labelled by
+     * rank. {@code render/subpaths/<map>-<hash>-{shortcuts,longcuts}.png}.
      *
+     * @param routes the stable and scoring routes, each a cycle of edges
      * @param skip   edges left alone — the self-inverse ones, until phase-complete pathing
-     * @param margin ticks from either end of an edge a seed may not lie within on the map-wide
-     *               clock, where the ends carry the fit's strain. A route's own clock has no edge
-     *               boundaries and is searched with none
      */
     public static void subpathSearch(PresetScenarioParameter preset, SolverFacts.Gate gate,
-                                     int[][] routes, int[] skip, int count, int margin)
-            throws IOException {
+                                     int[][] routes, int[] skip, int count) throws IOException {
         Pipeline.Built b = Pipeline.build(preset, gate);
-        SolverFacts f = b.facts();
         EdgeDecomposition.Labelling l = b.labelling();
         NavMap map = l.map();
         String stem = "render/subpaths/" + preset.name().toLowerCase(java.util.Locale.ROOT) + "-"
                 + preset.ingest().hash();
 
-        List<SubpathSearch.Found> mapWide = new ArrayList<>();
         for (SubpathSearch.Kind kind : SubpathSearch.Kind.values()) {
-            System.out.printf("%n=== %s @%s: %ss on the map-wide clock, edges %s skipped, seeds %d+ ticks from an end ===%n",
-                    preset.name(), preset.ingest().hash(), kind.name().toLowerCase(java.util.Locale.ROOT),
-                    Arrays.toString(skip), margin);
-            List<SubpathSearch.Found> found = SubpathSearch.find(map, f, skip, kind, count, margin);
-            reportFound(found, count, map);
-            mapWide.addAll(found.subList(0, Math.min(count, found.size())));
-        }
-        SubpathSearch.draw(preset, map, mapWide, 3, Path.of(stem + "-mapwide.png"));
-
-        for (int[] route : routes) {
-            RouteClock.Fit fit = RouteClock.of(map, l, route);
-            List<SubpathSearch.Found> onRoute = new ArrayList<>();
-            for (SubpathSearch.Kind kind : SubpathSearch.Kind.values()) {
+            List<SubpathSearch.Drawn> drawn = new ArrayList<>();
+            List<String> legend = new ArrayList<>();
+            for (int r = 0; r < routes.length; r++) {
+                int[] route = routes[r];
+                RouteClock.Fit fit = RouteClock.of(map, l, route);
                 System.out.printf("%n=== %s @%s: %ss on route %s's own clock, lap %.2f, no margin ===%n",
                         preset.name(), preset.ingest().hash(), kind.name().toLowerCase(java.util.Locale.ROOT),
                         Arrays.toString(route), fit.lap());
                 List<SubpathSearch.Found> found = SubpathSearch.find(map, fit, skip, kind, count, 0);
                 reportFound(found, count, map);
-                onRoute.addAll(found.subList(0, Math.min(count, found.size())));
+                java.awt.Color colour = SubpathSearch.ROUTE_COLOURS[r % SubpathSearch.ROUTE_COLOURS.length];
+                String name = Arrays.toString(route).replace(" ", "");
+                if (r > 0) legend.add("");
+                legend.add(String.format("%s: route %s, lap %.1f", "ABCDEF".charAt(r), name, fit.lap()));
+                for (int i = 0; i < Math.min(count, found.size()); i++) {
+                    SubpathSearch.Found f = found.get(i);
+                    String label = "ABCDEF".charAt(r) + "" + (i + 1);
+                    drawn.add(new SubpathSearch.Drawn(f, colour, label));
+                    legend.add(String.format("  %s  edge %d, %d steps, %+.3f/tick, F %.5f", label,
+                            f.edge(), f.steps(), kind.sign * f.gain() / f.steps(), f.fitness()));
+                }
             }
-            StringBuilder name = new StringBuilder(stem).append("-route");
-            for (int e : route) name.append('-').append(e);
-            SubpathSearch.draw(preset, map, onRoute, 3, Path.of(name + ".png"));
+            Path out = Path.of(stem + "-" + kind.name().toLowerCase(java.util.Locale.ROOT) + "s.png");
+            SubpathSearch.draw(preset, map, drawn, legend, 3, out);
+            System.out.printf("%nwrote %s%n", out);
         }
-        System.out.printf("%nwrote %s-*.png%n", stem);
     }
 
     private static void reportFound(List<SubpathSearch.Found> found, int count, NavMap map) {
@@ -2311,7 +2308,7 @@ picks, never in what is available to it.
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
         subpathSearch(PresetScenarioParameter.DABEONE, dab,
-                new int[][]{{2, 7, 4}, {4, 2, 1, 5, 8}, {4, 0, 3, 5, 8}}, new int[]{8}, 2, 15);
+                new int[][]{{2, 7, 4}, {4, 2, 1, 5, 8}, {4, 0, 3, 5, 8}}, new int[]{8}, 5);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

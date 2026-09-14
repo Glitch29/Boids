@@ -94,7 +94,10 @@ and edge 1 longcuts 0.00043–0.00044); the crossing-huggers deflated (0.00053 �
 clock with no margin. So: **a route's own tau has no shortcut artifacts**, and the map-wide
 margin was guarding the footprint's truncation as much as the fit. Edge 2's tail lane toward
 `2→1` stands as the best on the exit route (28 steps, +0.100/tick, 0.00056). Recorded in
-`EDGES.md` §2a and §5, `ROADMAP.md` §0i.
+`EDGES.md` §2a and §5, `ROADMAP.md` §0i. Then, at the user's ask, the driver dropped the
+map-wide search altogether — routes only, top five of each kind per route on its own clock —
+and draws two pictures, shortcuts and longcuts, coloured by route with a legend panel:
+`render/subpaths/dabeone-609cffdb84be218c-{shortcuts,longcuts}.png`.
 
 **Open.** Whether a lane that runs into the exit zone can be a subpath (exit saturation);
 translating a found path into a phase-complete subpath; then the search over decisions.

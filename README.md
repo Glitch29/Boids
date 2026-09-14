@@ -251,7 +251,7 @@ ways → 6 edges.
 | `zones` | the exit decision zone of every edge, checked, then flown alone and in the flock: gates crossed in pairs, laps |
 | `subpaths` | three subpaths on one edge — coasting, left-hugging, right-hugging — each built as a zone, checked, and flown taken and skipped, alone and in a flock; plus the `S_1` saturation sweep |
 | `routeClock` | the clock refitted on one route at a time against the map-wide one: lengths, spans, and the within-edge spread of the change in tick |
-| `subpathSearch` | two shortcuts and two longcuts per clock — the map-wide one and each route's own — seeded from the best six-step runs, grown by `F`, ranked, and drawn per clock |
+| `subpathSearch` | the top `count` shortcuts and longcuts on each stable or scoring route's own clock, no margin, footprint over the route; two pictures, one per kind, coloured by route and labelled by rank |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
 points and do not live in `SimTest`. `explain` prints one sampled exit tick by tick, marking which

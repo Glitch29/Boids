@@ -491,39 +491,56 @@ public final class SubpathSearch {
                 fit.liveCount(), fit.tau(), fit.lo(), hi, fit.route(), skip, kind, count, margin);
     }
 
-    /** The colours the paths are drawn in: warm for shortcuts, cool for longcuts. */
-    private static final Color[] WARM = {new Color(0xE6194B), new Color(0xF58231), new Color(0xFFE119)};
-    private static final Color[] COOL = {new Color(0x4363D8), new Color(0x42D4F4), new Color(0x911EB4)};
+    /**
+     * One path to draw: which, in what colour, with what label at its start.
+     */
+    public record Drawn(Found found, Color colour, String label) {}
+
+    /** A colour per route, in the order routes are given. */
+    public static final Color[] ROUTE_COLOURS = {
+            new Color(0xE6194B), new Color(0x3CB44B), new Color(0x4363D8), new Color(0xF58231),
+            new Color(0x911EB4), new Color(0x42D4F4)};
 
     /**
-     * Draws the paths over the map's display image at {@code scale}, each as a polyline with a
-     * ring at its start, and writes it.
+     * Draws paths over the map's display image at {@code scale}: each a polyline with a ring and
+     * its label at the start, plus a legend of the labels in the top-left corner.
      */
-    public static void draw(PresetScenarioParameter preset, NavMap map, List<Found> paths, int scale,
-                            Path out) throws IOException {
+    public static void draw(PresetScenarioParameter preset, NavMap map, List<Drawn> paths,
+                            List<String> legend, int scale, Path out) throws IOException {
         BufferedImage base = javax.imageio.ImageIO.read(preset.ingest().dir().resolve("display.png").toFile());
         int w = base.getWidth(), h = base.getHeight();
-        BufferedImage img = new BufferedImage(w * scale, h * scale, BufferedImage.TYPE_INT_RGB);
+        // The legend gets a panel of its own to the right, so nothing sits on the map.
+        int font = Math.max(10, 4 * scale), line = font + 4, panel = 0;
+        for (String text : legend) panel = Math.max(panel, 8 + (int) (text.length() * font * 0.62));
+        BufferedImage img = new BufferedImage(w * scale + panel, h * scale, BufferedImage.TYPE_INT_RGB);
         Graphics2D gfx = img.createGraphics();
         gfx.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         gfx.drawImage(base, 0, 0, w * scale, h * scale, null);
         gfx.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        int warm = 0, cool = 0;
+        gfx.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+        gfx.setFont(new java.awt.Font(java.awt.Font.SANS_SERIF, java.awt.Font.BOLD, font));
         int turns = Params.TURNS;
-        for (Found f : paths) {
-            Color c = f.kind() == Kind.SHORTCUT ? WARM[warm++ % WARM.length] : COOL[cool++ % COOL.length];
-            gfx.setColor(c);
+        for (Drawn d : paths) {
+            gfx.setColor(d.colour());
             gfx.setStroke(new BasicStroke(Math.max(1.5f, scale * 0.9f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            int[] p = f.path();
+            int[] p = d.found().path();
             for (int i = 0; i + 1 < p.length; i++) {
                 int a = p[i] / turns, b = p[i + 1] / turns;
                 gfx.drawLine((a % w) * scale + scale / 2, (a / w) * scale + scale / 2,
                         (b % w) * scale + scale / 2, (b / w) * scale + scale / 2);
             }
             int s = p[0] / turns;
-            int r = scale * 3;
+            int cx = (s % w) * scale + scale / 2, cy = (s / w) * scale + scale / 2, r = scale * 3;
             gfx.setStroke(new BasicStroke(Math.max(1f, scale * 0.5f)));
-            gfx.drawOval((s % w) * scale + scale / 2 - r, (s / w) * scale + scale / 2 - r, 2 * r, 2 * r);
+            gfx.drawOval(cx - r, cy - r, 2 * r, 2 * r);
+            gfx.drawString(d.label(), cx + r + 2, cy - r);
+        }
+        gfx.setFont(new java.awt.Font(java.awt.Font.SANS_SERIF, java.awt.Font.PLAIN, font));
+        int y = line;
+        for (String text : legend) {
+            gfx.setColor(Color.WHITE);
+            gfx.drawString(text, w * scale + 6, y);
+            y += line;
         }
         gfx.dispose();
         Files.createDirectories(out.getParent());
