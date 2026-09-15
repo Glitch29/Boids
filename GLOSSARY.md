@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-13, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-14, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -416,6 +416,28 @@ rather than committed to it, one slab per step, some fifteen to twenty ticks of 
 The denominator of the subpath **fitness** `F = ±(tau gained − N) / footprint`, whose fixed cost
 is what makes a greedily grown path settle at a finite length. `SubpathSearch`; `EDGES.md` §2a.
 
+**phase-complete path** — the user's definition, 2026-09-14: for a set `S` between gates `B` and
+`Y` on a route, a cover `P` of `S` whose every point backward-navigates to `B` and
+forward-navigates to `Y` within `P`, and whose **funnels** — the `N`th predecessors and `N`th
+successors of `P` within a wider pair of gates `A`, `Z` — project to `(x, y)` as a single region
+with no holes, saturating `A` and `Z` at some `N`. **Non-constructive, and does not fix `P`.**
+Tested once by `PhasePath`, run by hand, and passed back: `EDGES.md` §2a "Phase-complete paths".
+Not the same thing as `DecisionZone.subpath`'s chain of `S_k`, which is the stop-gap it is meant
+to replace.
+
+**lane** — the pixels a canonical path `S` sweeps: its own and, per step, the samples the step
+passes through, less dead pixels. What the other phases of the step lattice stand on; `P` is
+built to cover it. `PhasePath.lane`.
+
+**strand** — one `B → Y` path within `[B, Y]`, the cheapest through a given lane pixel with a
+state costing the square of its pixel's distance from the lane. `P` is `S` plus one strand per
+lane pixel left uncovered, in sweep order — fourteen on the first test. `PhasePath.cover`.
+
+**funnel** — for a path `P` and a segment `[A, Z]`, the sets exactly `N` steps before (or after)
+`P`, for every `N` until they leave the segment; the **cumulative** funnel is within `N` steps.
+`PhasePath.funnel`. On the first test the exact funnel has a **comb** at small `N` — side-feeders
+at discrete pixels — and meets the **speckle** of an insertion-built gate at the saturating `N`.
+
 **phantom edges** — the four pieces `E<S`, `S`, `E⊥S`, `E>S` that edge insertion makes of an edge
 around a set `S`, used by navigation logic without ever joining the decomposition. A subpath
 zone works with four at a time, one `S_k` after another.
@@ -749,6 +771,7 @@ anything not listed.
 | subpath decision zones | `DecisionZone.subpath`, flown by `DecisionOverride`, checked by `SimTest.subpaths` | in memory; printed |
 | the clock on one route | `SimTest.routeClock` — refit on a loop alone, compared three ways | printed |
 | subpath search | `SubpathSearch`, driven by `SimTest.subpathSearch` — seeds from the best six-step runs, grown by `F` = tau gained over footprint, per route on its own clock | `render/subpaths/<map>-<hash>-{shortcuts,longcuts}.png` |
+| phase-complete path | `PhasePath`, run by hand — strands over the lane between four insertion-built gates, then the funnels exactly `N` out and cumulatively, with their projection topology | `render/phase-path/<map>-<hash>-e<edge>-{cover,funnels}.png`; printed |
 | the clock on one route (fit) | `RouteClock.of` — the corridor and the refit; `Fit.tau` is `T`, one continuous coordinate round the loop | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |

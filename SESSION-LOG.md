@@ -11,6 +11,48 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-14 (evening) — the phase-complete path definition, tested once and passed back
+
+**Orientation first.** Read the root documents and the code behind the live thread; compiled
+clean. Noticed that `SubpathSearch` and `DecisionZone.subpath` measure different `S` (partial tick
+of every step against partial tick of the first and forward images after) — a reason (3) comes
+first. The user then said the existing subpath construction was a stop-gap to be discarded, and
+gave a **non-constructive definition of a phase-complete path** (recorded verbatim-near in
+`EDGES.md` §2a "Phase-complete paths" and `ROADMAP.md` §0i), asking for a construction and an early
+pass-back on a defect or a stall.
+
+**Built `PhasePath`** (`src/boids/PhasePath.java`, run from `SimTest.main`): a route cut at one
+crossing as far round as possible from the stretch; the straight-travel cycle as the coasting path;
+four seeds `a < b < y < z` by tick along it; gates by the `GateSplit` conditioning with the landing
+set of `E<core` as the gate's states; `S` the coasting states `b … y`; `P` as **strands** — the
+cheapest `B → Y` path within `[B, Y]` through each uncovered lane pixel, cost the squared distance
+from the lane; then the funnels exactly `N` out and cumulatively, with 8-connected components and
+4-connected holes, and a diagnostic that says what stands on any hole or gap pixel. Renders in
+`render/phase-path/`. The successor/predecessor pairing in the user's text was read swapped.
+
+**Numbers, dabeone `609cffdb84be218c`, route `[7, 4, 2]` cut `2→7`, seeds at ticks 70/110/160/200.**
+`S` 51 states, lane 198 live pixels (2 dead dropped), `P` **290 states in 14 strands** covering
+every lane pixel; 0 of 290 fail either navigation condition. Predecessor funnel: simply connected
+`N ≤ 4`, **2–3 holes at `N = 5 … 12`**, simply connected `13 … 53`, `A` (305 states) saturated at
+54, **two components `54 … 107`**. Successor funnel: holes on and off at `5 … 15`, simply connected
+from 16, `Z` (923) saturated at 41, one component throughout. Cumulative counts identical at every
+`N`. The holes are wall-side pixels alive at 2–3 headings whose states need 7–24 steps to join `P`,
+enclosed by the **comb** of side-feeders at exactly `N` — lattice, not `P`. The split is three
+states `(174–176, 356, 60)` of `A`'s landing set four pixels from the bulk, with `(177, 356, 60)`
+between them inside `E<core_A` — the insertion boundary is **speckled by phase** in projection, so
+"`A` saturated" and "within `AZ`" contradict each other at the saturating `N`.
+
+**Passed back.** The literal reading is not satisfiable by a thin `P` on this lattice, and the
+saturation clause needs a projection-clean gate. The funnel body between the two is clean. The
+user decides: exact or within `N`; every `N` or past fill-in; what a clean gate is.
+
+**Changed on disk.** `PhasePath.java` (new), `SimTest.main`; `EDGES.md` §2a and status,
+`ROADMAP.md` §0i and status, `README.md` (class map, entry points, artifact index, status),
+`GLOSSARY.md` (phase-complete path, lane, strand, funnel; named-analyses row; status), this entry.
+`render/phase-path/` is gitignored with the rest of `render/`.
+
+---
+
 ## 2026-09-14 — close of the 12th-to-14th session: the fitness has three defects, and the handoff
 
 **Pictures delivered**, top five shortcuts and longcuts per stable or scoring route, each on its

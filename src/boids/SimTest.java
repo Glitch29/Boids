@@ -2307,8 +2307,8 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        subpathSearch(PresetScenarioParameter.DABEONE, dab,
-                new int[][]{{2, 7, 4}, {4, 2, 1, 5, 8}, {4, 0, 3, 5, 8}}, new int[]{8}, 5);
+        PhasePath.run(PresetScenarioParameter.DABEONE, dab, new int[]{2, 7, 4}, 4,
+                new int[]{70, 110, 160, 200});
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

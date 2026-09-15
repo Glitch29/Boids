@@ -3,7 +3,7 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-14. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-14 (evening). Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
@@ -11,7 +11,9 @@ bootstrap, not an analysis tool" is retired. **§2a gained edge insertion and na
 2026-09-10** — how a gate is actually built, and how the same machinery does on-edge navigation
 for shortcuts. **§1 and §2a gained braiding on 2026-09-12** — the axiom groups by next edges, not
 by outcomes, so a one-to-three junction does not settle and a bifurcated `E⊥S` stays out of the
-decomposition.
+decomposition. **§2a gained the phase-complete path definition and its first test on
+2026-09-14** — the funnel condition fails on the lattice's comb and on a speckled gate, not on
+the path; amendment is with the user.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -673,6 +675,64 @@ reading, after sleeping on the pictures:
    `S_{k+1}` the forward image under the path's turn) only approximates — it translates the
    path and hopes the veto does not disturb it. That has to come first.
 
+### Phase-complete paths: the definition, and what its first test found
+
+**The user's definition, 2026-09-14, non-constructive.** For a set of states `S` between gates
+`B` and `Y` on route `R`, a **phase-complete path** `P` is a cover of `S` such that: every point
+of `P` can backward-navigate to `B` within `P`; every point of `P` can forward-navigate to `Y`
+within `P`; and for some gates `A` and `Z` on `R`, the set of `N`th predecessors of `P` within
+`AZ`, projected to `(x, y)`, has a single exterior border with no holes, saturating `A` for some
+`N`, and the set of `N`th successors of `P` within `AZ`, projected, likewise, saturating `Z` for
+some `N`. (As given, the successor bullet named `A` and the predecessor bullet `Z`; a successor
+funnel runs forward and can only meet the downstream gate, so they are read swapped.) The
+construction tried is `PhasePath`, run by hand: **strands** — `S`, then, while any pixel of the
+**lane** (`S`'s pixels plus its steps' partial-tick sweeps, less dead pixels) is uncovered, the
+cheapest `B → Y` path within `[B, Y]` through a state at that pixel, a state costing the square of
+its pixel's distance from the lane. The navigation conditions then hold by construction and the
+funnels are measured, exactly `N` steps out for every `N` and cumulatively, with 8-connected
+components and 4-connected holes. The definition does not fix `P` — its conditions are not closed
+under intersection — so the strand rule is a choice.
+
+**Setup, dabeone `609cffdb84be218c`, route `[7, 4, 2]` cut at `2→7`**, the straight-travel cycle
+(278 ticks) as the coasting path, seeds at ticks 70, 110, 160, 200 (`a` on edge 7, `b` and `y` on
+edge 4 at tau 13.1 and 61.9, `z` on edge 2), gates by the `GateSplit` conditioning with the landing
+set of `E<core` as the gate's states (305, 511, 376, 923 states; every corridor entrance reaches
+every core). `S` is the 51 coasting states from `b` to `y`; the lane is 198 live pixels; `P` came
+out as **290 states in 14 strands** covering every lane pixel, 39 states on pixels off the lane,
+every state reaching `Y` forward and `B` backward within `P`. The coasting path hugs the outer
+wall of the bend, and the other phases cannot hold the wall pixels round the curve, so the strands
+run one pixel inside it — a two-pixel line, which is what phase-completeness along a wall looks
+like. Two lane pixels are dead (the sweep along a wall crosses the dead band) and are excluded.
+
+**The funnels, exactly `N` out.** Predecessors: simply connected for `N ≤ 4`, **2–3 holes for
+`N = 5 … 12`**, simply connected for `N = 13 … 53`, `A` saturated at `N = 54`, and **two
+components for `N = 54 … 107`**. Successors: holes at `N = 5 … 15` on and off, simply connected
+from 16, `Z` saturated at 41, one component throughout. The cumulative sets (within `N`) show the
+same counts at every `N`. Renders: `render/phase-path/dabeone-609cffdb84be218c-e4-cover.png`,
+`-funnels.png`. Two distinct causes, both diagnosed to the pixel:
+
+1. **The comb.** At `N = 5` the predecessor set is `P` with teeth hanging into the corridor: the
+   states that join `P` from the side in exactly five steps sit at discrete pixels, the lattice
+   allowing only so many five-step approaches, and a tooth that curls encloses a pixel. The three
+   enclosed pixels — `(333,184)`, `(350,195)`, `(359,253)` — are wall-side pixels alive at two or
+   three headings 3–4 off the lane's, whose states reach `P` in **7 to 24** steps and never fewer,
+   so they are holes at 5 and 6 and filled after. This is the step lattice, not `P`: any thin `P`
+   has a comb, and the holes close by `N = 13` when the funnel has filled the cross-section.
+2. **The speckled gate.** From `N = 54` three states `(174–176, 356, 60)` — all in `A`'s landing
+   set, exactly `N` from `P` for every `N` in `54 … 108` — stand four pixels from the rest with
+   `(177, 356)` between them, whose heading-60 state is in `E<core_A` and so outside `[A, Z]`.
+   Whether `(x, 356, 60)` can reach `core_A` alternates with `x`: the landing set of an insertion
+   boundary is **speckled by phase** in projection, exactly as `E⊥S` is (§2a, "`E⊥S` has no
+   sides"). So "`A` fully saturated" puts the speckle into the funnel and "within `AZ`" cuts its
+   neighbours out, and the two clauses contradict each other at the saturating `N`. The bulk of
+   the funnel between 13 and 53 is one solid band with no holes — the condition holds where it is
+   about `P` and fails where it is about the lattice or the gate.
+
+**Passed back to the user at that point, as asked.** The literal reading — exactly `N`, every
+`N` — is not satisfiable by a thin `P` on this lattice because of the comb, and the saturation
+clause needs a gate that is clean in projection, which an insertion boundary is not. What the
+test shows *is* satisfiable: the funnel body, once it has filled the cross-section, is simply
+connected all the way to the far gate. Amendment is the user's.
 
 
 

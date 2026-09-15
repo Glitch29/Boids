@@ -1,10 +1,11 @@
 # What is being built now
 
-**Status:** 2026-09-14. `README.md` has the inventory; this file has the work in front of us
-and the specifications for it. **§0i is the live thread — read that first**, and within it the
-handoff dated 2026-09-14: the placement fitness has three known defects and phase-complete
-pathing is the prerequisite. §0h is closed; its handoff is kept as the record
-of what the benchmark measured and why that search was abandoned.
+**Status:** 2026-09-14 (evening). `README.md` has the inventory; this file has the work in front
+of us and the specifications for it. **§0i is the live thread — read that first**, and within it
+the handoff dated 2026-09-14: the placement fitness has three known defects and phase-complete
+pathing is the prerequisite — for which the user has given a definition, tested once by
+`PhasePath` and passed back with two findings (§0i, "Phase-complete paths"). §0h is closed; its
+handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
 ---
 
@@ -2016,6 +2017,36 @@ machinery and can carry a different fitness.
 **Still open from before.** Subpaths that run into an exit zone (edge 2's tail lane toward
 `2→1` is the strongest thing found and does); cross-border subpaths; a real `insert` with the
 reachability assertion; the cut construction for unlocked maps; §0i's questions (1) and (3).
+
+### Phase-complete paths — a definition from the user, tested once, and passed back — 2026-09-14
+
+**Started and stopped 2026-09-14 (evening). `PhasePath`, at `src/boids/PhasePath.java`, run by
+hand from `SimTest.main`; canonical account in `EDGES.md` §2a "Phase-complete paths".** The user
+gave a non-constructive definition and asked for it to be converted into a construction, passing
+back early on a defect or a stall. **Passed back**: built as strands, the two navigation
+conditions hold, and the funnel condition holds through the body of the funnel (`N = 13 … 53`
+back, `16 … 94` forward) but fails at small `N` on the lattice's comb — the side-feeders into a
+thin `P` at exactly `N` steps sit at discrete pixels and enclose wall-side pixels whose states
+need 7–24 steps — and at the saturating `N` on the gate itself, whose insertion-boundary landing
+set is speckled by phase in projection so that "`A` saturated" and "within `AZ`" contradict each
+other. Neither is a property of `P`. What the user decides: exact-`N` or within-`N`; every `N`
+or `N` past some fill-in; and what a projection-clean gate is. The definition, as given:
+
+> For a set of states `S` between gate `B` and gate `Y` on route `R`, a phase-complete path `P` is
+> a cover of `S` such that: every point of `P` can backward-navigate to `B` within `P`; every
+> point of `P` can forward-navigate to `Y` within `P`; and for some gates `A` and `Z` on `R`, the
+> set of `N`th-successors of `P` within `AZ` projected to `(x, y)` has a single exterior border
+> with no holes, with `A` fully saturated for some `N`, and likewise the `N`th-predecessors, with
+> `Z` fully saturated for some `N`.
+
+**Read with one transposition**: the predecessor funnel is the one that reaches back to `A`, the
+successor funnel the one that reaches forward to `Z`. Test setup, the user's: a route, cut far
+from the stretch; four states `a < b < y < z` on the coasting path; gates around each by phantom
+edge insertion; `S` the coasting states from `b` to `y`. The construction being tried: `P` is a
+union of **strands**, each the cheapest `B → Y` path through one uncovered pixel of the lane
+(`S`'s pixels plus its steps' partial-tick pixels), cost being distance from the lane, until every
+lane pixel is covered; then the funnels are computed exactly per `N` and their projections tested
+for one 8-connected component and no 4-connected holes. Whatever fails is drawn.
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
 

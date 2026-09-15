@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-368 prompts across 13 sessions.
+371 prompts across 13 sessions.
 
 ---
 
@@ -10539,7 +10539,7 @@ This is the end of this session. Please update HINTS.md, and any other docs. The
 
 ## Session 13 - 2026-09-12
 
-*Log `82b1ea93-55a4-4bad-b39b-4c4e5e612674`, 11 prompts.*
+*Log `82b1ea93-55a4-4bad-b39b-4c4e5e612674`, 14 prompts.*
 
 ### 1
 
@@ -10661,3 +10661,23 @@ Regardless of what tau measure we're using, I agree that it makes sense to look 
 I'm a little bit lost, but it sounds like something went horribly wrong. Graph distance from edge boundary is a completely arbitrary metric, and I can't imagine any good data would come from it. If there were mismatches at edges, was it because you were mixing and matching parts of different clocks? Tau values from one, edge lengths from another?
 
 When measuring tau around a route, there doesn't even need to be more than one edge. There just needs to be a cut somewhere arbitrary, and a single distance variable to add to each transition that crosses the cut.
+
+### 12
+
+Could you give me an illustration of the best 5 shortcuts and longcuts?
+
+### 13
+
+Sorry. Let's not regress to doing map wide clocks. Keep checking for route-specific shortcuts, and give me the top 5 shortcuts for each stable or scoring route. Then in a second image, the top 5 longcuts for each stable or scoring route.
+
+### 14
+
+I slept on it and realized there were a few issues with yesterday's construction. Among them, shortcuts are incentivized to start at states that are beginning to veer toward long cuts (to pick up low starting tau) without actually committing to them. This is undesirable, because it will mean a psyboid already on a shorter path will have to briefly veer toward a longer one before starting the shortcut.
+
+I suspect this might be related to shortcuts only partially rounding a corner rather than going the whole way. The way the denominator of the fitness metric is scored also encourages shortcuts starting and ending in the middle of the (strafe x angle) blob.
+
+I'm also thinking that converting a path to a phase-complete path needs to be addressed as a prerequisite. There is some code that currently accomplishes that, but if I understand correctly it basically just does its best to translate a canonical path, and hopes collision physics doesn't disturb it too much.
+
+This thread is just about out of context, so I'm not going to try to do any more here. Let's prep for the next session.
+
+Once you've given a handoff note to the next thread, I'll take any comments.

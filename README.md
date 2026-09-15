@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-14. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-14 (evening). **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
@@ -144,7 +144,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 60 files.
+One package, `src/boids`, 61 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -199,7 +199,9 @@ edge's exit decision, or a subpath along it, as gates — a region entered, proh
 per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone —
 **one step of lookahead is all of navigation** — stateless, label prefix `g`; the route pilot it
 replaced flew identically and was retired 2026-09-13) · `SubpathSearch` (where a subpath
-should run: grows paths by tau gained over footprint, and draws them; finding only) · `RouteClock` (the clock refitted on one
+should run: grows paths by tau gained over footprint, and draws them; finding only) · `PhasePath` (the user's
+definition of a phase-complete path, built as strands and checked against the funnel condition;
+run by hand, passed back 2026-09-14 — `EDGES.md` §2a) · `RouteClock` (the clock refitted on one
 route alone, for `routeClock` and the search) · `CorpusPreset` (named recipes, so a
 corpus is addressed by the settings that produced it). See `CORPUS.md`.
 
@@ -253,8 +255,9 @@ ways → 6 edges.
 | `routeClock` | the clock refitted on one route at a time against the map-wide one: lengths, spans, and the within-edge spread of the change in tick |
 | `subpathSearch` | the top `count` shortcuts and longcuts on each stable or scoring route's own clock, no margin, footprint over the route; two pictures, one per kind, coloured by route and labelled by rank |
 
-`ThreeBoidPhase.run`, `ThreeBoidSamples.run` and `ThreeBoidSamples.explain` are the other entry
-points and do not live in `SimTest`. `explain` prints one sampled exit tick by tick, marking which
+`ThreeBoidPhase.run`, `ThreeBoidSamples.run`, `ThreeBoidSamples.explain` and `PhasePath.run` are the
+other entry points and do not live in `SimTest`. `PhasePath.run` takes a route, an edge and four
+tick offsets along the coasting path for `a, b, y, z`, builds the strands and reports the funnels. `explain` prints one sampled exit tick by tick, marking which
 ticks actually **demand** a leader and which are free because coasting or the veto produced the
 move anyway.
 
@@ -313,6 +316,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `render/phase<f>_<t>-replays.tsv` | `ThreeBoidPhase` | every exit in it, with the three start states, so any cell can be flown again |
 | `render/*-samples.png`, `-atlas.png` | `ThreeBoidSamples` | one replayed arrangement per region or clump, at envelope entry |
 | `render/prop<f><t>-*.png` | `SimTest.proposedPhysics` | one physics against another, end to end, per arc |
+| `render/phase-path/<map>-<hash>-e<edge>-{cover,funnels}.png` | `PhasePath.run` | the strands over the lane between the four gates, and the exact-`N` funnels tile by tile, components coloured and holes red |
 | `archive/<date>/` | hand | retired output, ignored. **Not a backup** — the maps it came from are in `areas/` |
 
 **Retired 2026-09-04.** `analysis/`, `ingests/` (the eighteen pre-physics-3 hashes), `render/`,
