@@ -434,6 +434,17 @@ ask of such a set: that the set exactly `N` steps from it be a solid region in p
 is dotted on this lattice however complete the path (the *comb*); and that an insertion boundary
 be a clean cross-section, when its landing set alternates by phase along a wall (the *speckle*).
 
+**Round a whole route the strands are single laps, and the geometry already tells the time.**
+Close the strands into cycles — the cheapest cycle through each uncovered lane pixel, the cut
+crossing allowed — and on dabeone's stable loop every one closes in one lap of 277 or 278 ticks,
+none needing two; the 277s are the phases that cannot hold the wall pixels round a bend and run a
+pixel inside, a tick shorter round the loop's net turn. Twelve to fourteen such cycles cover a
+wall-hugging lane, interleaving pixel by pixel, and which twelve depends on where the search
+starts; what they are made of does not. Label each lane pixel with the tick at which the coasting
+cycle sweeps it — quarters on a straight, thirds on a diagonal — and along every strand that tau
+advances by between half a tick and a tick and a half per transition, averaging exactly one, or
+278/277 on a shortcut. A clock for the lane needs no fit; the fit is for what lies off it.
+
 ## 4. The clock — tick values and edge lengths
 
 **The problem it solves.** The decomposition says which stretch a state is on but not where

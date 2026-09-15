@@ -14,7 +14,9 @@ by outcomes, so a one-to-three junction does not settle and a bifurcated `E⊥S`
 decomposition. **§2a gained the phase-complete path on 2026-09-14 and 15** — the user's definition, a strand
 construction that realises it, and the join field that measures what it is for: to a
 phase-complete cover the join time never changes by more than one tick between neighbouring
-pixels, where to a single-phase path it jumps by seven.
+pixels, where to a single-phase path it jumps by seven. **§5 gained the phase-complete loop
+and the geometric clock the same day** — every strand of the loop is a single lap of 277 or 278
+ticks, and a tau read off the coasting sweep agrees with every strand to within half a tick.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -951,6 +953,66 @@ edges 70 to 160 ticks long. Read subpath lengths off the map-wide clock; nothing
 
 The flown laps sit 1–2% above both clocks, which is the known bias of §4 in `HINTS.md`: the
 transitions boids fly are slower than the average transition.
+
+### The phase-complete loop of a route, and the geometric clock — 2026-09-15
+
+**The question, the user's.** Toward a new clock for a route: build the shortest phase-complete
+path round the whole route and see whether it is an integer number of ticks, whether multi-lap
+paths are needed, whether the starting offset changes it, and what the states-per-tick,
+ticks-per-pixel and states-per-pixel come to — because a simple enough structure would let every
+state be labelled with a tau directly, and not every answer does.
+
+**One conflict named first.** Under the §2a definition `P` is a set covering `S`; "an integer
+number of ticks" and "multi-lap" are properties of a trajectory; and a simple cycle in the state
+graph containing all of the coasting cycle `S` *is* `S`. So the loop is built as `S` plus **closed
+strands**, each the cheapest cycle through an uncovered lane pixel over the route's states with
+the cut crossing allowed, a state costing `1 + 64·dist²` — ticks minimised, and a strand leaving
+the lane only where its phase cannot pass (at weight one a corner cut a pixel inside saves the
+tick it costs, and the strands drift off the lane and never close the gaps). No gates: the cut
+only counts laps. Gaps are closed as on a stretch — the first uncovered sweep pixel where the
+coast changes component, counting from a chosen start — and the greedy result is then **pruned**,
+dearest strand first, to what connectivity still needs. `PhasePath.loop`, run by hand.
+
+**Measured, dabeone `609cffdb84be218c`, route `[7, 4, 2]` cut at `2→7`, coasting cycle 278
+ticks, lane 1,107 live pixels (3.98 per tick).** From four starting offsets:
+
+| start | strands found | pruned to | `P` states | pixels | states/tick | ticks/pixel | states/pixel |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 29 | **14** | 1,313 | 1,073 | 4.72 | 0.259 | 1.22 |
+| 70 | 27 | **14** | 1,331 | 1,080 | 4.79 | 0.257 | 1.23 |
+| 140 | 26 | **12** | 1,309 | 1,073 | 4.71 | 0.259 | 1.22 |
+| 210 | 29 | **14** | 1,326 | 1,075 | 4.77 | 0.259 | 1.23 |
+
+(states/tick over the coast's 278; ticks/pixel as 278 over `P`'s projection.) Every `P` is one
+component and every state of it has a successor and a predecessor in it.
+
+1. **Every strand closes in one lap, and every lap is 277 or 278 ticks** — about half each
+   (6–8 of 12–14). No strand needs more than one lap, so the answer to "integer ticks?" is yes at
+   every phase, and to "multi-lap?" is no. The 277s are shortcuts: each leaves the lane for 3–16
+   states at one pixel inside on a bend, which is where a phase that cannot hold the wall pixels
+   goes, and a pixel inside round the loop's net turn is a tick shorter.
+2. **The starting offset changes the set but not the structure.** 12 or 14 strands after pruning,
+   and largely the same cycles: the seed taus recur across starts (41.00, 41.40, 76.67, 77.50,
+   110.67, 186.17, 186.67, 188.67, 210.33, 211.67, 234.50, 235.67, 254.33, 275.67 — a strand's
+   first state, on the geometric clock below). The cover is not unique; what it is made of is.
+3. **Not four strands.** The lane rides the outer wall all the way round, so a phase holds it only
+   for a stretch before the veto forces it a pixel inside, and each strand covers its phase in
+   patches. Twelve to fourteen single-lap cycles, interleaving pixel by pixel, is what a
+   phase-complete cover of a wall-hugging lane looks like.
+
+**The geometric clock, and it is consistent.** Label every lane pixel with the coasting tick at
+which the coast sweeps it — `k + j/n` for the `j`th of the `n` samples of step `k`, so quarters
+on a straight, thirds on a diagonal, fifths where a step sweeps five — and every other pixel with
+its nearest lane pixel's; a state's tau is its pixel's. Along **every** strand the advance per
+transition lies between **+0.5 and +1.5**, with a mean of exactly 1.0000 on the 278s and 1.0036
+(= 278/277) on the 277s, and at most two transitions per strand off by half a tick or more. So a
+tau read off the coasting sweep alone already agrees with the dynamics of every phase to within
+half a tick, and a 277 strand reads as gaining one tick a lap. **This is a decisive labelling of
+`P`'s states**, to a resolution of a third to a fifth of a tick, from geometry alone. What it is
+not is a labelling of the corridor: it is keyed on the pixel, so a state a pixel inside on a bend
+shares its tau with the lane state beside it, and that is exactly the shortcut the 277s take —
+the residual the least-squares clock of §5 spreads over the edge. Whether to carry it off the lane
+by nearest pixel, by the join field, or by a fit is the next question.
 
 ---
 

@@ -134,6 +134,21 @@ public final class PhasePath {
             return n;
         }
 
+        /** Successors on the route, the cut crossing included: the loop as a boid flies it. */
+        int succRound(int s, int[] out) {
+            int[] tmp = new int[3];
+            int k = map.steeredSuccessors(s, tmp), n = 0;
+            for (int j = 0; j < k; j++) if (in(tmp[j])) out[n++] = tmp[j];
+            return n;
+        }
+
+        int predRound(int s, int[] out) {
+            int[] tmp = new int[3];
+            int k = map.steeredPredecessors(s, tmp), n = 0;
+            for (int j = 0; j < k; j++) if (in(tmp[j])) out[n++] = tmp[j];
+            return n;
+        }
+
         int x(int s) { return (s / turns) % width; }
         int y(int s) { return (s / turns) / width; }
         int d(int s) { return s % turns; }
@@ -919,6 +934,423 @@ public final class PhasePath {
         System.out.printf("exact: %s; gate fully saturated at N = %s. cumulative: gate saturated at N = %s%n",
                 firstBad < 0 ? "every N simply connected" : "not simply connected at N = " + firstBad + " .. " + lastBad,
                 firstSat < 0 ? "never" : String.valueOf(firstSat), firstCumSat < 0 ? "never" : String.valueOf(firstCumSat));
+    }
+
+    // -------------------------------------------------------------------------------- loop
+
+    /**
+     * One closed strand: its states in order from the seed, back round to it; how many times it
+     * crossed the cut; its cost; and how far off the lane it strayed.
+     */
+    public record Strand(int[] states, int laps, double cost, int offLane, int maxDistance, int seedPixel) {
+        public int ticks() { return states.length; }
+    }
+
+    /**
+     * What a state off the lane costs per pixel of distance squared, in ticks. Large, so a strand
+     * leaves the lane only where its phase cannot pass: at one, a corner cut a pixel inside saves
+     * the tick it costs and the strands drift off the lane and never close the gaps.
+     */
+    static final double OFF_LANE = 64;
+
+    /** What one run of the loop construction produced. */
+    public record Loop(int start, int[] coast, int[] P, List<Strand> strands, int pixels, int components) {
+        public int coastTicks() { return coast.length; }
+    }
+
+    /**
+     * The phase-complete loop of a route: the coasting cycle, then closed strands until the
+     * projection is 8-connected. No gates — the cut only counts laps.
+     * <p>
+     * A strand is the cheapest cycle through some state at an uncovered lane pixel, over the
+     * route's states with the cut crossing allowed, a state costing {@code 1 + dist²} — a tick,
+     * plus the square of its pixel's distance from the lane — so ticks are what is minimised and
+     * the lane is where ties go. The gap is chosen as on a stretch: the earliest two consecutive
+     * coasting states, counting from {@code start}, whose pixels lie in different components,
+     * and the first uncovered pixel of the sweep between them; failing that, any uncovered pixel
+     * 8-adjacent to the upstream component. A strand closes wherever the lattice lets it: one lap
+     * if a cycle at that phase exists, more if it must slip phase to get round.
+     *
+     * @param starts coasting indices to begin the gap search from, one run each, so the
+     *               dependence on the starting offset is visible
+     */
+    public static void loop(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, int edge,
+                            int[] starts) throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+        int[] edgeOf = l.edge();
+        int w = map.width(), h = map.height();
+
+        int m = route.length, slot = -1;
+        for (int i = 0; i < m; i++) if (route[i] == edge) slot = i;
+        if (slot < 0) throw new IllegalArgumentException("edge " + edge + " is not on " + Arrays.toString(route));
+        int[] rotated = new int[m];
+        int shift = Math.floorMod(slot - m / 2, m);
+        for (int i = 0; i < m; i++) rotated[i] = route[(i + shift) % m];
+        Corridor c = new Corridor(map, edgeOf, l.live(), l.liveCount(), rotated);
+        System.out.printf("%n=== %s @%s: phase-complete loop of route %s, cut %d->%d, %d route states ===%n",
+                preset.name(), preset.ingest().hash(), Arrays.toString(rotated), c.cutFrom, c.cutTo, c.states.length);
+
+        MapStates lattice = MapStates.of(map, Flocking.of(preset.turningRadius()), l.live(), l.liveCount());
+        int[] cycle = null;
+        for (int[] cy : lattice.cycles(lattice.pureStable(1))) {
+            boolean onRoute = true;
+            for (int s : cy) if (!c.in(s)) { onRoute = false; break; }
+            if (onRoute) { cycle = cy; break; }
+        }
+        if (cycle == null) throw new IllegalStateException("no straight-travel cycle lies on the route");
+        int at = -1;
+        for (int i = 0; i < cycle.length; i++) if (c.cut(cycle[(i + cycle.length - 1) % cycle.length], cycle[i])) { at = i; break; }
+        int[] coast = new int[cycle.length];
+        for (int i = 0; i < cycle.length; i++) coast[i] = cycle[(at + i) % cycle.length];
+        int N = coast.length;
+
+        // The lane: every pixel the coasting cycle sweeps, the closing step included, on which
+        // some route state can stand.
+        boolean[] lane = new boolean[w * h];
+        for (int k = 0; k < N; k++) {
+            int s = coast[k], u = coast[(k + 1) % N];
+            lane[c.cell(s)] = true;
+            int[] sweep = map.stepPath(c.d(u));
+            for (int q = 0; q + 1 < sweep.length; q += 2) {
+                int mx = c.x(s) + sweep[q], my = c.y(s) + sweep[q + 1];
+                if (mx >= 0 && my >= 0 && mx < w && my < h) lane[mx + my * w] = true;
+            }
+        }
+        boolean[] routePixel = new boolean[w * h];
+        for (int s : c.states) routePixel[c.cell(s)] = true;
+        int laneCount = 0, dead = 0;
+        for (int i = 0; i < lane.length; i++) {
+            if (!lane[i]) continue;
+            if (routePixel[i]) laneCount++; else { lane[i] = false; dead++; }
+        }
+        int[] dist = laneDistance(c, lane);
+        double[] cost = new double[edgeOf.length];
+        for (int s : c.states) { double d = dist[c.cell(s)]; cost[s] = 1 + OFF_LANE * d * d; }
+        System.out.printf("coasting cycle: %d ticks; lane %d pixels (%d dead dropped); %.3f lane pixels per tick%n",
+                N, laneCount, dead, laneCount / (double) N);
+
+        double[] tau = geometricTau(c, coast, lane);
+        Loop first = null;
+        for (int start : starts) {
+            Loop loop = buildLoop(c, coast, lane, dist, cost, start);
+            reportLoop(c, loop, lane, laneCount);
+            Loop pruned = prune(c, loop, lane);
+            System.out.printf("   pruned to %d strands, P %d states over %d pixels in %d component%s%n", pruned.strands.size(),
+                    pruned.P.length, pruned.pixels, pruned.components, pruned.components == 1 ? "" : "s   <-- NOT CONNECTED");
+            reportGeometric(c, pruned, tau);
+            if (first == null) first = pruned;
+        }
+
+        Path dir = Path.of("render", "phase-path");
+        Files.createDirectories(dir);
+        String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-loop" + Arrays.toString(rotated).replaceAll("[\\[\\] ]", "").replace(',', '-');
+        drawLoop(c, lane, first, dir.resolve(name + ".png"));
+        System.out.printf("wrote %s.png in %s%n", name, dir);
+    }
+
+    static Loop buildLoop(Corridor c, int[] coast, boolean[] lane, int[] dist, double[] cost, int start) {
+        int w = c.map.width(), h = c.map.height(), N = coast.length;
+        boolean[] inP = new boolean[c.edgeOf.length];
+        boolean[] covered = new boolean[w * h];
+        List<Strand> strands = new ArrayList<>();
+        for (int s : coast) { inP[s] = true; covered[c.cell(s)] = true; }
+        int[] label = new int[w * h];
+        boolean[] tried = new boolean[w * h];
+        int components = 0;
+        boolean[] gaveUp = new boolean[N];
+        int unfixed = 0;
+        for (int round = 0; round < 400; round++) {
+            components = label(covered, w, h, true, label, true);
+            if (components == 1) break;
+            int k = -1;
+            for (int i = 0; i < N; i++) {
+                int j = (start + i) % N;
+                if (!gaveUp[j] && label[c.cell(coast[j])] != label[c.cell(coast[(j + 1) % N])]) { k = j; break; }
+            }
+            if (k < 0) {
+                System.out.printf("  %d gaps could not be closed by any local cycle; %d components remain%n", unfixed, components);
+                break;
+            }
+            Strand strand = null;
+            int s = coast[k], u = coast[(k + 1) % N];
+            int[] sweep = c.map.stepPath(c.d(u));
+            for (int q = 0; q + 1 < sweep.length && strand == null; q += 2) {
+                int mx = c.x(s) + sweep[q], my = c.y(s) + sweep[q + 1];
+                if (mx < 0 || my < 0 || mx >= w || my >= h) continue;
+                int pixel = mx + my * w;
+                if (covered[pixel] || tried[pixel]) continue;
+                tried[pixel] = true;
+                strand = cheapestCycleThrough(c, pixel, cost, dist, lane);
+            }
+            // Then the pixels round either end of the gap.
+            for (int end : new int[]{s, u}) {
+                for (int dy = -1; dy <= 1 && strand == null; dy++) {
+                    for (int dx = -1; dx <= 1 && strand == null; dx++) {
+                        int nx = c.x(end) + dx, ny = c.y(end) + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        int pixel = nx + ny * w;
+                        if (covered[pixel] || tried[pixel]) continue;
+                        tried[pixel] = true;
+                        strand = cheapestCycleThrough(c, pixel, cost, dist, lane);
+                    }
+                }
+            }
+            if (strand == null) {
+                // Nothing local closes it; leave the gap and look for the next one.
+                gaveUp[k] = true;
+                unfixed++;
+                continue;
+            }
+            for (int t : strand.states) { inP[t] = true; covered[c.cell(t)] = true; }
+            strands.add(strand);
+        }
+        int[] P = Arrays.stream(c.states).filter(t -> inP[t]).toArray();
+        int pixels = 0;
+        for (boolean v : covered) if (v) pixels++;
+        return new Loop(start, coast, P, strands, pixels, components);
+    }
+
+    /**
+     * The cheapest cycle through any state at {@code pixel}: Dijkstra from each successor of the
+     * state, round the route with the cut crossing allowed, back to the state itself.
+     */
+    static Strand cheapestCycleThrough(Corridor c, int pixel, double[] cost, int[] dist, boolean[] lane) {
+        int n = c.edgeOf.length;
+        Strand best = null;
+        int[] out = new int[3];
+        for (int d = 0; d < c.turns; d++) {
+            int s = pixel * c.turns + d;
+            if (!c.in(s)) continue;
+            double[] bestCost = new double[n];
+            int[] from = new int[n];
+            Arrays.fill(bestCost, Double.POSITIVE_INFINITY);
+            Arrays.fill(from, -1);
+            PriorityQueue<long[]> queue = new PriorityQueue<>((a, b) -> Double.compare(
+                    Double.longBitsToDouble(a[0]), Double.longBitsToDouble(b[0])));
+            int k = c.succRound(s, out);
+            for (int j = 0; j < k; j++) {
+                int u = out[j];
+                bestCost[u] = cost[u];
+                from[u] = s;
+                queue.add(new long[]{Double.doubleToLongBits(bestCost[u]), u});
+            }
+            double closed = Double.POSITIVE_INFINITY;
+            int last = -1;
+            while (!queue.isEmpty()) {
+                long[] top = queue.poll();
+                double dd = Double.longBitsToDouble(top[0]);
+                int v = (int) top[1];
+                if (dd > bestCost[v]) continue;
+                if (dd >= closed) break;
+                int kk = c.succRound(v, out);
+                for (int j = 0; j < kk; j++) {
+                    int u = out[j];
+                    if (u == s) { if (dd + cost[s] < closed) { closed = dd + cost[s]; last = v; } continue; }
+                    double nd = dd + cost[u];
+                    if (nd < bestCost[u]) {
+                        bestCost[u] = nd;
+                        from[u] = v;
+                        queue.add(new long[]{Double.doubleToLongBits(nd), u});
+                    }
+                }
+            }
+            if (last < 0 || (best != null && closed >= best.cost)) continue;
+            List<Integer> states = new ArrayList<>();
+            for (int v = last; v != s; v = from[v]) states.add(0, v);
+            states.add(0, s);
+            int[] st = states.stream().mapToInt(Integer::intValue).toArray();
+            int laps = 0, off = 0, far = 0;
+            for (int i = 0; i < st.length; i++) {
+                int a = st[i], bb = st[(i + 1) % st.length];
+                if (c.cut(a, bb)) laps++;
+                if (!lane[c.cell(a)]) off++;
+                far = Math.max(far, dist[c.cell(a)]);
+            }
+            best = new Strand(st, laps, closed, off, far, pixel);
+        }
+        return best;
+    }
+
+    static void reportLoop(Corridor c, Loop loop, boolean[] lane, int laneCount) {
+        int N = loop.coastTicks();
+        System.out.printf("%n-- from coasting index %d: %d strands beside the coast, P %d states over %d pixels in %d component%s --%n",
+                loop.start, loop.strands.size(), loop.P.length, loop.pixels, loop.components,
+                loop.components == 1 ? "" : "s   <-- NOT CONNECTED");
+        System.out.printf("   %4s %5s %4s %9s %6s %4s %4s  %s%n", "#", "ticks", "laps", "ticks/lap", "cost", "off", "far", "seed pixel, first state, and the lap lengths between cut crossings");
+        for (int i = 0; i < loop.strands.size(); i++) {
+            Strand s = loop.strands.get(i);
+            // Lap lengths: ticks between successive cut crossings, starting from the first.
+            List<Integer> crossings = new ArrayList<>();
+            for (int k = 0; k < s.states.length; k++) if (c.cut(s.states[k], s.states[(k + 1) % s.states.length])) crossings.add(k);
+            StringBuilder lapLengths = new StringBuilder();
+            for (int k = 0; k < crossings.size(); k++) {
+                int a = crossings.get(k), bb = crossings.get((k + 1) % crossings.size());
+                int len = Math.floorMod(bb - a, s.states.length);
+                lapLengths.append(k == 0 ? "" : " ").append(len == 0 ? s.states.length : len);
+            }
+            int seed = s.states[0];
+            System.out.printf("   %4d %5d %4d %9.2f %6.0f %4d %4d  (%d,%d) (%d,%d,%d) laps %s%n", i, s.ticks(), s.laps,
+                    s.laps == 0 ? Double.NaN : s.ticks() / (double) s.laps, s.cost, s.offLane, s.maxDistance,
+                    s.seedPixel % c.map.width(), s.seedPixel / c.map.width(), c.x(seed), c.y(seed), c.d(seed), lapLengths);
+        }
+        // Flow within P: every state should have a successor and a predecessor in P.
+        boolean[] inP = new boolean[c.edgeOf.length];
+        for (int s : loop.P) inP[s] = true;
+        int noSucc = 0, noPred = 0;
+        int[] out = new int[3];
+        for (int s : loop.P) {
+            boolean ok = false;
+            int k = c.succRound(s, out);
+            for (int j = 0; j < k && !ok; j++) ok = inP[out[j]];
+            if (!ok) noSucc++;
+            ok = false;
+            k = c.predRound(s, out);
+            for (int j = 0; j < k && !ok; j++) ok = inP[out[j]];
+            if (!ok) noPred++;
+        }
+        int total = 0, laps = 0;
+        for (Strand s : loop.strands) { total += s.ticks(); laps += s.laps; }
+        System.out.printf("   flow within P: %d states without a successor in P, %d without a predecessor%n", noSucc, noPred);
+        System.out.printf("   strand ticks in all %d over %d laps = %.3f per lap against the coast's %d; lane pixels covered %d of %d%n",
+                total, laps, laps == 0 ? Double.NaN : total / (double) laps, N, coveredLane(c, loop.P, lane), laneCount);
+        System.out.printf("   states/tick %.3f, ticks/pixel %.3f, states/pixel %.3f  (tick = one coasting tick, pixel = one of P's projection)%n",
+                loop.P.length / (double) N, N / (double) loop.pixels, loop.P.length / (double) loop.pixels);
+    }
+
+    /**
+     * Drops every strand the projection can do without, dearest first: a strand is kept only if
+     * removing it disconnects the projection or uncovers a lane pixel nothing else covers.
+     */
+    static Loop prune(Corridor c, Loop loop, boolean[] lane) {
+        int w = c.map.width(), h = c.map.height();
+        List<Strand> kept = new ArrayList<>(loop.strands);
+        Integer[] order = new Integer[kept.size()];
+        for (int i = 0; i < order.length; i++) order[i] = i;
+        Arrays.sort(order, (a, b) -> Double.compare(kept.get(b).cost, kept.get(a).cost));
+        boolean[] drop = new boolean[kept.size()];
+        int[] label = new int[w * h];
+        for (int i : order) {
+            drop[i] = true;
+            boolean[] covered = new boolean[w * h];
+            for (int s : loop.coast) covered[c.cell(s)] = true;
+            for (int j = 0; j < kept.size(); j++) if (!drop[j]) for (int s : kept.get(j).states) covered[c.cell(s)] = true;
+            if (label(covered, w, h, true, label, true) != 1) drop[i] = false;
+        }
+        List<Strand> left = new ArrayList<>();
+        for (int i = 0; i < kept.size(); i++) if (!drop[i]) left.add(kept.get(i));
+        boolean[] inP = new boolean[c.edgeOf.length];
+        for (int s : loop.coast) inP[s] = true;
+        for (Strand s : left) for (int t : s.states) inP[t] = true;
+        int[] P = Arrays.stream(c.states).filter(t -> inP[t]).toArray();
+        boolean[] covered = new boolean[w * h];
+        for (int s : P) covered[c.cell(s)] = true;
+        int pixels = 0;
+        for (boolean v : covered) if (v) pixels++;
+        return new Loop(loop.start, loop.coast, P, left, pixels, label(covered, w, h, true, label, true));
+    }
+
+    /**
+     * The geometric clock: every lane pixel labelled with the coasting tick at which the coast
+     * sweeps it — {@code k + j/n} for the {@code j}th of the {@code n} samples of step {@code k},
+     * the landing being {@code k + 1} — and every other pixel with its nearest lane pixel's.
+     */
+    static double[] geometricTau(Corridor c, int[] coast, boolean[] lane) {
+        int w = c.map.width(), h = c.map.height(), N = coast.length;
+        double[] tau = new double[w * h];
+        Arrays.fill(tau, Double.NaN);
+        for (int k = 0; k < N; k++) {
+            int s = coast[k], u = coast[(k + 1) % N];
+            if (Double.isNaN(tau[c.cell(s)])) tau[c.cell(s)] = k;
+            int[] sweep = c.map.stepPath(c.d(u));
+            int n = sweep.length / 2;
+            for (int q = 0; q + 1 < sweep.length; q += 2) {
+                int mx = c.x(s) + sweep[q], my = c.y(s) + sweep[q + 1];
+                if (mx < 0 || my < 0 || mx >= w || my >= h) continue;
+                int i = mx + my * w;
+                if (lane[i] && Double.isNaN(tau[i])) tau[i] = (k + (q / 2 + 1) / (double) n) % N;
+            }
+        }
+        // Everything else takes the nearest labelled pixel's value, by 8-neighbour flood.
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        for (int i = 0; i < tau.length; i++) if (!Double.isNaN(tau[i])) queue.add(i);
+        while (!queue.isEmpty()) {
+            int i = queue.poll();
+            int x = i % w, y = i / w;
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = nx + ny * w;
+                    if (Double.isNaN(tau[j])) { tau[j] = tau[i]; queue.add(j); }
+                }
+            }
+        }
+        return tau;
+    }
+
+    /** How much geometric tau each transition of each strand advances: the clock's residual, strand by strand. */
+    static void reportGeometric(Corridor c, Loop loop, double[] tau) {
+        int N = loop.coastTicks();
+        System.out.printf("   geometric tau along each strand: advance per transition, min / mean / max, and the count off by half a tick or more%n");
+        for (int i = 0; i < loop.strands.size(); i++) {
+            Strand s = loop.strands.get(i);
+            double min = Double.MAX_VALUE, max = -Double.MAX_VALUE, sum = 0;
+            int bad = 0;
+            double first = tau[c.cell(s.states[0])];
+            for (int k = 0; k < s.states.length; k++) {
+                double a = tau[c.cell(s.states[k])], b = tau[c.cell(s.states[(k + 1) % s.states.length])];
+                double dt = b - a;
+                if (dt < -N / 2.0) dt += N;
+                if (dt > N / 2.0) dt -= N;
+                min = Math.min(min, dt);
+                max = Math.max(max, dt);
+                sum += dt;
+                if (Math.abs(dt - 1) >= 0.5) bad++;
+            }
+            System.out.printf("   %4d %5d ticks: %+.2f / %.4f / %+.2f, %3d transitions off; tau at seed %.2f (frac %.2f)%n",
+                    i, s.ticks(), min, sum / s.states.length, max, bad, first, first - Math.floor(first));
+        }
+    }
+
+    static int coveredLane(Corridor c, int[] P, boolean[] lane) {
+        boolean[] seen = new boolean[lane.length];
+        int n = 0;
+        for (int s : P) {
+            int i = c.cell(s);
+            if (lane[i] && !seen[i]) { seen[i] = true; n++; }
+        }
+        return n;
+    }
+
+    /** The whole route with the coast in white and each strand in its own colour, drawn last first so the coast stays visible. */
+    static void drawLoop(Corridor c, boolean[] lane, Loop loop, Path out) throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        boolean[] any = new boolean[c.edgeOf.length];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 4);
+        int scale = 3;
+        int[] paint = new int[w * h];
+        for (int s : c.states) paint[c.cell(s)] = 0x30343C;
+        for (int i = 0; i < lane.length; i++) if (lane[i]) paint[i] = 0x25408F;
+        for (int i = loop.strands.size() - 1; i >= 0; i--) {
+            int rgb = PALETTE[1 + (i % (PALETTE.length - 1))];
+            for (int s : loop.strands.get(i).states) paint[c.cell(s)] = rgb;
+        }
+        boolean[] inStrand = new boolean[c.edgeOf.length];
+        for (Strand s : loop.strands) for (int t : s.states) inStrand[t] = true;
+        for (int s : loop.P) if (!inStrand[s]) paint[c.cell(s)] = 0xFFFFFF;
+        BufferedImage img = new BufferedImage((box[2] - box[0]) * scale, (box[3] - box[1]) * scale, BufferedImage.TYPE_INT_RGB);
+        for (int y = box[1]; y < box[3]; y++) {
+            for (int x = box[0]; x < box[2]; x++) {
+                int rgb = c.map.oob(x, y) ? 0x000000 : paint[x + y * w];
+                for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) {
+                    img.setRGB((x - box[0]) * scale + sx, (y - box[1]) * scale + sy, rgb);
+                }
+            }
+        }
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
     }
 
     // ---------------------------------------------------------------------------- renders

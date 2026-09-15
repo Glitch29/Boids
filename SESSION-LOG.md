@@ -11,7 +11,7 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
-## 2026-09-15 — the second definition: diagonal connectivity, built as strands, measured by the join field
+## 2026-09-15 — the second definition, built as strands and measured by the join field; then the loop and the geometric clock
 
 **The user's second definition**, after the two findings below: a cover `P` of `S` whose every
 point navigates to `B` backward and `Y` forward within `P`, and **whose projection to `(x, y)` is
@@ -48,9 +48,25 @@ it did not.
 named-analyses row), `README.md` (verified table, class map, entry points, artifact index),
 `HINTS.md` §3a and §13; statuses dated; this entry.
 
-**Open.** A decision zone from a cover — the replacement for `DecisionZone.subpath`; then the
-fitness for the handoff's (1) and (2). A stretch narrow enough to lock a single-phase path out,
-which dabeone's stable route does not offer.
+**Then the loop, toward a new route clock.** The user dropped `A`/`Z` and asked for the shortest
+phase-complete path round a whole route: integer ticks? multi-lap? start-dependent? states/tick,
+ticks/pixel, states/pixel? Named a conflict first — a simple cycle containing the coasting cycle
+*is* the coasting cycle — and built `PhasePath.loop`: the coast plus closed strands, the cheapest
+cycle through each uncovered lane pixel with the cut crossing allowed, then pruned. First run
+with cost `1 + dist²` drifted off the lane (a pixel-inside corner cut is free at that weight) and
+flood-filled 400 strands; at `1 + 64·dist²` it converges. **Every strand is a single lap of 277
+or 278 ticks**, none multi-lap; 26–29 found, **12–14 after pruning**, from four starts, largely
+the same cycles (same seed taus); ~1,320 states on ~1,075 pixels: 4.7 states/tick, 0.26
+ticks/pixel, 1.22 states/pixel. **The geometric clock** — coasting-sweep tick per lane pixel,
+nearest for the rest — advances +0.5 to +1.5 per transition along every strand, mean exactly
+1.0000 (278s) or 1.0036 (277s), ≤ 2 transitions per strand off by half a tick. Recorded in
+`EDGES.md` §5 "The phase-complete loop", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary, README.
+Render `render/phase-path/dabeone-…-loop7-4-2.png`.
+
+**Open.** How the geometric clock is carried off the lane (nearest pixel, the join field, or a
+fit) — the user's call. A decision zone from a cover — the replacement for
+`DecisionZone.subpath`; then the fitness for the handoff's (1) and (2). A stretch narrow enough
+to lock a single-phase path out, which dabeone's stable route does not offer.
 
 ## 2026-09-14 (evening) — the phase-complete path definition, tested once and passed back
 

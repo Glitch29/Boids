@@ -4,7 +4,8 @@
 and the specifications for it. **§0i is the live thread — read that first**, and within it the
 handoff dated 2026-09-14: the placement fitness has three known defects and phase-complete
 pathing is the prerequisite — now defined by the user, built as `PhasePath` and measured (§0i,
-"Phase-complete paths"); a decision zone from it is the next step. §0h is closed; its
+"Phase-complete paths"), and extended to a whole route as the first step of a new route clock
+(`EDGES.md` §5); carrying that clock off the lane is the next decision. §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
 ---
@@ -2053,8 +2054,23 @@ failed on the lattice's comb of side-feeders at small `N` and on the phase speck
 insertion-built gate at the saturating `N` — neither a property of `P` — and was passed back;
 the funnel machinery stays behind a flag as the record.
 
-**Next.** A decision zone from a cover — the replacement for `DecisionZone.subpath`'s chain of
-`S_k`, which was a stop-gap and is to be discarded — and then the fitness for (1) and (2).
+**Then, the same day: a new clock for a route, first step.** The user asked for the shortest
+phase-complete path round a whole route, and whether it is an integer number of ticks, whether
+multi-lap paths are needed, whether the start changes it, and the states/tick, ticks/pixel and
+states/pixel — since a simple enough structure would label every state with a tau directly.
+Built as `PhasePath.loop` (no gates; the coasting cycle plus closed strands, pruned) and measured
+on dabeone's stable loop from four starts — `EDGES.md` §5 "The phase-complete loop". **Every
+strand is a single lap of 277 or 278 ticks**, none multi-lap; the start changes the set (12–14
+strands after pruning, ~1,320 states on ~1,075 pixels, 4.7 states/tick, 0.26 ticks/pixel, 1.22
+states/pixel) but not what it is made of. **The geometric clock** — each lane pixel labelled with
+the coasting tick at which the coast sweeps it, other pixels by nearest — advances between +0.5
+and +1.5 per transition along every strand with a mean of exactly 1 (278s) or 278/277 (277s):
+decisive for `P`'s states to a third–fifth of a tick. Off the lane it is keyed on the pixel, which
+is the shortcut question; how to carry it into the corridor is the next decision, the user's.
+
+**Next.** The clock off the lane; a decision zone from a cover — the replacement for
+`DecisionZone.subpath`'s chain of `S_k`, which was a stop-gap and is to be discarded — and then
+the fitness for (1) and (2).
 
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
