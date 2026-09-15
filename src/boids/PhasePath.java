@@ -1804,6 +1804,531 @@ public final class PhasePath {
         javax.imageio.ImageIO.write(img, "png", out.toFile());
     }
 
+    // ------------------------------------------------------------------------- the clock
+
+    /** {@code F}, {@code R} and {@code L} for every route state from a starting line at {@code x0}, in quarter-ticks. */
+    record Distances(int[] F, int[] R, int[] L) {}
+
+    static Distances distances(Corridor c, int edge, int x0) {
+        int n = c.edgeOf.length;
+        int[] F = new int[n], R = new int[n], L = new int[n];
+        Arrays.fill(F, Integer.MAX_VALUE);
+        Arrays.fill(R, Integer.MAX_VALUE);
+        for (int k = 0; k < 4; k++) {
+            int[] ahead = columnStates(c, edge, x0 + k), behind = columnStates(c, edge, x0 - 1 - k);
+            int[] df = bfs(c, ahead, true), dr = bfs(c, behind, false);
+            for (int s : c.states) {
+                if (df[s] >= 0) F[s] = Math.min(F[s], 4 * df[s] + k);
+                if (dr[s] >= 0) R[s] = Math.min(R[s], 4 * dr[s] + k + 1);
+            }
+        }
+        for (int s : c.states) L[s] = F[s] == Integer.MAX_VALUE || R[s] == Integer.MAX_VALUE ? Integer.MAX_VALUE : F[s] + R[s];
+        return new Distances(F, R, L);
+    }
+
+    /** The states just past the cut: on the route's first edge, with a predecessor on its last. */
+    static int[] cutLandings(Corridor c) {
+        List<Integer> out = new ArrayList<>();
+        int[] tmp = new int[3];
+        for (int s : c.states) {
+            int k = c.map.steeredPredecessors(s, tmp);
+            for (int j = 0; j < k; j++) if (c.in(tmp[j]) && c.cut(tmp[j], s)) { out.add(s); break; }
+        }
+        return out.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    /**
+     * The fewest ticks in which a boid can cross the cut {@code laps} times and be back in the
+     * state it started from, over every state just past the cut: breadth-first on
+     * {@code (state, crossings)}.
+     */
+    static int[] fewestTicksForLaps(Corridor c, int[] starts, int laps) {
+        int n = c.edgeOf.length;
+        int best = Integer.MAX_VALUE, bestStart = -1, achieving = 0;
+        int[] depth = new int[n * (laps + 1)];
+        int[] out = new int[3];
+        for (int t : starts) {
+            Arrays.fill(depth, -1);
+            ArrayDeque<Integer> queue = new ArrayDeque<>();
+            depth[t] = 0;
+            queue.add(t);
+            int found = -1;
+            while (!queue.isEmpty() && found < 0) {
+                int node = queue.poll();
+                int s = node % n, crossed = node / n;
+                if (depth[node] >= best) break;   // cannot beat what another start already did
+                int k = c.succRound(s, out);
+                for (int j = 0; j < k; j++) {
+                    int u = out[j];
+                    int cr = crossed + (c.cut(s, u) ? 1 : 0);
+                    if (cr > laps) continue;
+                    int next = u + cr * n;
+                    if (depth[next] >= 0) continue;
+                    depth[next] = depth[node] + 1;
+                    if (u == t && cr == laps) { found = depth[next]; break; }
+                    queue.add(next);
+                }
+            }
+            if (found < 0) continue;
+            if (found < best) { best = found; bestStart = t; achieving = 1; }
+            else if (found == best) achieving++;
+        }
+        return new int[]{best, bestStart, achieving};
+    }
+
+    /**
+     * The route's clock, anchored on the set of states whose shortest loop is exactly the stable
+     * lap — the user's construction of 2026-09-15.
+     * <ol>
+     *   <li>The <b>stable lap</b>: the fewest ticks for a closed walk of four cut crossings from a
+     *       state back to itself, over four. Programmatic, where the quarter-tick search of
+     *       {@link #shortestLoops} could only be read by eye.</li>
+     *   <li>{@code S}: every route state whose shortest loop through the starting line is exactly
+     *       that many quarter-ticks. Asserted by the user to be navigationally connected to the
+     *       cut in at least one direction; checked, and shouted about if not. Each state of
+     *       {@code S} is labelled by breadth-first search within {@code S} from the cut.</li>
+     *   <li>Every other route state is labelled by least squares over the transitions — each asks
+     *       its endpoints to differ by one tick, one lap less across the cut — with {@code S} held
+     *       fixed. Unit weights: the flow weighting of the map-wide clock is not used here.</li>
+     * </ol>
+     * Then the three things the user asked to see: the advance of tau per tick along the fastest
+     * loop, along the coasting cycle, and the spread of tau among each state's successors.
+     */
+    public static void clock(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, int edge, int x0)
+            throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+        int[] edgeOf = l.edge();
+        int w = map.width(), h = map.height(), n = edgeOf.length;
+
+        int m = route.length, slot = -1;
+        for (int i = 0; i < m; i++) if (route[i] == edge) slot = i;
+        int[] rotated = new int[m];
+        int shift = Math.floorMod(slot - m / 2, m);
+        for (int i = 0; i < m; i++) rotated[i] = route[(i + shift) % m];
+        Corridor c = new Corridor(map, edgeOf, l.live(), l.liveCount(), rotated);
+        System.out.printf("%n=== %s @%s: the clock of route %s anchored on its stable lap; line x = %d, cut %d->%d ===%n",
+                preset.name(), preset.ingest().hash(), Arrays.toString(rotated), x0, c.cutFrom, c.cutTo);
+
+        // 1. The stable lap.
+        int[] landings = cutLandings(c);
+        long t0 = System.currentTimeMillis();
+        int[] four = fewestTicksForLaps(c, landings, 4);
+        if (four[0] == Integer.MAX_VALUE) { System.out.println("no state closes four laps on itself"); return; }
+        int T4 = four[0];
+        System.out.printf("four laps back to the same state: fewest %d ticks, from (%d,%d,%d), %d of %d cut landings achieve it (%.1f s)%n",
+                T4, c.x(four[1]), c.y(four[1]), c.d(four[1]), four[2], landings.length, (System.currentTimeMillis() - t0) / 1000.0);
+        if (T4 % 4 != 0) System.out.printf("  NOTE: %d is not a multiple of four; the stable lap is %.2f ticks%n", T4, T4 / 4.0);
+        double T = T4 / 4.0;
+        int one = fewestTicksForLaps(c, landings, 1)[0];
+        System.out.printf("stable lap %.2f ticks (one lap back to the same state: fewest %d)%n", T, one);
+
+        // 2. S, and tau on it from the cut.
+        Distances dist = distances(c, edge, x0);
+        boolean[] inS = new boolean[n];
+        int sizeS = 0;
+        for (int s : c.states) if (dist.L[s] == T4) { inS[s] = true; sizeS++; }
+        int[] S = Arrays.stream(c.states).filter(s -> inS[s]).toArray();
+        System.out.printf("S: %d states whose shortest loop is exactly %d quarter-ticks%n", sizeS, T4);
+
+        int[] tauS = new int[n];
+        Arrays.fill(tauS, -1);
+        int[] out = new int[3];
+        // Forward from the cut landings in S.
+        {
+            ArrayDeque<Integer> queue = new ArrayDeque<>();
+            for (int s : landings) if (inS[s]) { tauS[s] = 0; queue.add(s); }
+            int seeds = queue.size();
+            while (!queue.isEmpty()) {
+                int s = queue.poll();
+                int k = c.succ(s, out);   // not across the cut: a lap is 0 .. T-1
+                for (int j = 0; j < k; j++) {
+                    int u = out[j];
+                    if (inS[u] && tauS[u] < 0) { tauS[u] = tauS[s] + 1; queue.add(u); }
+                }
+            }
+            int reached = 0;
+            for (int s : S) if (tauS[s] >= 0) reached++;
+            System.out.printf("forward from the cut within S: %d seeds, %d of %d reached%s%n", seeds, reached, sizeS,
+                    reached == sizeS ? "" : "   <-- NOT ALL");
+            if (reached < sizeS) {
+                // Backward from the states of S about to cross the cut.
+                int[] back = new int[n];
+                Arrays.fill(back, -1);
+                for (int s : S) {
+                    int k = c.succRound(s, out);
+                    for (int j = 0; j < k; j++) if (c.cut(s, out[j])) { back[s] = 0; queue.add(s); break; }
+                }
+                int bseeds = queue.size();
+                while (!queue.isEmpty()) {
+                    int s = queue.poll();
+                    int k = c.pred(s, out);
+                    for (int j = 0; j < k; j++) {
+                        int u = out[j];
+                        if (inS[u] && back[u] < 0) { back[u] = back[s] + 1; queue.add(u); }
+                    }
+                }
+                int breached = 0, disagree = 0;
+                for (int s : S) {
+                    if (back[s] < 0) continue;
+                    breached++;
+                    if (tauS[s] >= 0 && tauS[s] + back[s] + 1 != T4 / 4) disagree++;
+                }
+                System.out.printf("backward from the cut within S: %d seeds, %d of %d reached; %d states where forward + backward + 1 != %d%s%n",
+                        bseeds, breached, sizeS, disagree, T4 / 4, breached == sizeS ? "" : "   <-- NOT ALL");
+                int neither = 0;
+                for (int s : S) {
+                    if (tauS[s] < 0 && back[s] >= 0) tauS[s] = T4 / 4 - 1 - back[s];
+                    if (tauS[s] < 0) neither++;
+                }
+                if (neither > 0) {
+                    System.out.printf("ALERT: %d states of S are reached from the cut in neither direction; they are dropped from the anchors%n", neither);
+                    for (int s : S) if (tauS[s] < 0) inS[s] = false;
+                }
+            }
+        }
+        // Is tau on S the quarter-tick clock F/4 up to a constant? Along transitions inside S, does F advance by exactly 4?
+        {
+            int[] adv = new int[6];
+            java.util.Map<Integer, Integer> offsets = new java.util.TreeMap<>();
+            for (int s : S) {
+                if (!inS[s]) continue;
+                int k = c.succRound(s, out);
+                for (int j = 0; j < k; j++) if (inS[out[j]]) { int d = dist.F[out[j]] - dist.F[s]; if (d >= 0) adv[Math.min(5, d)]++; }
+                offsets.merge(dist.F[s] - 4 * tauS[s], 1, Integer::sum);
+            }
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < adv.length; i++) if (adv[i] > 0) sb.append(String.format(" %d:%d", i, adv[i]));
+            System.out.printf("within S, F advances per transition by%s (quarter-ticks); F - 4*tau takes %d distinct values%s%n", sb, offsets.size(),
+                    offsets.size() <= 8 ? " " + offsets : "");
+        }
+
+        // 3. The clock everywhere else, by least squares with S fixed. The anchors are F/4 — the
+        // quarter-tick distance from the starting line over the whole route, which is a BFS from a
+        // cut that does not need S to be connected — shifted so the route's cut reads zero.
+        // The line is the clock's seam: tau runs from 0 just past it to T just before it, and a
+        // transition across it carries a lap. The route's own cut only counted laps above.
+        double[] tau = new double[n];
+        Arrays.fill(tau, Double.NaN);
+        for (int s : c.states) inS[s] = dist.L[s] == T4;
+        for (int s : c.states) if (inS[s]) tau[s] = dist.F[s] / 4.0;
+        Seam seam = new Seam(c, edge, x0);
+        System.out.printf("anchors: all %d states of S, tau = F/4 from the line; the line is the seam%n", sizeS);
+        int iterations = anchoredLeastSquares(c, inS, tau, T, seam);
+        double rms = 0;
+        int edges = 0, worst = -1;
+        double worstR = 0;
+        for (int s : c.states) {
+            int k = c.succRound(s, out);
+            for (int j = 0; j < k; j++) {
+                double r = advance(seam, tau, s, out[j], T) - 1;
+                rms += r * r;
+                edges++;
+                if (Math.abs(r) > Math.abs(worstR)) { worstR = r; worst = s; }
+            }
+        }
+        System.out.printf("clock: %d free states solved in %d iterations; over %d transitions the advance is 1 %+.4f rms, worst %+.2f at (%d,%d,%d)%n",
+                c.states.length - sizeS, iterations, edges, Math.sqrt(rms / edges), worstR, c.x(worst), c.y(worst), c.d(worst));
+
+        // (a) The fastest loop: from x0 - 2, three pixels ahead in one lap.
+        int[] fast = null;
+        for (int s : columnStates(c, edge, x0 - 2)) {
+            if (map.stepX(c.d(s)) != 4 || map.stepY(c.d(s)) != 0) continue;
+            Lap lp = lapFrom(c, s);
+            if (lp != null && lp.ahead == 3 && (fast == null || lp.ticks < fast.length)) fast = lp.path;
+        }
+        if (fast != null) {
+            System.out.printf("%n-- the %d-tick loop landing 3 px ahead (%.2f): advance of tau per tick --%n", fast.length - 1, fast.length - 1 - 0.75);
+            reportAlong(seam, tau, fast, false, T);
+        }
+
+        // (b) The coasting cycle.
+        MapStates lattice = MapStates.of(map, Flocking.of(preset.turningRadius()), l.live(), l.liveCount());
+        int[] coast = null;
+        for (int[] cy : lattice.cycles(lattice.pureStable(1))) {
+            boolean onRoute = true;
+            for (int s : cy) if (!c.in(s)) { onRoute = false; break; }
+            if (onRoute) { coast = cy; break; }
+        }
+        double[] coastAdvance = null;
+        if (coast != null) {
+            int at = 0;
+            for (int i = 0; i < coast.length; i++) if (c.cut(coast[(i + coast.length - 1) % coast.length], coast[i])) { at = i; break; }
+            int[] rolled = new int[coast.length + 1];
+            for (int i = 0; i <= coast.length; i++) rolled[i] = coast[(at + i) % coast.length];
+            System.out.printf("%n-- the coasting cycle, %d ticks: advance of tau per tick --%n", coast.length);
+            coastAdvance = reportAlong(seam, tau, rolled, true, T);
+        }
+
+        // (c) The spread of tau among each state's successors.
+        double[] spread = new double[n];
+        double maxSpread = 0, meanSpread = 0;
+        int counted = 0;
+        for (int s : c.states) {
+            int k = c.succRound(s, out);
+            if (k < 2) continue;
+            double sum = 0;
+            int pairs = 0;
+            for (int i = 0; i < k; i++) {
+                for (int j = i + 1; j < k; j++) {
+                    double d = advance(seam, tau, s, out[i], T) - advance(seam, tau, s, out[j], T);
+                    sum += d * d;
+                    pairs++;
+                }
+            }
+            spread[s] = sum / pairs;
+            maxSpread = Math.max(maxSpread, spread[s]);
+            meanSpread += spread[s];
+            counted++;
+        }
+        System.out.printf("%nsuccessor spread (mean squared difference of tau between a state's successors): mean %.4f, max %.3f over %d states with a choice%n",
+                meanSpread / counted, maxSpread, counted);
+
+        Path dir = Path.of("render", "phase-path");
+        Files.createDirectories(dir);
+        String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-clock"
+                + Arrays.toString(rotated).replaceAll("[\\[\\] ]", "").replace(',', '-');
+        drawClock(c, tau, inS, T, dir.resolve(name + "-tau.png"));
+        if (coast != null) drawRate(c, coast, coastAdvance, dir.resolve(name + "-coast.png"));
+        drawSpread(c, spread, dir.resolve(name + "-spread.png"));
+        System.out.printf("wrote %s-{tau,coast,spread}.png in %s%n", name, dir);
+    }
+
+    /** The clock's seam: the starting line, crossed by a transition on its edge from {@code x < x0} to {@code x >= x0}. */
+    record Seam(Corridor c, int edge, int x0) {
+        boolean crosses(int s, int u) {
+            return c.edgeOf[s] == edge && c.edgeOf[u] == edge && c.x(s) < x0 && c.x(u) >= x0;
+        }
+    }
+
+    /** {@code tau(u) - tau(s)}, plus a lap where the transition crosses the seam. */
+    static double advance(Seam seam, double[] tau, int s, int u, double T) {
+        return tau[u] - tau[s] + (seam.crosses(s, u) ? T : 0);
+    }
+
+    /**
+     * Least squares over every transition of the route, {@code tau(u) - tau(s) = 1} (less a lap
+     * across the cut), the anchored states fixed: conjugate gradient on the normal equations.
+     * Returns the iterations used.
+     */
+    static int anchoredLeastSquares(Corridor c, boolean[] fixed, double[] tau, double T, Seam seam) {
+        int n = c.edgeOf.length;
+        // The transitions, once.
+        int[] out = new int[3];
+        int count = 0;
+        for (int s : c.states) count += c.succRound(s, out);
+        int[] from = new int[count], to = new int[count];
+        double[] target = new double[count];
+        int e = 0;
+        for (int s : c.states) {
+            int k = c.succRound(s, out);
+            for (int j = 0; j < k; j++) { from[e] = s; to[e] = out[j]; target[e] = 1 - (seam.crosses(s, out[j]) ? T : 0); e++; }
+        }
+        boolean[] free = new boolean[n];
+        int[] idx = new int[n];
+        Arrays.fill(idx, -1);
+        int nf = 0;
+        for (int s : c.states) if (!fixed[s]) { free[s] = true; idx[s] = nf++; }
+        // Start every free state from the mean of what its anchored neighbours imply, else zero.
+        double[] x = new double[nf];
+        for (int s : c.states) if (free[s]) x[idx[s]] = 0;
+        // b = A^T (target - A_fixed tau_fixed); operator: A^T A x.
+        double[] bvec = new double[nf];
+        for (int i = 0; i < count; i++) {
+            double r = target[i] - (fixed[to[i]] ? tau[to[i]] : 0) + (fixed[from[i]] ? tau[from[i]] : 0);
+            if (free[to[i]]) bvec[idx[to[i]]] += r;
+            if (free[from[i]]) bvec[idx[from[i]]] -= r;
+        }
+        double[] r = new double[nf], p = new double[nf], Ap = new double[nf];
+        applyNormal(from, to, free, idx, x, Ap, count);
+        double rr = 0;
+        for (int i = 0; i < nf; i++) { r[i] = bvec[i] - Ap[i]; p[i] = r[i]; rr += r[i] * r[i]; }
+        double rr0 = rr;
+        int it = 0;
+        for (; it < 20000 && rr > 1e-18 * Math.max(1, rr0); it++) {
+            applyNormal(from, to, free, idx, p, Ap, count);
+            double pAp = 0;
+            for (int i = 0; i < nf; i++) pAp += p[i] * Ap[i];
+            if (pAp == 0) break;
+            double alpha = rr / pAp;
+            double rrNew = 0;
+            for (int i = 0; i < nf; i++) { x[i] += alpha * p[i]; r[i] -= alpha * Ap[i]; rrNew += r[i] * r[i]; }
+            double beta = rrNew / rr;
+            rr = rrNew;
+            for (int i = 0; i < nf; i++) p[i] = r[i] + beta * p[i];
+        }
+        for (int s : c.states) if (free[s]) tau[s] = x[idx[s]];
+        return it;
+    }
+
+    /** {@code y = A^T A x} over the free variables, with {@code A} the transition difference matrix. */
+    static void applyNormal(int[] from, int[] to, boolean[] free, int[] idx, double[] x, double[] y, int count) {
+        Arrays.fill(y, 0);
+        for (int i = 0; i < count; i++) {
+            double ax = (free[to[i]] ? x[idx[to[i]]] : 0) - (free[from[i]] ? x[idx[from[i]]] : 0);
+            if (free[to[i]]) y[idx[to[i]]] += ax;
+            if (free[from[i]]) y[idx[from[i]]] -= ax;
+        }
+    }
+
+    /** The advance of tau along a path, tick by tick: min, max, mean, the count over one, and where it strays. Returns the advances. */
+    static double[] reportAlong(Seam seam, double[] tau, int[] path, boolean closed, double T) {
+        int steps = path.length - 1;
+        double[] adv = new double[steps];
+        double min = Double.MAX_VALUE, max = -Double.MAX_VALUE, sum = 0;
+        int over = 0, overBy = 0;
+        int[] hist = new int[9];   // < 0.8, 0.8-0.9, ..., 1.2-1.3, >= 1.3
+        for (int i = 0; i < steps; i++) {
+            adv[i] = advance(seam, tau, path[i], path[i + 1], T);
+            min = Math.min(min, adv[i]);
+            max = Math.max(max, adv[i]);
+            sum += adv[i];
+            if (adv[i] > 1 + 1e-9) over++;
+            if (adv[i] > 1.05) overBy++;
+            int bin = (int) Math.floor((adv[i] - 0.8) / 0.1) + 1;
+            hist[Math.max(0, Math.min(hist.length - 1, bin))]++;
+        }
+        System.out.printf("   %d ticks: tau advances %.3f in all (%.4f per tick), min %.3f, max %.3f; %d ticks over 1, %d over 1.05%n",
+                steps, sum, sum / steps, min, max, over, overBy);
+        StringBuilder sb = new StringBuilder("   histogram: <0.8:" + hist[0]);
+        for (int i = 1; i < hist.length - 1; i++) sb.append(String.format(" %.1f-%.1f:%d", 0.7 + i * 0.1, 0.8 + i * 0.1, hist[i]));
+        sb.append(" >=1.3:").append(hist[hist.length - 1]);
+        System.out.println(sb);
+        // Where it strays from one by more than a twentieth, in runs.
+        StringBuilder runs = new StringBuilder();
+        int shown = 0;
+        for (int i = 0; i < steps && shown < 40; i++) {
+            if (Math.abs(adv[i] - 1) <= 0.05) continue;
+            int j = i;
+            double s2 = 0;
+            while (j < steps && Math.abs(adv[j] - 1) > 0.05) { s2 += adv[j] - 1; j++; }
+            runs.append(String.format(" [%d..%d]%+.2f", i, j - 1, s2));
+            shown++;
+            i = j;
+        }
+        System.out.println("   runs off one by more than 0.05 (tick range, net):" + runs);
+        return adv;
+    }
+
+    /** The whole route coloured by tau round the lap, the anchors brighter. */
+    static void drawClock(Corridor c, double[] tau, boolean[] inS, double T, Path out) throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        boolean[] any = new boolean[c.edgeOf.length];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 4);
+        int scale = 3;
+        int[] paint = new int[w * h];
+        double[] sum = new double[w * h];
+        int[] cnt = new int[w * h];
+        boolean[] anchor = new boolean[w * h];
+        for (int s : c.states) { sum[c.cell(s)] += tau[s]; cnt[c.cell(s)]++; if (inS[s]) anchor[c.cell(s)] = true; }
+        for (int i = 0; i < paint.length; i++) {
+            if (cnt[i] == 0) continue;
+            double t = (sum[i] / cnt[i]) / T;
+            t -= Math.floor(t);
+            paint[i] = hue(t, anchor[i] ? 1.0 : 0.55);
+        }
+        write(c, paint, box, scale, out);
+    }
+
+    /** The coasting cycle coloured by its advance of tau per tick — blue under one, white at one, red over — with a strip chart beneath. */
+    static void drawRate(Corridor c, int[] coast, double[] adv, Path out) throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        boolean[] any = new boolean[c.edgeOf.length];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 4);
+        int scale = 3;
+        int[] paint = new int[w * h];
+        for (int s : c.states) paint[c.cell(s)] = 0x30343C;
+        int at = 0;
+        for (int i = 0; i < coast.length; i++) if (c.cut(coast[(i + coast.length - 1) % coast.length], coast[i])) { at = i; break; }
+        for (int i = 0; i < coast.length; i++) {
+            int s = coast[(at + i) % coast.length];
+            paint[c.cell(s)] = diverging(adv[i]);
+            // Thicken to the 8-neighbours so the line reads at 3x.
+            for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+                int nx = c.x(s) + dx, ny = c.y(s) + dy;
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h || c.map.oob(nx, ny)) continue;
+                if (paint[nx + ny * w] == 0x30343C) paint[nx + ny * w] = diverging(adv[i]);
+            }
+        }
+        int bw = (box[2] - box[0]) * scale, bh = (box[3] - box[1]) * scale, stripH = 120, gap = 10;
+        BufferedImage img = new BufferedImage(bw, bh + gap + stripH + 20, BufferedImage.TYPE_INT_RGB);
+        for (int y = box[1]; y < box[3]; y++) {
+            for (int x = box[0]; x < box[2]; x++) {
+                int rgb = c.map.oob(x, y) ? 0x000000 : paint[x + y * w];
+                for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) img.setRGB((x - box[0]) * scale + sx, (y - box[1]) * scale + sy, rgb);
+            }
+        }
+        // The strip: tick along x, advance along y from 0.6 to 1.4, a line at one.
+        java.awt.Graphics2D g2 = img.createGraphics();
+        g2.setColor(new java.awt.Color(0x14161A));
+        g2.fillRect(0, bh + gap, bw, stripH + 20);
+        g2.setColor(new java.awt.Color(0x50545C));
+        int y1 = bh + gap + stripH - (int) ((1 - 0.6) / 0.8 * stripH);
+        g2.drawLine(0, y1, bw, y1);
+        g2.setColor(java.awt.Color.WHITE);
+        g2.setFont(new java.awt.Font("SansSerif", java.awt.Font.PLAIN, 11));
+        g2.drawString("advance of tau per tick along the coasting cycle, from the cut: 0.6 to 1.4, line at 1", 4, bh + gap + 12);
+        double px = bw / (double) adv.length;
+        for (int i = 0; i < adv.length; i++) {
+            double v = Math.max(0.6, Math.min(1.4, adv[i]));
+            int y = bh + gap + stripH - (int) ((v - 0.6) / 0.8 * stripH);
+            g2.setColor(new java.awt.Color(diverging(adv[i])));
+            g2.fillRect((int) (i * px), Math.min(y, y1), Math.max(1, (int) Math.ceil(px)), Math.abs(y1 - y) + 1);
+        }
+        g2.dispose();
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
+    /** The successor spread, averaged over the states at each pixel, black to yellow. */
+    static void drawSpread(Corridor c, double[] spread, Path out) throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        boolean[] any = new boolean[c.edgeOf.length];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 4);
+        int[] paint = new int[w * h];
+        double[] sum = new double[w * h];
+        int[] cnt = new int[w * h];
+        int[] tmp = new int[3];
+        for (int s : c.states) if (c.succRound(s, tmp) >= 2) { sum[c.cell(s)] += spread[s]; cnt[c.cell(s)]++; }
+        double top = 0;
+        for (int i = 0; i < paint.length; i++) if (cnt[i] > 0) top = Math.max(top, sum[i] / cnt[i]);
+        for (int i = 0; i < paint.length; i++) {
+            if (cnt[i] == 0) { paint[i] = 0x30343C; continue; }
+            double t = Math.sqrt(sum[i] / cnt[i] / top);
+            int r = (int) (255 * Math.min(1, 1.5 * t)), g = (int) (255 * Math.max(0, Math.min(1, 1.5 * t - 0.3))), bb = (int) (80 * Math.max(0, 1 - 2 * t));
+            paint[i] = (r << 16) | (g << 8) | bb;
+        }
+        write(c, paint, box, 3, out);
+        System.out.printf("   spread heatmap: black 0 to yellow %.3f (per-pixel mean over headings, square-root scale)%n", top);
+    }
+
+    static int hue(double t, double v) {
+        double r = Math.max(0, Math.min(1, Math.abs(6 * t - 3) - 1)), g = Math.max(0, Math.min(1, 2 - Math.abs(6 * t - 2))), b = Math.max(0, Math.min(1, 2 - Math.abs(6 * t - 4)));
+        return ((int) (255 * v * r) << 16) | ((int) (255 * v * g) << 8) | (int) (255 * v * b);
+    }
+
+    /** Blue at 0.7 and below, white at 1, red at 1.3 and above. */
+    static int diverging(double v) {
+        double t = Math.max(-1, Math.min(1, (v - 1) / 0.3));
+        int r = (int) (255 * (t >= 0 ? 1 : 1 + t)), g = (int) (255 * (1 - Math.abs(t))), b = (int) (255 * (t <= 0 ? 1 : 1 - t));
+        return (r << 16) | (g << 8) | b;
+    }
+
+    static void write(Corridor c, int[] paint, int[] box, int scale, Path out) throws IOException {
+        int w = c.map.width();
+        BufferedImage img = new BufferedImage((box[2] - box[0]) * scale, (box[3] - box[1]) * scale, BufferedImage.TYPE_INT_RGB);
+        for (int y = box[1]; y < box[3]; y++) {
+            for (int x = box[0]; x < box[2]; x++) {
+                int rgb = c.map.oob(x, y) ? 0x000000 : paint[x + y * w];
+                for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) img.setRGB((x - box[0]) * scale + sx, (y - box[1]) * scale + sy, rgb);
+            }
+        }
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
     // ---------------------------------------------------------------------------- renders
 
     private static final int[] PALETTE = {0xFFFFFF, 0x3CB44B, 0xFFE119, 0xF032E6, 0x46F0F0, 0xF58231,

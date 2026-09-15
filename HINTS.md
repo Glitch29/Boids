@@ -468,6 +468,20 @@ faster lane merges — with quarter-tick resolution that the minimum over offset
 unused. Ask for the shortest loops rather than the smallest: the set costs eight searches and no
 search over covers, and the clock comes with it.
 
+**The stable lap is what four laps close on, and the anchors of a clock need not be connected to
+anything.** A lap can be flown in 259.25 ticks once; the length that repeats is the fewest ticks
+for four cut crossings back to the same state, over four — 260.00 here, and one search finds it.
+The states whose shortest loop is exactly that length make natural anchors, but they are not a
+connected set: a state's 260-loop passes through states with shorter loops of their own, so a
+search from the cut confined to the anchors reaches a third of them and labels those it does reach
+inconsistently. Label them instead by the quarter-tick distance from the starting line — a search
+over the whole route, which needs nothing of the set — and make the line the seam, so tau runs
+0 to 260 round the lap and a transition across the line carries the lap; put the seam anywhere
+else and every state between the two disagrees by a lap. Least squares over every transition with
+those fixed then gives a clock that advances one tick per transition to within 0.09 rms over the
+whole route. Read off it: the fast loop spends its three-quarter tick in short runs of gain and
+loss, not evenly, and the coasting cycle runs at one on straights and loses on every bend.
+
 ## 4. The clock — tick values and edge lengths
 
 **The problem it solves.** The decomposition says which stretch a state is on but not where

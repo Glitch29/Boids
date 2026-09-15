@@ -6,8 +6,8 @@ handoff dated 2026-09-14: the placement fitness has three known defects and phas
 pathing is the prerequisite — now defined by the user, built as `PhasePath` and measured (§0i,
 "Phase-complete paths"), and the shortest lap of a route measured a quarter tick at a time
 (`EDGES.md` §5): an integer 260 on dabeone's stable loop, and the set of all states on loops of
-that length — 22,240, the same from any starting line — on which `F/4` is a quarter-tick clock;
-how the clock is read off it is the next decision. §0h is closed; its
+that length — and a route clock anchored on the 6,995 states of exactly the stable lap, `1 ± 0.087`
+per transition; whether it replaces the fitted clock for routes is the next decision. §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
 ---
@@ -2095,9 +2095,23 @@ so it is a quarter-tick clock on `P*` — with two things for the user to weigh:
 1,040 quarter-tick values are populated, and `F` and `N* − R` disagree by up to 3 quarter-ticks
 on the faster loops.
 
-**Next.** The user's decision on the clock — `F`, `R`, or something between; a decision zone
-from a cover — the replacement for `DecisionZone.subpath`'s chain of `S_k`, which was a stop-gap
-and is to be discarded — and then the fitness for (1) and (2).
+**Then the anchored route clock, the user's construction.** The stable lap programmatically —
+fewest ticks for four cut crossings back to the same state, over four: **1,040 / 4 = 260.00** on
+dabeone's stable loop, from 161 of 382 cut landings. `S` = the 6,995 states whose shortest loop
+is exactly that. **Alert, as asked: `S` is not navigationally connected to the cut in either
+direction** — 1,900 reached forward, 2,585 backward, 2,510 by neither — because a state's
+1,040-loop runs through states with shorter loops of their own, outside `S`. Anchored instead on
+`F/4`, the quarter-tick distance from the starting line (a BFS from a cut over the whole route,
+exact inside `S` on 9,477 of 9,528 transitions), with the line as the clock's seam; the rest by
+unit-weight least squares over every transition. **Advance `1 ± 0.087` rms over 105,772
+transitions.** Along the 259.25 loop tau advances 260.75 in 260 ticks, unevenly (0.76–1.35, 114
+ticks over 1); along the coasting cycle 260.00 in 278, at one on the straights and losing on
+every bend; successor spread mean 0.009, max 0.66. `PhasePath.clock`; `EDGES.md` §5 "The
+anchored route clock"; renders `render/phase-path/dabeone-…-clock2-7-4-{tau,coast,spread}.png`.
+
+**Next.** Whether this clock replaces `RouteClock` / the map-wide `EdgeMetric` for routes, and
+with what weighting — the user's call; then the decision zone from a cover and the fitness for
+(1) and (2).
 
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won

@@ -486,6 +486,22 @@ The user's answer to "the shortest phase-complete path": the whole set, the shor
 the smallest. On dabeone's stable loop **`N* = 260.00` ticks and `P*` is 22,240 states over 5,842
 pixels, the same set from every starting line**. `PhasePath.shortestLoops`; `EDGES.md` §5.
 
+**stable lap** — the fewest ticks for a closed walk of exactly four cut crossings from a state
+back to itself, over four: the lap length that repeats, as against a fractional lap that can be
+flown once. `PhasePath.fewestTicksForLaps`; **260.00** on dabeone's stable loop.
+
+**anchored route clock** — tau on every state of a route: `F/4` — the quarter-tick distance from
+the starting line — on the states whose shortest loop is exactly the stable lap, and least squares
+over every transition for the rest, unit weights, the line as the seam. `PhasePath.clock`;
+advance `1 ± 0.087` rms per transition on dabeone's stable loop. **The anchor set is not connected
+to the cut** (2,510 of 6,995 states reached in neither direction), which is why the anchors are
+`F/4` rather than a search within it. `EDGES.md` §5 "The anchored route clock". Not yet the clock
+the project reads — that is still `EdgeMetric` and `RouteClock`.
+
+**successor spread** — per state, the mean squared difference of tau between its successors; how
+much the clock says a boid's next choice matters. Mean 0.009, max 0.66 on dabeone's stable loop
+under the anchored clock. `PhasePath.clock`, drawn per pixel.
+
 **funnel** — for a path `P` and a segment `[A, Z]`, the sets exactly `N` steps before (or after)
 `P`, for every `N` until they leave the segment; the **cumulative** funnel is within `N` steps.
 `PhasePath.funnel`, behind a flag. The first definition's test: the exact funnel has a **comb** at
@@ -829,6 +845,7 @@ anything not listed.
 | phase-complete loop, geometric clock | `PhasePath.loop`, run by hand — the coasting cycle plus closed strands round a whole route, pruned, from several starts; the coasting-sweep tau along each strand | `render/phase-path/<map>-<hash>-loop<route>.png`; printed |
 | shortest lap | `PhasePath.lap`, run by hand — breadth-first round the route from every horizontal-step state of a column on a straight, to itself or 0–3 px ahead; the reachable advances at the first depth and three after; the chain from the landing state | `render/phase-path/<map>-<hash>-lap<route>.png`; printed |
 | the set of all shortest loops | `PhasePath.shortestLoops`, run by hand — `F`, `R` and `L` from a starting line by eight breadth-first searches; `P_N` for `N` ascending until its projection loops round; `F` as a clock on it | `render/phase-path/<map>-<hash>-loops<route>-x<line>.png`; printed |
+| the anchored route clock | `PhasePath.clock`, run by hand — the stable lap by four-lap closure, `F/4` on the states of exactly that loop, least squares for the rest; the advance along the fastest loop and the coasting cycle; the successor spread | `render/phase-path/<map>-<hash>-clock<route>-{tau,coast,spread}.png`; printed |
 | the clock on one route (fit) | `RouteClock.of` — the corridor and the refit; `Fit.tau` is `T`, one continuous coordinate round the loop | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |

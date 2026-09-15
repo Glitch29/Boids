@@ -20,7 +20,11 @@ ticks, and a tau read off the coasting sweep agrees with every strand to within 
 then the **shortest lap**, a quarter tick at a time: an integer 260, eighteen under the coast,
 and the loop clamps phase to one residue rather than carrying it; then **the set of all shortest
 loops**: every state on a loop of 260 ticks or less, 22,240 of them, the same set from any
-starting line, on which `F/4` is a quarter-tick clock exact along 98% of transitions.
+starting line, on which `F/4` is a quarter-tick clock exact along 98% of transitions; and
+**the anchored route clock**: the stable lap found programmatically (260.00), `F/4` on the
+6,995 states of exactly that loop as anchors, least squares for the rest — `1 ± 0.087` per
+transition over the route. The anchor set is *not* connected to the cut, which was the alert asked
+for.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -1117,6 +1121,59 @@ loop through any state is **1,037 quarter-ticks = 259.25 ticks**, and:
    the minimum over offsets favours small `k`, so only 465 of the 1,040 quarter-tick values are
    populated (up to 452 states each, mean 21 over all 1,040); and `F` and `N* − R` disagree by
    `N* − L(s)`, 0 to 3 quarter-ticks, on the states of the faster loops.
+
+### The anchored route clock — 2026-09-15
+
+**The user's construction, and what was built.** The purpose of the loop work was an anchor for
+the route's clock. Three steps, `PhasePath.clock`, run by hand:
+
+1. **The stable lap, programmatically.** The fewest ticks for a closed walk of exactly four cut
+   crossings from a state back to itself, over every state just past the cut, divided by four:
+   breadth-first on `(state, crossings)`. On dabeone's stable loop **1,040 ticks from 161 of the
+   382 cut landings, so 260.00** — and one lap back to the same state is 260 as well. This is what
+   the quarter-tick tables above could only be read by eye: a 259.25 lap exists but lands in the
+   260 band, and 260 is the length that repeats.
+2. **The anchors.** `S` = every route state whose shortest loop through the starting line is
+   exactly 1,040 quarter-ticks: **6,995 states**. The user asserted `S` would be navigationally
+   connected to the cut in at least one direction, to be labelled by breadth-first search within
+   it. **It is not, and this is the alert asked for**: from the cut within `S`, 1,900 states are
+   reached forward and 2,585 backward, and **2,510 by neither**. The reason is structural — a
+   state's 1,040-loop runs through states whose own shortest loop is shorter, where it merges with
+   the 1,037 lane, and those lie outside `S`, so `S` fragments. Labels from the fragments were
+   inconsistent (`F − 4·tau` took 20 values) and the clock built on them carried a ten-tick
+   surplus round the fast loop. **What works is `F/4` itself**: the quarter-tick distance from the
+   starting line is a breadth-first search from a cut over the whole route, needs no connectivity
+   of `S`, and inside `S` advances by exactly four on 9,477 of 9,528 transitions. The starting line
+   is then the clock's seam — tau runs from 0 just past it to 260 just before it, and a
+   transition across the line carries a lap; the route's own cut only counted laps in step 1.
+   (A first version reduced the anchors modulo the lap at the cut instead, and the two seams
+   disagreed by a lap for every state between them.)
+3. **The clock everywhere else.** Least squares over every transition of the route — each asks
+   its endpoints to differ by one tick, one lap less across the seam — with `S` held fixed;
+   conjugate gradient on the normal equations, **unit weights** (the lifted-flow weighting of the
+   map-wide clock is not used here, and that is a choice to revisit). 36,975 free states, 270
+   iterations. **Over the 105,772 transitions of the route the advance of tau is `1 ± 0.087`
+   rms**, the worst a single transition at −1.00.
+
+**What the user asked to see.**
+
+- **The 259.25 loop** (260 ticks landing 3 px ahead): tau advances **260.75 in all, 1.0029 per
+  tick**; per tick from **0.756 to 1.348**; 114 of 260 ticks over 1, 58 over 1.05, 4 at 1.2 or
+  more. So the three-quarters is **not absorbed evenly**: 216 ticks sit within 0.9–1.1 and the
+  surplus comes in short runs — `[11..14] +0.51`, `[110..115] +0.64`, `[204..206] +0.59`,
+  `[237..239] +0.62` — offset by runs of loss (`[121..124] −0.46`, `[191..194] −0.40`). Yes, ticks
+  with tau over 1 exist, up to 1.35.
+- **The coasting cycle** (278 ticks): tau advances **260.000 in all, 0.9353 per tick**; per tick
+  from 0.747 to 1.105; only 35 ticks over 1 and 5 over 1.05. It runs at one on the straights and
+  loses on every bend — `[20..37] −2.34`, `[44..52] −1.04`, `[130..137] −1.03`, `[209..217] −1.15`,
+  `[219..227] −1.19` — which is the outer lane being the long way round.
+  `render/phase-path/dabeone-…-clock2-7-4-coast.png`: the cycle coloured blue under one, white
+  at one, red over, with a strip chart beneath.
+- **Successor spread** — per state the mean squared difference of tau between its successors,
+  per pixel averaged over headings: **mean 0.0093, max 0.658** over the 35,441 states with a
+  choice. Near zero on the straights, brightest where the corridor bulges at the two widened
+  bends. `-spread.png`, black to yellow at 0.32 on a square-root scale. `-tau.png` is the clock
+  itself, hue round the lap, anchors brighter.
 
 ---
 

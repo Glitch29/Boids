@@ -11,7 +11,7 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
-## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap; the set of all shortest loops
+## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap; the set of all shortest loops; the anchored route clock
 
 **The user's second definition**, after the two findings below: a cover `P` of `S` whose every
 point navigates to `B` backward and `Y` forward within `P`, and **whose projection to `(x, y)` is
@@ -92,10 +92,28 @@ advance 3/2/1/0, 436 cross the line, none more; 465 of 1,040 q-tick values popul
 in `EDGES.md` §5 "The set of all shortest loops", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary,
 README; renders `render/phase-path/dabeone-…-loops2-7-4-x18{0,1,2,3}.png`.
 
-**Open.** How the clock is read off `P*` — `F`, `R`, or something between — the user's call. A
-decision zone from a cover — the replacement for `DecisionZone.subpath`; then the fitness for the
-handoff's (1) and (2). A stretch narrow enough to lock a single-phase path out, which dabeone's
-stable route does not offer.
+**Then the anchored route clock, the user's construction.** (1) The stable lap programmatically:
+fewest ticks for four cut crossings back to the same state — `PhasePath.fewestTicksForLaps`,
+breadth-first on `(state, crossings)` from every cut landing — **1,040 from 161 of 382, so
+260.00**; one lap closes at 260 too. (2) `S` = the 6,995 states with `L = 1,040`. **Alert, as
+asked: not connected to the cut** — forward within `S` 1,900 of 6,995, backward 2,585, neither
+2,510 — since a 1,040-loop runs through states with shorter loops. Labels from that BFS were
+inconsistent (20 values of `F − 4·tau`) and the clock on them carried +10 ticks round the fast
+loop; anchored instead on `F/4`, which advances by exactly 4 inside `S` on 9,477 of 9,528
+transitions. A first version reduced anchors mod `T` at the cut and got a −260 seam; fixed by
+making the starting line the seam (`Seam`). (3) Unit-weight least squares over all 105,772
+transitions, `S` fixed, CG 270 iterations: **advance `1 ± 0.087` rms, worst −1.00**. The 259.25
+loop: 260.75 in 260 ticks, 0.756–1.348 per tick, 114 over 1, 58 over 1.05, gains in short runs
+(`[11..14] +0.51`, `[110..115] +0.64`, `[204..206] +0.59`, `[237..239] +0.62`). The coast:
+260.000 in 278, 0.747–1.105, at one on straights, losing on bends (`[20..37] −2.34`). Successor
+spread mean 0.0093, max 0.658. Renders `render/phase-path/dabeone-…-clock2-7-4-{tau,coast,spread}.png`.
+Recorded in `EDGES.md` §5 "The anchored route clock", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary,
+README.
+
+**Open.** Whether the anchored clock replaces `RouteClock` / `EdgeMetric` for routes, and with
+what weighting — the user's call. A decision zone from a cover — the replacement for
+`DecisionZone.subpath`; then the fitness for the handoff's (1) and (2). A stretch narrow enough to
+lock a single-phase path out, which dabeone's stable route does not offer.
 
 ## 2026-09-14 (evening) — the phase-complete path definition, tested once and passed back
 
