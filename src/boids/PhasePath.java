@@ -11,46 +11,66 @@ import java.util.List;
 import java.util.PriorityQueue;
 
 /**
- * A phase-complete path: the user's non-constructive definition, a construction tried against
- * it, and the check that says whether what was built satisfies it.
+ * A phase-complete path: the user's definition, the construction that realises it, and the
+ * measurement that says whether what was built has the property the definition is for.
  *
- * <h2>The definition, as given 2026-09-14</h2>
+ * <h2>The definition, 2026-09-15</h2>
  * For a set of states {@code S} between gate {@code B} and gate {@code Y} on route {@code R}, a
  * phase-complete path {@code P} is a cover of {@code S} such that
  * <ul>
  *   <li>every point of {@code P} can backward-navigate to {@code B} while remaining in {@code P};</li>
  *   <li>every point of {@code P} can forward-navigate to {@code Y} while remaining in {@code P};</li>
- *   <li>for some gates {@code A} and {@code Z} on {@code R}: the set of {@code N}th predecessors
- *       of {@code P} within {@code AZ}, projected to {@code (x, y)}, has a single exterior border
- *       with no holes, and for some {@code N} it saturates {@code A}; and the set of {@code N}th
- *       successors of {@code P} within {@code AZ}, projected, has a single exterior border with no
- *       holes, and for some {@code N} it saturates {@code Z}.</li>
+ *   <li>the projection of {@code P} to {@code (x, y)} is diagonally (8-)connected.</li>
  * </ul>
- * The user's text paired the successor funnel with {@code A} and the predecessor funnel with
- * {@code Z}; the pairing is read the other way round here, since a funnel of successors runs
- * forward and can only meet the downstream gate. <b>Read literally: the {@code N}th-successor set
- * is exactly {@code N} steps on, not within {@code N}.</b> The cumulative sets are reported beside
- * the exact ones so the difference is visible.
+ * It rests on the step table: at radius 40 the steps of adjacent headings differ by 0 or 1 pixel,
+ * never diagonally, so a boid that turns once lands within a pixel of where it would have landed
+ * straight, and a projection with no diagonal gaps is one every phase of the step lattice can
+ * stand on. <b>What the definition is for</b>, in the user's words: the shortest way onto
+ * {@code P} from anywhere off it should follow roughly the trajectory continuous physics would
+ * take — no detour forced by a phase {@code P} lacks, and no lockout on a stretch with no phase
+ * bleed. That is philosophical; what is measured here is its shadow, the <b>join field</b>.
  *
- * <h2>The construction tried</h2>
- * {@code P} is a union of <b>strands</b>. The <b>lane</b> is the set of pixels {@code S} sweeps:
- * its own pixels and, for each step, the pixels the step passes through ({@link NavMap#stepPath}).
- * A single-phase path covers one pixel in four of its lane; the other three are what a boid on
- * another phase of the step lattice stands on. So, while some lane pixel is uncovered by
- * {@code P}, add the cheapest path from {@code B} to {@code Y} within {@code [B, Y]} through any
- * state at that pixel, the cost of a state being the squared distance of its pixel from the lane.
- * {@code S} itself is the first strand. Each strand starts in {@code B} and ends in {@code Y}, so
- * the two navigation conditions hold by construction; the funnel conditions are then measured,
- * not assumed. The definition does not determine {@code P} uniquely — the conditions are not
- * closed under intersection — so the strand rule is a choice, and is named as one.
+ * <h2>The construction</h2>
+ * {@code P} is a union of <b>strands</b>. The <b>lane</b> is the set of pixels {@code S} sweeps —
+ * its own and, per step, the samples the step passes through ({@link NavMap#stepPath}) — less the
+ * dead pixels a step along a wall sweeps. {@code S} is the first strand. While the projection of
+ * {@code P} is not 8-connected, take the earliest two consecutive states of {@code S} whose pixels
+ * lie in different components, and add the cheapest {@code B → Y} path within {@code [B, Y]}
+ * through the first uncovered pixel of the sweep between them (failing that, through any
+ * uncovered pixel 8-adjacent to the upstream component), a state costing the square of its
+ * pixel's distance from the lane. The navigation conditions hold by construction, since every
+ * strand runs gate to gate; connectivity is the loop's exit. The definition does not determine
+ * {@code P} — its conditions are not closed under intersection — so the choice of strand is a
+ * tie-break, and it is greedy, so minimal in strands only in the greedy sense. The
+ * <b>saturated</b> cover, one strand per lane pixel whether needed or not, is built beside it for
+ * comparison.
+ *
+ * <h2>The measurement</h2>
+ * The join field: from every state before {@code Y}, the ticks to its first state of {@code P}.
+ * Over the states upstream of {@code B} it is reported as how many cannot join at all and as the
+ * histogram of the change in join time between 4-adjacent pixels at the same heading — a field
+ * that changes by at most one per pixel is a boid steering onto the path the way it would in the
+ * continuum; a jump of seven is a detour round a missing phase. Measured for {@code S} alone,
+ * the connected cover and the saturated cover, and drawn.
  *
  * <h2>The setup, the user's</h2>
  * A route, cut at one crossing far from the stretch under study, so "between" is well defined;
  * four states {@code a < b < y < z} on the route's coasting path — the straight-travel cycle —
  * with gates around each by phantom edge insertion, the same conditioning {@code GateSplit} uses
  * (partial tick, perfected both ways, unioned with its inverse, perfected again); a gate's states
- * are the landing set of its insertion boundary, the first states past it. {@code S} is the
- * coasting states from {@code b} to {@code y}.
+ * are its core and the landing set of its insertion boundary together. {@code S} is the coasting
+ * states from {@code b} to {@code y}; {@code A} and {@code Z} bound the region the join field is
+ * measured over.
+ *
+ * <h2>The first definition, 2026-09-14, kept as a record</h2>
+ * It asked in addition that the sets exactly {@code N} steps before and after {@code P}, within
+ * {@code [A, Z]}, project to a single region with no holes for every {@code N}, saturating
+ * {@code A} and {@code Z} at some {@code N}. Tested once on dabeone edge 4 it failed twice, on
+ * neither count a property of {@code P}: at small {@code N} the side-feeders into a thin path sit
+ * at discrete pixels and enclose wall-side pixels whose states need 7–24 steps (the comb), and at
+ * the saturating {@code N} the landing set of an insertion boundary is speckled by phase in
+ * projection, so saturation and the clip contradict. {@link #funnel} and its report and render
+ * are kept behind a flag; {@code EDGES.md} §2a has the account.
  */
 public final class PhasePath {
     private PhasePath() {}
@@ -58,8 +78,11 @@ public final class PhasePath {
     /** The four gates in route order. */
     public enum Which { A, B, Y, Z }
 
-    /** One gate: its seed on the coasting path, its conditioned core, {@code E<core}, and its landing set. */
-    public record GateSet(Which which, int seed, int[] core, boolean[] before, int[] landing) {}
+    /**
+     * One gate: its seed on the coasting path, its conditioned core, {@code E<core}, its landing set,
+     * and its states — the core and the landing set together, the first states past the boundary.
+     */
+    public record GateSet(Which which, int seed, int[] core, boolean[] before, int[] landing, int[] states) {}
 
     /** The route as a corridor: which of its edges each state is on, and the one cut crossing. */
     static final class Corridor {
@@ -125,9 +148,10 @@ public final class PhasePath {
      * @param edge   the edge the four seeds are measured from
      * @param ticks  four offsets, in ticks along the coasting path from its entry onto the
      *               corridor (the cut landing), for {@code a, b, y, z}
+     * @param funnels whether to also run the funnels of the 2026-09-14 definition on the saturated cover
      */
     public static void run(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route,
-                           int edge, int[] ticks) throws IOException {
+                           int edge, int[] ticks, boolean funnels) throws IOException {
         Pipeline.Built b = Pipeline.build(preset, gate);
         SolverFacts f = b.facts();
         EdgeDecomposition.Labelling l = b.labelling();
@@ -221,35 +245,60 @@ public final class PhasePath {
         }
         System.out.printf("lane: %d pixels swept, %d of them dead or outside [B,Y] and dropped%n",
                 laneCount + dead, dead);
-        Cover cover = cover(c, S, lane, betweenBY, B, Y);
-        System.out.printf("S: %d states; lane %d pixels; P: %d states in %d strands, covering %d lane pixels,"
-                        + " %d pixels off the lane%n", S.length, laneCount, cover.P.length, cover.strands.size(),
-                cover.laneCovered, cover.offLane);
-        for (int i = 0; i < cover.strands.size(); i++) {
-            int[] st = cover.strands.get(i);
-            System.out.printf("  strand %d: %3d states, from (%d,%d,%d) to (%d,%d,%d), cost %.0f%n", i, st.length,
-                    c.x(st[0]), c.y(st[0]), c.d(st[0]), c.x(st[st.length - 1]), c.y(st[st.length - 1]),
-                    c.d(st[st.length - 1]), cover.costs.get(i));
+
+        // The covers: the construction, and the saturated one beside it.
+        Cover[] covers = {coverConnected(c, S, lane, betweenBY, B, Y), coverSaturated(c, S, lane, betweenBY, B, Y)};
+        for (Cover cover : covers) {
+            System.out.printf("%n%s cover: %d states in %d strands, projection %d pixels in %d component%s,"
+                            + " %d of %d lane pixels covered, %d states off the lane%n", cover.kind, cover.P.length,
+                    cover.strands.size(), cover.pixels, cover.components, cover.components == 1 ? "" : "s   <-- NOT CONNECTED",
+                    cover.laneCovered, laneCount, cover.offLane);
+            for (int i = 0; i < cover.strands.size(); i++) {
+                int[] st = cover.strands.get(i);
+                System.out.printf("  strand %2d: %3d states, from (%d,%d,%d) to (%d,%d,%d), cost %.0f%n", i, st.length,
+                        c.x(st[0]), c.y(st[0]), c.d(st[0]), c.x(st[st.length - 1]), c.y(st[st.length - 1]),
+                        c.d(st[st.length - 1]), cover.costs.get(i));
+            }
+            // The two navigation conditions, checked rather than assumed.
+            System.out.printf("  navigation within P: %d of %d states cannot reach Y forward, %d cannot reach B backward%n",
+                    unreaching(c, cover.P, Y.states, true), cover.P.length, unreaching(c, cover.P, B.states, false));
         }
 
-        // The two navigation conditions, checked rather than assumed.
-        System.out.printf("navigation within P: %d of %d states cannot reach Y forward, %d cannot reach B backward%n",
-                unreaching(c, cover.P, Y.landing, true), cover.P.length, unreaching(c, cover.P, B.landing, false));
-
-        // The funnels.
-        Funnel pred = funnel(c, cover.P, betweenAZ, A.landing, false);
-        Funnel succ = funnel(c, cover.P, betweenAZ, Z.landing, true);
-        report("predecessors, toward A", pred, A.landing.length);
-        report("successors, toward Z", succ, Z.landing.length);
-        diagnose("predecessors", c, pred, A.landing, betweenAZ);
-        diagnose("successors", c, succ, Z.landing, betweenAZ);
+        // The join field: from every state before Y, how many ticks to the first state of P.
+        // Reported over the states upstream of B, where every one should be able to join.
+        boolean[] beforeY = new boolean[edgeOf.length], upstreamOfB = new boolean[edgeOf.length];
+        for (int s : c.states) {
+            beforeY[s] = betweenAZ[s] && (Y.before[s] || betweenBY[s]);
+            upstreamOfB[s] = betweenAZ[s] && B.before[s];
+        }
+        System.out.println();
+        int[] joinS = joinField(c, S, beforeY);
+        reportJoin("S alone", c, joinS, upstreamOfB);
+        int[][] joins = new int[covers.length][];
+        for (int i = 0; i < covers.length; i++) {
+            joins[i] = joinField(c, covers[i].P, beforeY);
+            reportJoin(covers[i].kind, c, joins[i], upstreamOfB);
+        }
 
         Path dir = Path.of("render", "phase-path");
         Files.createDirectories(dir);
         String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-e" + edge;
-        drawCover(c, betweenAZ, lane, cover.P, gates, dir.resolve(name + "-cover.png"));
-        drawFunnels(c, betweenAZ, pred, succ, cover.P, dir.resolve(name + "-funnels.png"));
-        System.out.printf("wrote %s-cover.png and -funnels.png in %s%n", name, dir);
+        drawCover(c, betweenAZ, lane, covers[0].P, gates, dir.resolve(name + "-cover.png"));
+        drawJoin(c, upstreamOfB, coast, new int[][]{joinS, joins[0], joins[1]}, new String[]{"S alone", covers[0].kind, covers[1].kind},
+                dir.resolve(name + "-join.png"));
+        System.out.printf("wrote %s-cover.png and -join.png in %s%n", name, dir);
+
+        if (funnels) {
+            // The funnels of the definition of 2026-09-14, kept as the record of its first test.
+            Funnel pred = funnel(c, covers[1].P, betweenAZ, A.states, false);
+            Funnel succ = funnel(c, covers[1].P, betweenAZ, Z.states, true);
+            report("predecessors, toward A", pred, A.states.length);
+            report("successors, toward Z", succ, Z.states.length);
+            diagnose("predecessors", c, pred, A.states, betweenAZ);
+            diagnose("successors", c, succ, Z.states, betweenAZ);
+            drawFunnels(c, betweenAZ, pred, succ, covers[1].P, dir.resolve(name + "-funnels.png"));
+            System.out.printf("wrote %s-funnels.png%n", name);
+        }
     }
 
     // ------------------------------------------------------------------------------ gates
@@ -283,14 +332,18 @@ public final class PhasePath {
             int k = c.pred(s, out);
             for (int j = 0; j < k; j++) if (before[out[j]]) { landing.add(s); break; }
         }
-        return new GateSet(which, seed, core, before, landing.stream().mapToInt(Integer::intValue).toArray());
+        int[] landed = landing.stream().mapToInt(Integer::intValue).toArray();
+        java.util.TreeSet<Integer> all = new java.util.TreeSet<>();
+        for (int s : core) all.add(s);
+        for (int s : landed) all.add(s);
+        return new GateSet(which, seed, core, before, landed, all.stream().mapToInt(Integer::intValue).toArray());
     }
 
     /** States past {@code from}'s gate and not past {@code to}'s: not in {@code E<from}, in {@code E<to} or its landing. */
     static boolean[] between(Corridor c, GateSet from, GateSet to) {
         boolean[] in = new boolean[c.edgeOf.length];
         boolean[] toLanding = new boolean[c.edgeOf.length];
-        for (int s : to.landing) toLanding[s] = true;
+        for (int s : to.states) toLanding[s] = true;
         for (int s : c.states) in[s] = !from.before[s] && (to.before[s] || toLanding[s]);
         return in;
     }
@@ -339,36 +392,60 @@ public final class PhasePath {
     // ------------------------------------------------------------------------------ cover
 
     static final class Cover {
+        final String kind;
         int[] P;
         final List<int[]> strands = new ArrayList<>();
         final List<Double> costs = new ArrayList<>();
-        int laneCovered, offLane;
+        int laneCovered, offLane, pixels, components;
+
+        Cover(String kind) { this.kind = kind; }
     }
 
-    /**
-     * {@code S}, then one strand per uncovered lane pixel in lane order: the cheapest path from
-     * {@code B}'s landing set to {@code Y}'s within {@code [B, Y]} through some state at that
-     * pixel, a state costing the square of its pixel's distance from the lane.
-     */
-    static Cover cover(Corridor c, int[] S, boolean[] lane, boolean[] within, GateSet B, GateSet Y) {
-        int n = c.edgeOf.length, w = c.map.width();
-        int[] dist = laneDistance(c, lane);
-        double[] cost = new double[n];
-        for (int s : c.states) if (within[s]) { double d = dist[c.cell(s)]; cost[s] = d * d; }
+    /** The two Dijkstra fields a strand is read off, computed once per {@code [B, Y]}. */
+    static final class Strands {
+        final Corridor c;
+        final boolean[] within, lane;
+        final double[] cost, fwd, bwd;
+        final int[] fwdFrom, bwdTo;
 
-        double[] fwd = new double[n], bwd = new double[n];
-        int[] fwdFrom = new int[n], bwdTo = new int[n];
-        dijkstra(c, within, cost, B.landing, true, fwd, fwdFrom);
-        dijkstra(c, within, cost, Y.landing, false, bwd, bwdTo);
+        Strands(Corridor c, boolean[] lane, boolean[] within, GateSet B, GateSet Y) {
+            this.c = c;
+            this.within = within;
+            this.lane = lane;
+            int n = c.edgeOf.length;
+            int[] dist = laneDistance(c, lane);
+            cost = new double[n];
+            for (int s : c.states) if (within[s]) { double d = dist[c.cell(s)]; cost[s] = d * d; }
+            fwd = new double[n];
+            bwd = new double[n];
+            fwdFrom = new int[n];
+            bwdTo = new int[n];
+            dijkstra(c, within, cost, B.states, true, fwd, fwdFrom);
+            dijkstra(c, within, cost, Y.states, false, bwd, bwdTo);
+        }
 
-        Cover cover = new Cover();
-        boolean[] inP = new boolean[n];
-        boolean[] covered = new boolean[w * c.map.height()];
-        for (int s : S) { inP[s] = true; covered[c.cell(s)] = true; }
-        cover.strands.add(S.clone());
-        cover.costs.add(0.0);
+        /** The cheapest {@code B → Y} path within {@code [B, Y]} through a state at {@code pixel}, or null. */
+        int[] through(int pixel, double[] costOut) {
+            int best = -1;
+            double bestCost = Double.POSITIVE_INFINITY;
+            for (int d = 0; d < c.turns; d++) {
+                int s = pixel * c.turns + d;
+                if (!within[s] || fwd[s] == Double.POSITIVE_INFINITY || bwd[s] == Double.POSITIVE_INFINITY) continue;
+                double total = fwd[s] + bwd[s] - cost[s];
+                if (total < bestCost) { bestCost = total; best = s; }
+            }
+            if (best < 0) return null;
+            List<Integer> strand = new ArrayList<>();
+            for (int s = best; s >= 0; s = fwdFrom[s]) strand.add(0, s);
+            for (int s = bwdTo[best]; s >= 0; s = bwdTo[s]) strand.add(s);
+            costOut[0] = bestCost;
+            return strand.stream().mapToInt(Integer::intValue).toArray();
+        }
+    }
 
-        // Lane pixels in the order S sweeps them.
+    /** The pixels of the lane in the order {@code S} sweeps them, each once. */
+    static List<Integer> sweepOrder(Corridor c, int[] S) {
+        int w = c.map.width();
         List<Integer> order = new ArrayList<>();
         boolean[] listed = new boolean[w * c.map.height()];
         for (int k = 0; k < S.length; k++) {
@@ -386,35 +463,175 @@ public final class PhasePath {
             int i = c.cell(S[k]);
             if (!listed[i]) { listed[i] = true; order.add(i); }
         }
+        return order;
+    }
 
-        for (int pixel : order) {
-            if (covered[pixel]) continue;
-            int best = -1;
-            double bestCost = Double.POSITIVE_INFINITY;
-            for (int d = 0; d < c.turns; d++) {
-                int s = pixel * c.turns + d;
-                if (!within[s] || fwd[s] == Double.POSITIVE_INFINITY || bwd[s] == Double.POSITIVE_INFINITY) continue;
-                double total = fwd[s] + bwd[s] - cost[s];
-                if (total < bestCost) { bestCost = total; best = s; }
-            }
-            if (best < 0) {
-                System.out.printf("  lane pixel (%d,%d) has no B->Y path through it within [B,Y]%n",
-                        pixel % w, pixel / w);
-                continue;
-            }
-            List<Integer> strand = new ArrayList<>();
-            for (int s = best; s >= 0; s = fwdFrom[s]) strand.add(0, s);
-            for (int s = bwdTo[best]; s >= 0; s = bwdTo[s]) strand.add(s);
-            int[] st = strand.stream().mapToInt(Integer::intValue).toArray();
-            for (int s : st) { inP[s] = true; covered[c.cell(s)] = true; }
-            cover.strands.add(st);
-            cover.costs.add(bestCost);
-        }
+    private static void add(Cover cover, int[] strand, double cost, boolean[] inP, boolean[] covered, Corridor c) {
+        for (int s : strand) { inP[s] = true; covered[c.cell(s)] = true; }
+        cover.strands.add(strand);
+        cover.costs.add(cost);
+    }
 
+    private static void finish(Cover cover, Corridor c, boolean[] inP, boolean[] covered, boolean[] lane) {
+        int w = c.map.width(), h = c.map.height();
         cover.P = Arrays.stream(c.states).filter(s -> inP[s]).toArray();
         for (int s : cover.P) if (!lane[c.cell(s)]) cover.offLane++;
         for (int i = 0; i < covered.length; i++) if (lane[i] && covered[i]) cover.laneCovered++;
+        int[] topo = topology(covered, w, h);
+        cover.components = topo[0];
+        cover.pixels = topo[2];
+    }
+
+    /**
+     * <b>The construction for the definition of 2026-09-15:</b> {@code S}, then strands until the
+     * projection of {@code P} is 8-connected. Each strand is the cheapest {@code B → Y} path within
+     * {@code [B, Y]} through the first uncovered pixel of the sweep between the earliest two
+     * consecutive states of {@code S} whose pixels lie in different components; failing every
+     * pixel of that sweep, through any uncovered pixel 8-adjacent to the upstream component.
+     * Greedy, so minimal in the number of strands only in the greedy sense.
+     */
+    static Cover coverConnected(Corridor c, int[] S, boolean[] lane, boolean[] within, GateSet B, GateSet Y) {
+        int w = c.map.width(), h = c.map.height();
+        Strands strands = new Strands(c, lane, within, B, Y);
+        Cover cover = new Cover("connected");
+        boolean[] inP = new boolean[c.edgeOf.length];
+        boolean[] covered = new boolean[w * h];
+        add(cover, S.clone(), 0, inP, covered, c);
+        int[] label = new int[w * h];
+        double[] cost = new double[1];
+        boolean[] tried = new boolean[w * h];
+        for (int round = 0; round < 200; round++) {
+            int comps = label(covered, w, h, true, label, true);
+            if (comps == 1) break;
+            int k = -1;
+            for (int i = 0; i + 1 < S.length; i++) {
+                if (label[c.cell(S[i])] != label[c.cell(S[i + 1])]) { k = i; break; }
+            }
+            if (k < 0) throw new IllegalStateException("projection in " + comps + " components but S never changes component");
+            int[] strand = null;
+            // The sweep of that step first, nearest the upstream state first.
+            int nd = c.d(S[k + 1]), x = c.x(S[k]), y = c.y(S[k]);
+            int[] sweep = c.map.stepPath(nd);
+            for (int q = 0; q + 1 < sweep.length && strand == null; q += 2) {
+                int mx = x + sweep[q], my = y + sweep[q + 1];
+                if (mx < 0 || my < 0 || mx >= w || my >= h) continue;
+                int pixel = mx + my * w;
+                if (covered[pixel] || tried[pixel]) continue;
+                tried[pixel] = true;
+                strand = strands.through(pixel, cost);
+            }
+            // Then anything 8-adjacent to the upstream component.
+            int upstream = label[c.cell(S[k])];
+            for (int i = 0; i < w * h && strand == null; i++) {
+                if (covered[i] || tried[i]) continue;
+                int px = i % w, py = i / w;
+                boolean adjacent = false;
+                for (int dy = -1; dy <= 1 && !adjacent; dy++) {
+                    for (int dx = -1; dx <= 1 && !adjacent; dx++) {
+                        int nx = px + dx, ny = py + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        adjacent = covered[nx + ny * w] && label[nx + ny * w] == upstream;
+                    }
+                }
+                if (!adjacent) continue;
+                tried[i] = true;
+                strand = strands.through(i, cost);
+            }
+            if (strand == null) {
+                System.out.printf("  no strand joins the components at S[%d] (%d,%d) -> S[%d]; giving up%n",
+                        k, x, y, k + 1);
+                break;
+            }
+            add(cover, strand, cost[0], inP, covered, c);
+        }
+        finish(cover, c, inP, covered, lane);
         return cover;
+    }
+
+    /**
+     * The saturated cover, kept for comparison: {@code S}, then one strand per uncovered lane
+     * pixel in sweep order, whether or not the projection is already connected.
+     */
+    static Cover coverSaturated(Corridor c, int[] S, boolean[] lane, boolean[] within, GateSet B, GateSet Y) {
+        int w = c.map.width(), h = c.map.height();
+        Strands strands = new Strands(c, lane, within, B, Y);
+        Cover cover = new Cover("saturated");
+        boolean[] inP = new boolean[c.edgeOf.length];
+        boolean[] covered = new boolean[w * h];
+        add(cover, S.clone(), 0, inP, covered, c);
+        double[] cost = new double[1];
+        for (int pixel : sweepOrder(c, S)) {
+            if (covered[pixel] || !lane[pixel]) continue;
+            int[] strand = strands.through(pixel, cost);
+            if (strand == null) {
+                System.out.printf("  lane pixel (%d,%d) has no B->Y path through it within [B,Y]%n", pixel % w, pixel / w);
+                continue;
+            }
+            add(cover, strand, cost[0], inP, covered, c);
+        }
+        finish(cover, c, inP, covered, lane);
+        return cover;
+    }
+
+    // ------------------------------------------------------------------------- join field
+
+    /**
+     * Ticks from every state to its first state in {@code P}, navigating within {@code domain}:
+     * 0 on {@code P}, {@code -1} where {@code P} is unreachable. The field the philosophical
+     * definition is about — from anywhere off the path, is the way onto it the way continuous
+     * physics would take, or a detour forced by a phase the path lacks, or no way at all.
+     */
+    static int[] joinField(Corridor c, int[] P, boolean[] domain) {
+        int[] d = new int[c.edgeOf.length];
+        Arrays.fill(d, -1);
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        for (int s : P) { d[s] = 0; queue.add(s); }
+        int[] out = new int[3];
+        while (!queue.isEmpty()) {
+            int s = queue.poll();
+            int k = c.pred(s, out);
+            for (int j = 0; j < k; j++) {
+                int p = out[j];
+                if (!domain[p] || d[p] >= 0) continue;
+                d[p] = d[s] + 1;
+                queue.add(p);
+            }
+        }
+        return d;
+    }
+
+    /**
+     * What the join field looks like over the states upstream of {@code B}: how many cannot join
+     * at all, and how the join time changes between 4-adjacent pixels at the same heading — a
+     * smooth field is continuous physics, a jagged one is the lattice showing through.
+     */
+    static void reportJoin(String title, Corridor c, int[] d, boolean[] upstream) {
+        int w = c.map.width(), h = c.map.height();
+        int states = 0, locked = 0, maxJoin = 0;
+        long[] hist = new long[8];
+        int mixed = 0, pairs = 0;
+        for (int s : c.states) {
+            if (!upstream[s]) continue;
+            states++;
+            if (d[s] < 0) { locked++; continue; }
+            maxJoin = Math.max(maxJoin, d[s]);
+            int x = c.x(s), y = c.y(s), dd = c.d(s);
+            for (int[] n : new int[][]{{1, 0}, {0, 1}}) {
+                int nx = x + n[0], ny = y + n[1];
+                if (nx >= w || ny >= h) continue;
+                int t = c.map.index(nx, ny, dd);
+                if (!c.map.alive(nx, ny, dd) || !upstream[t]) continue;
+                pairs++;
+                if (d[t] < 0) { mixed++; continue; }
+                int diff = Math.abs(d[s] - d[t]);
+                hist[Math.min(diff, hist.length - 1)]++;
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < hist.length; i++) sb.append(String.format(" %s%d:%d", i == hist.length - 1 ? ">=" : "", i, hist[i]));
+        System.out.printf("%-10s upstream of B: %5d states, %5d cannot join P, longest join %3d;"
+                + " same-heading neighbours: %d pairs, %d with one side locked out, |delta| histogram%s%n",
+                title, states, locked, maxJoin, pairs, mixed, sb);
     }
 
     /** Single-source-set Dijkstra over the corridor within {@code within}; a state's cost is paid on entering it. */
@@ -722,6 +939,109 @@ public final class PhasePath {
         return new int[]{Math.max(0, lx - pad), Math.max(0, ly - pad), Math.min(w, hx + pad + 1), Math.min(h, hy + pad + 1)};
     }
 
+    /**
+     * The join field, one panel per path, over the states upstream of {@code B}. Three rows per
+     * panel: per pixel the <b>shortest</b> join over its live headings; per pixel the join at the
+     * <b>coasting heading</b> — that of the nearest state of the coasting path — which is a boid
+     * coasting down the corridor on the wrong phase; and per pixel the <b>jaggedness</b>, the
+     * largest change in join time to a 4-adjacent pixel at the same heading, over headings. Hue
+     * runs blue (0) to yellow (the longest join in any panel; for jaggedness, 8); red is a state
+     * that cannot join; dark is a pixel with no such state.
+     */
+    static void drawJoin(Corridor c, boolean[] upstream, int[] coast, int[][] fields, String[] titles, Path out)
+            throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        int[] box = crop(c, upstream, 3);
+        int bw = box[2] - box[0], bh = box[3] - box[1];
+        int scale = 3, gap = 8, label = 14, rows = 3;
+
+        // The coasting heading at every pixel: that of the nearest coasting state, by pixel distance.
+        int[] coastHeading = new int[w * h];
+        Arrays.fill(coastHeading, -1);
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        for (int s : coast) { coastHeading[c.cell(s)] = c.d(s); queue.add(c.cell(s)); }
+        while (!queue.isEmpty()) {
+            int i = queue.poll();
+            int x = i % w, y = i / w;
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    int nx = x + dx, ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                    int j = nx + ny * w;
+                    if (coastHeading[j] < 0) { coastHeading[j] = coastHeading[i]; queue.add(j); }
+                }
+            }
+        }
+
+        int longest = 1;
+        for (int[] f : fields) for (int s : c.states) if (upstream[s]) longest = Math.max(longest, f[s]);
+        final int JAG_SCALE = 8;
+
+        BufferedImage img = new BufferedImage(fields.length * (bw * scale + gap), rows * (bh * scale + gap + label),
+                BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g2 = img.createGraphics();
+        g2.setFont(new java.awt.Font("SansSerif", java.awt.Font.PLAIN, 11));
+        g2.setColor(java.awt.Color.WHITE);
+        for (int p = 0; p < fields.length; p++) {
+            int[] f = fields[p];
+            for (int row = 0; row < rows; row++) {
+                int ox = p * (bw * scale + gap), oy = row * (bh * scale + gap + label) + label;
+                for (int y = 0; y < bh; y++) {
+                    for (int x = 0; x < bw; x++) {
+                        int px = x + box[0], py = y + box[1], cell = px + py * w;
+                        int rgb = c.map.oob(px, py) ? 0x000000 : 0x14161A;
+                        int value = Integer.MIN_VALUE;   // MIN: no state; -1: locked; else the value
+                        if (row == 0) {
+                            for (int d = 0; d < c.turns; d++) {
+                                int s = cell * c.turns + d;
+                                if (!c.map.alive(px, py, d) || !upstream[s]) continue;
+                                if (f[s] < 0) { if (value == Integer.MIN_VALUE) value = -1; }
+                                else if (value < 0) value = f[s];
+                                else value = Math.min(value, f[s]);
+                            }
+                        } else if (row == 1) {
+                            int d = coastHeading[cell];
+                            if (d >= 0 && c.map.alive(px, py, d) && upstream[cell * c.turns + d]) value = f[cell * c.turns + d];
+                        } else {
+                            for (int d = 0; d < c.turns; d++) {
+                                int s = cell * c.turns + d;
+                                if (!c.map.alive(px, py, d) || !upstream[s] || f[s] < 0) continue;
+                                for (int[] n : new int[][]{{1, 0}, {0, 1}, {-1, 0}, {0, -1}}) {
+                                    int nx = px + n[0], ny = py + n[1];
+                                    if (nx < 0 || ny < 0 || nx >= w || ny >= h || !c.map.alive(nx, ny, d)) continue;
+                                    int t = c.map.index(nx, ny, d);
+                                    if (!upstream[t]) continue;
+                                    int jag = f[t] < 0 ? JAG_SCALE : Math.abs(f[s] - f[t]);
+                                    value = Math.max(value == Integer.MIN_VALUE ? 0 : value, jag);
+                                }
+                            }
+                        }
+                        int top = row == 2 ? JAG_SCALE : longest;
+                        if (value == -1) rgb = 0xE6194B;
+                        else if (value >= 0) {
+                            double t = Math.min(1.0, value / (double) top);
+                            int r = (int) (40 + 215 * t), g = (int) (80 + 175 * t), b = (int) (220 - 200 * t);
+                            rgb = (r << 16) | (g << 8) | b;
+                        } else if (!c.map.oob(px, py)) {
+                            boolean corridor = false;
+                            for (int d = 0; d < c.turns && !corridor; d++) corridor = upstream[cell * c.turns + d];
+                            rgb = corridor ? 0x30343C : 0x14161A;
+                        }
+                        for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) {
+                            img.setRGB(ox + x * scale + sx, oy + y * scale + sy, rgb);
+                        }
+                    }
+                }
+                String what = row == 0 ? "shortest join over headings (0..." + longest + ")"
+                        : row == 1 ? "join at the coasting heading (0..." + longest + ")"
+                        : "jaggedness: largest step in join time to a same-heading neighbour (0..." + JAG_SCALE + "+)";
+                g2.drawString(titles[p] + ": " + what, ox + 2, oy - 3);
+            }
+        }
+        g2.dispose();
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
     static void drawCover(Corridor c, boolean[] within, boolean[] lane, int[] P, GateSet[] gates, Path out)
             throws IOException {
         int w = c.map.width();
@@ -731,7 +1051,7 @@ public final class PhasePath {
         Arrays.fill(paint, 0x000000);
         for (int s : c.states) paint[c.cell(s)] = within[s] ? 0x30343C : 0x1A1C20;
         int[] gateColour = {0xF58231, 0x3CB44B, 0x46F0F0, 0xE6194B};
-        for (int g = 0; g < 4; g++) for (int s : gates[g].landing) paint[c.cell(s)] = gateColour[g];
+        for (int g = 0; g < 4; g++) for (int s : gates[g].states) paint[c.cell(s)] = gateColour[g];
         for (int i = 0; i < paint.length; i++) if (lane[i]) paint[i] = 0x25408F;
         for (int s : P) paint[c.cell(s)] = lane[c.cell(s)] ? 0xFFFFFF : 0xFFE119;
         BufferedImage img = new BufferedImage((box[2] - box[0]) * scale, (box[3] - box[1]) * scale, BufferedImage.TYPE_INT_RGB);

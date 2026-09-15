@@ -11,6 +11,47 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-15 — the second definition: diagonal connectivity, built as strands, measured by the join field
+
+**The user's second definition**, after the two findings below: a cover `P` of `S` whose every
+point navigates to `B` backward and `Y` forward within `P`, and **whose projection to `(x, y)` is
+diagonally connected**; resting on adjacent headings' steps differing by at most a pixel, and meant
+philosophically as "the shortest way onto `P` is roughly the continuous trajectory — no detour
+round a missing phase, no lockout where phase does not bleed". **Checked the assumption**: at
+radius 40 (every map) `max |step(d+1) − step(d)|² = 1`, never diagonal.
+
+**Built.** `PhasePath.coverConnected`: `S`, then strands until the projection is 8-connected,
+each the cheapest `B → Y` path within `[B, Y]` through the first uncovered sweep pixel between the
+earliest two consecutive states of `S` in different components. `coverSaturated` (one strand per
+lane pixel) kept beside it. `joinField` / `reportJoin` / `drawJoin`: ticks from every upstream
+state to its first state of `P`, read as the histogram of `|Δ|` between 4-adjacent pixels at the
+same heading — the operational shadow of the philosophical definition. Gate states are now core ∪
+landing (on edge 2 the seed `y` was not in its own landing set and fell outside `[B, Y]`). The
+funnels of the first definition stay behind a flag. `SimTest.main` runs three stretches.
+
+**Numbers, dabeone `609cffdb84be218c`, route `[2, 7, 4]`.** Edge 4 (ticks 70/110/160/200):
+connected **217 states, 6 strands**; saturated 290, 14. Edge 2 (60/105/160/210): **251, 14**;
+287, 20. Edge 7 (60/110/165/215): **291, 11**; 311, 17. Every cover one component, 0 navigation
+failures. Join field upstream of `B`, same-heading neighbour pairs with `|Δ| ≥ 2 · ≥ 7`: `S` alone
+655·82 of 6,133 / 390·72 of 13,218 / 1,497·516 of 10,052; connected cover **0·0** on all three,
+max `|Δ|` = 1; saturated identical to connected. No lockouts anywhere, `S` included — dabeone
+bleeds phase everywhere. Renders `render/phase-path/dabeone-…-e{4,2,7}-{cover,join}.png`.
+
+**Not found: a defect in the definition.** Noted rather than raised: it does not fix `P`, so the
+strand rule is a tie-break; and 8-connectivity does not literally force every phase onto the
+lane's own row, which the lane-distance cost does in practice and the join field would show if
+it did not.
+
+**Changed on disk.** `PhasePath.java` (rewritten head, covers, join field, renders),
+`SimTest.main`; `EDGES.md` §2a rewritten for the second definition with the first as a record,
+`ROADMAP.md` §0i likewise, `GLOSSARY.md` (phase-complete path, lane, strand, join field, funnel;
+named-analyses row), `README.md` (verified table, class map, entry points, artifact index),
+`HINTS.md` §3a and §13; statuses dated; this entry.
+
+**Open.** A decision zone from a cover — the replacement for `DecisionZone.subpath`; then the
+fitness for the handoff's (1) and (2). A stretch narrow enough to lock a single-phase path out,
+which dabeone's stable route does not offer.
+
 ## 2026-09-14 (evening) — the phase-complete path definition, tested once and passed back
 
 **Orientation first.** Read the root documents and the code behind the live thread; compiled

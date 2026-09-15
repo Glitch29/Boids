@@ -6,9 +6,9 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-13, physics 3. Figures taken under physics 2 are marked as such. §3a added
+**Status:** 2026-09-15, physics 3. Figures taken under physics 2 are marked as such. §3a added
 2026-09-11: gates, edge insertion, and what a cut across a corridor has to be; braiding added to
-it 2026-09-12. This file is
+it 2026-09-12, phase-complete paths and the join field 2026-09-15. This file is
 also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
@@ -416,6 +416,23 @@ against ~12 for a cut to settle. *The zone opens where the path can first be los
 ticks before `S_1` when it is placed past the floor, and at the entrance itself when it is not.
 With those three, a psyboid told to take a path lands on every `S_k` in order on every traversal,
 alone or pushed by a flock, and takes either exit afterwards.
+
+**A path is phase-complete when its projection has no diagonal gaps, and the test of that is the
+join field.** The step is about four pixels, so a single path stands on one pixel in four of the
+line it draws, and a boid on another phase of the lattice is never on it. At radius 40 the steps
+of adjacent headings differ by at most one pixel and never diagonally, so a set whose projection
+is 8-connected is one every phase can land on with one turn. Build it as strands — the given path,
+then the cheapest gate-to-gate path through the first uncovered pixel of the sweep wherever the
+projection changes component, costed by distance from the lane — and it takes 6 strands on a
+bend and 11–14 along a wall, where the other phases cannot hold the wall pixels round a curve.
+What it buys is measured, not argued: from every state upstream, the ticks to first reach the
+path, compared between neighbouring pixels at the same heading. To the single path that jumps by
+seven or more hundreds of times per stretch — the detour round a missing phase — and to the
+strand cover it never changes by more than one, on any stretch, at any heading. A cover with two
+to three times the strands is identical, so connectivity is the whole of it. Two things not to
+ask of such a set: that the set exactly `N` steps from it be a solid region in projection, which
+is dotted on this lattice however complete the path (the *comb*); and that an insertion boundary
+be a clean cross-section, when its landing set alternates by phase along a wall (the *speckle*).
 
 ## 4. The clock — tick values and edge lengths
 
@@ -1249,8 +1266,9 @@ Documents:
 - **Where a shortcut should run.** The first fitness — tau gained beyond one a tick over the
   path's footprint — finds lanes along the insides and outsides of bends, but rewards a path for
   starting where a boid is veering toward the *long* line, and for starting and ending in the
-  middle of the cross-section. And a found path is canonical, not phase-complete; making it one
-  properly comes first. `EDGES.md` §2a, "Placing a subpath".
+  middle of the cross-section. A found path is canonical, not phase-complete; making it one is
+  now defined and built (§3a, `PhasePath`) but not yet turned into a decision zone, and the
+  fitness has not been revisited. `EDGES.md` §2a, "Placing a subpath".
 - Constructing a cut on a map that is not phase-locked. Drawing one at constant `d` works where
   the corridor is straight and locked; elsewhere the cut has to be found. One definition: score a
   one-tick band of tunnel −1 to 1 per state and choose the removal maximising the sum of squared

@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-14 (evening). **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-15. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
@@ -74,6 +74,7 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | exit decision zones | region + opening gate + prohibited transitions + closing gate, per edge: **nine of nine sound** on dabeone (0 entrances inside, 0 bypassing, 0 leaks); `DecisionOverride` flew `[4, 2, 1, 5, 8]` with **0 mismatching ticks** against the route pilot over 4,000, alone and in a flock of four, and the pilot was retired on that; lone lap 535 ticks, 54 points | `DecisionZone`, `SimTest.zones`, `EDGES.md` §2a |
 | subpath decision zones | a route within an edge as a chain of `S_k`, threaded by forbidding the way round each: three paths on dabeone edge 4 at tau 36–56, **all sound**, and a psyboid told to take one lands on every `S_k` in order on **every traversal, alone and in a flock**, then takes either exit. Entrance saturation needs `S_1` ≥ ~32–36 ticks in | `DecisionZone.subpath`, `SimTest.subpaths`, `EDGES.md` §2a |
 | the clock on one route | refit on each of dabeone's three loops alone: totals agree with the map-wide clock to **0.2 ticks**, spans to 0.3, and the change in tick within any edge is a constant to within **0.7** — the 13-tick shifts in edge length are gauge. Read subpath lengths off the map-wide clock | `SimTest.routeClock`, `EDGES.md` §5 |
+| phase-complete paths | the user's definition — a cover of `S` navigable to both gates within itself, projection 8-connected — built as strands on three stretches of dabeone's stable route: **6–14 strands**, and the join time to the cover never changes by more than **1 tick** between neighbouring pixels at the same heading, where to the single-phase path it jumps by **7 or more** hundreds of times; a saturated cover with 2–3× the strands is identical | `PhasePath`, `EDGES.md` §2a |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -200,8 +201,9 @@ per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zo
 **one step of lookahead is all of navigation** — stateless, label prefix `g`; the route pilot it
 replaced flew identically and was retired 2026-09-13) · `SubpathSearch` (where a subpath
 should run: grows paths by tau gained over footprint, and draws them; finding only) · `PhasePath` (the user's
-definition of a phase-complete path, built as strands and checked against the funnel condition;
-run by hand, passed back 2026-09-14 — `EDGES.md` §2a) · `RouteClock` (the clock refitted on one
+definition of a phase-complete path — a cover of `S` navigable to both gates within itself whose
+projection is 8-connected — built as strands and measured by the join field; run by hand —
+`EDGES.md` §2a) · `RouteClock` (the clock refitted on one
 route alone, for `routeClock` and the search) · `CorpusPreset` (named recipes, so a
 corpus is addressed by the settings that produced it). See `CORPUS.md`.
 
@@ -257,7 +259,8 @@ ways → 6 edges.
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run`, `ThreeBoidSamples.explain` and `PhasePath.run` are the
 other entry points and do not live in `SimTest`. `PhasePath.run` takes a route, an edge and four
-tick offsets along the coasting path for `a, b, y, z`, builds the strands and reports the funnels. `explain` prints one sampled exit tick by tick, marking which
+tick offsets along the coasting path for `a, b, y, z`, builds the connected and saturated covers
+and reports the join field to each beside `S` alone; a flag adds the first definition's funnels. `explain` prints one sampled exit tick by tick, marking which
 ticks actually **demand** a leader and which are free because coasting or the veto produced the
 move anyway.
 
@@ -316,7 +319,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `render/phase<f>_<t>-replays.tsv` | `ThreeBoidPhase` | every exit in it, with the three start states, so any cell can be flown again |
 | `render/*-samples.png`, `-atlas.png` | `ThreeBoidSamples` | one replayed arrangement per region or clump, at envelope entry |
 | `render/prop<f><t>-*.png` | `SimTest.proposedPhysics` | one physics against another, end to end, per arc |
-| `render/phase-path/<map>-<hash>-e<edge>-{cover,funnels}.png` | `PhasePath.run` | the strands over the lane between the four gates, and the exact-`N` funnels tile by tile, components coloured and holes red |
+| `render/phase-path/<map>-<hash>-e<edge>-{cover,join}.png` | `PhasePath.run` | the strands over the lane between the four gates; and the join field upstream of `B` for `S` alone, the connected cover and the saturated cover — shortest join, join at the coasting heading, and jaggedness. `-funnels.png` with the flag |
 | `archive/<date>/` | hand | retired output, ignored. **Not a backup** — the maps it came from are in `areas/` |
 
 **Retired 2026-09-04.** `analysis/`, `ingests/` (the eighteen pre-physics-3 hashes), `render/`,

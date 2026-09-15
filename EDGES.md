@@ -3,7 +3,7 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-14 (evening). Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-15. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
@@ -11,9 +11,10 @@ bootstrap, not an analysis tool" is retired. **§2a gained edge insertion and na
 2026-09-10** — how a gate is actually built, and how the same machinery does on-edge navigation
 for shortcuts. **§1 and §2a gained braiding on 2026-09-12** — the axiom groups by next edges, not
 by outcomes, so a one-to-three junction does not settle and a bifurcated `E⊥S` stays out of the
-decomposition. **§2a gained the phase-complete path definition and its first test on
-2026-09-14** — the funnel condition fails on the lattice's comb and on a speckled gate, not on
-the path; amendment is with the user.
+decomposition. **§2a gained the phase-complete path on 2026-09-14 and 15** — the user's definition, a strand
+construction that realises it, and the join field that measures what it is for: to a
+phase-complete cover the join time never changes by more than one tick between neighbouring
+pixels, where to a single-phase path it jumps by seven.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -675,9 +676,68 @@ reading, after sleeping on the pictures:
    `S_{k+1}` the forward image under the path's turn) only approximates — it translates the
    path and hopes the veto does not disturb it. That has to come first.
 
-### Phase-complete paths: the definition, and what its first test found
+### Phase-complete paths: the definition, the construction, and the join field
 
-**The user's definition, 2026-09-14, non-constructive.** For a set of states `S` between gates
+**The definition, 2026-09-15, the user's.** For a set of states `S` between gates `B` and `Y` on
+route `R`, a **phase-complete path** `P` is a cover of `S` such that every point of `P` can
+backward-navigate to `B` within `P`, every point of `P` can forward-navigate to `Y` within `P`,
+and **the projection of `P` to `(x, y)` is diagonally connected**. It rests on the step table:
+at radius 40 — every map here — the steps of adjacent headings differ by 0 or 1 px and never
+diagonally (`max |step(d+1) − step(d)|² = 1`, checked), so a boid that turns once lands within a
+pixel of where it would have landed straight, and a projection with no diagonal gaps is one every
+phase of the step lattice can stand on. **What it is for**, in the user's words and meant
+philosophically rather than as something to compute: the shortest way onto `P` from anywhere off
+it follows roughly the trajectory continuous physics would take — no detour forced by a phase `P`
+lacks, and no lockout on a stretch with no phase bleed.
+
+**The construction — `PhasePath.coverConnected`, run by hand.** `P` is a union of **strands**.
+The **lane** is the pixels `S` sweeps, its own and each step's partial-tick samples, less the dead
+pixels a wall-hugging step sweeps. `S` is the first strand; while the projection is not
+8-connected, take the earliest two consecutive states of `S` whose pixels lie in different
+components and add the cheapest `B → Y` path within `[B, Y]` through the first uncovered pixel of
+the sweep between them (failing that, through any uncovered pixel 8-adjacent to the upstream
+component), a state costing the square of its pixel's distance from the lane. The navigation
+conditions hold by construction, every strand running gate to gate; connectivity is the loop's
+exit. **The definition does not determine `P`** — its conditions are not closed under
+intersection — so the choice of strand is a tie-break, and greedy. A **saturated** cover, one
+strand per lane pixel whether needed or not, is built beside it for comparison. Gates are the
+`GateSplit` conditioning around a coasting state, a gate's states being its core and the landing
+set of its insertion boundary together.
+
+**The measurement — the join field.** From every state before `Y`, the ticks to its first state
+of `P`. Over the states upstream of `B` it is read two ways: how many cannot join at all, and the
+histogram of the change in join time between 4-adjacent pixels at the same heading. A field that
+changes by at most one per pixel is a boid steering onto the path as it would in the continuum; a
+jump of seven is a detour round a phase the path lacks. This is the operational shadow of the
+philosophical definition, and the standing check.
+
+**Measured, dabeone `609cffdb84be218c`, route `[2, 7, 4]`, three stretches of the coasting
+path**, each cut at the crossing opposite its edge, gates at coasting ticks `a, b, y, z`:
+
+| stretch | `S` | lane | connected `P` | saturated `P` | `S` alone: same-heading neighbours with `|Δ join|` ≥ 2 · ≥ 7 | connected `P` | saturated `P` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| edge 4, ticks 70/110/160/200 | 51 | 198 px | **217 states, 6 strands**, 187 px | 290, 14, 237 px | 655 · 82 of 6,133 | **0 · 0**, max 1 | 0 · 0 |
+| edge 2, ticks 60/105/160/210 | 56 | 215 px | **251, 14**, 213 px | 287, 20, 238 px | 390 · 72 of 13,218 | **0 · 0**, max 1 | 0 · 0 |
+| edge 7, ticks 60/110/165/215 | 56 | 226 px | **291, 11**, 231 px | 311, 17, 242 px | 1,497 · 516 of 10,052 | **0 · 0**, max 1 | 0 · 0 |
+
+Every cover is one component with both navigation conditions holding for every state; no state
+upstream of `B` is locked out of any of them, `S` included — dabeone's corridors are wide enough
+to bleed phase everywhere, so a single-phase path costs a detour, not a lockout. **The detour is
+the finding**: to `S` alone the join time jumps by 7 or more ticks between neighbouring pixels at
+the same heading, hundreds of times per stretch and worst on the straight approach to edge 7; to
+the connected cover it never changes by more than **1**, on any stretch, at any heading; and the
+saturated cover, with two to three times the strands, is **identical** to it — the extra strands
+add nothing the join field can see. Six strands suffice on the bend of edge 4; the wall-hugging
+stretches need 11–14, because the other phases cannot hold the wall pixels round a curve and the
+strands sit one pixel inside, each covering only part of the lane. Renders:
+`render/phase-path/dabeone-609cffdb84be218c-e<edge>-{cover,join}.png`; the join sheet shows
+per pixel the shortest join over headings, the join at the coasting heading, and the jaggedness.
+
+**Not yet.** Turning a cover into a decision zone (the successor to `DecisionZone.subpath`'s
+chain of `S_k`), and a stretch narrow enough to lock a single-phase path out, which dabeone
+does not offer on the stable route.
+
+**The first definition, 2026-09-14, kept as a record.** For a set of states `S` between gates
 `B` and `Y` on route `R`, a **phase-complete path** `P` is a cover of `S` such that: every point
 of `P` can backward-navigate to `B` within `P`; every point of `P` can forward-navigate to `Y`
 within `P`; and for some gates `A` and `Z` on `R`, the set of `N`th predecessors of `P` within
@@ -728,11 +788,11 @@ same counts at every `N`. Renders: `render/phase-path/dabeone-609cffdb84be218c-e
    the funnel between 13 and 53 is one solid band with no holes — the condition holds where it is
    about `P` and fails where it is about the lattice or the gate.
 
-**Passed back to the user at that point, as asked.** The literal reading — exactly `N`, every
-`N` — is not satisfiable by a thin `P` on this lattice because of the comb, and the saturation
-clause needs a gate that is clean in projection, which an insertion boundary is not. What the
-test shows *is* satisfiable: the funnel body, once it has filled the cross-section, is simply
-connected all the way to the far gate. Amendment is the user's.
+**Passed back at that point, as asked**, and the user replaced the funnel clauses with diagonal
+connectivity of `P`'s own projection — the definition at the head of this section. The funnel
+machinery stays in `PhasePath` behind a flag, as the record. The comb and the speckle are worth
+remembering on their own: a set exactly `N` steps from a thin set is dotted on this lattice, and
+the landing set of an insertion boundary alternates by phase along a wall.
 
 
 
