@@ -11,7 +11,7 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
-## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap
+## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap; the set of all shortest loops
 
 **The user's second definition**, after the two findings below: a cover `P` of `S` whose every
 point navigates to `B` backward and `Y` forward within `P`, and **whose projection to `(x, y)` is
@@ -78,11 +78,24 @@ the coast, on the inside wall; **the loop clamps phase to `x ≡ 1 (mod 4)`**. R
 `EDGES.md` §5 "The shortest lap", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary, README; render
 `render/phase-path/dabeone-…-lap2-7-4.png`.
 
-**Open.** What the clock is built on, now that the shortest period is an integer and the loop
-does not carry phase — the user's call; the union of the four 260-tick inlets is one candidate
-and is not a union of cycles. A decision zone from a cover — the replacement for
-`DecisionZone.subpath`; then the fitness for the handoff's (1) and (2). A stretch narrow enough
-to lock a single-phase path out, which dabeone's stable route does not offer.
+**Then the set of all shortest loops, the user's construction.** A starting line across the
+straight; `F` and `R` by eight breadth-first searches, minima over the four quarter-tick offsets;
+`L = F + R`; `P_N` grown until its projection loops round the route, tested by cutting the line's
+column out. First cut had the line's states as both starts and finishes, so their loops read
+zero; fixed by putting the finishes strictly before the line. `PhasePath.shortestLoops`. From four
+lines (`x₀ = 180 … 183`): shortest loop through any state 1,037 q-ticks = 259.25; `P_N` 3,745 /
+8,587 / 15,245 states in 259 / 245 / 178 components at 1,037 / 1,038 / 1,039, and **at 1,040 =
+260.00 ticks one component that loops round: 22,240 states over 5,842 pixels, the same set from
+every line** (digest `997408ed259c78fc`), 0 states without a successor or predecessor in it.
+**`F/4` as a clock**: 48,970 of ~49,900 transitions advance exactly 4 q-ticks, 459/211/120/143
+advance 3/2/1/0, 436 cross the line, none more; 465 of 1,040 q-tick values populated. Recorded
+in `EDGES.md` §5 "The set of all shortest loops", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary,
+README; renders `render/phase-path/dabeone-…-loops2-7-4-x18{0,1,2,3}.png`.
+
+**Open.** How the clock is read off `P*` — `F`, `R`, or something between — the user's call. A
+decision zone from a cover — the replacement for `DecisionZone.subpath`; then the fitness for the
+handoff's (1) and (2). A stretch narrow enough to lock a single-phase path out, which dabeone's
+stable route does not offer.
 
 ## 2026-09-14 (evening) — the phase-complete path definition, tested once and passed back
 

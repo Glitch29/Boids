@@ -5,8 +5,9 @@ and the specifications for it. **§0i is the live thread — read that first**, 
 handoff dated 2026-09-14: the placement fitness has three known defects and phase-complete
 pathing is the prerequisite — now defined by the user, built as `PhasePath` and measured (§0i,
 "Phase-complete paths"), and the shortest lap of a route measured a quarter tick at a time
-(`EDGES.md` §5): an integer 260 on dabeone's stable loop, the loop clamping phase rather than
-carrying it; what the clock is built on is the next decision. §0h is closed; its
+(`EDGES.md` §5): an integer 260 on dabeone's stable loop, and the set of all states on loops of
+that length — 22,240, the same from any starting line — on which `F/4` is a quarter-tick clock;
+how the clock is read off it is the next decision. §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
 ---
@@ -2082,9 +2083,21 @@ decisive and integer, and a quarter-tick tau does not carry round the loop. Pass
 the union of the four 260-tick inlets, which merge at the clamp, is the object to build the clock
 on.
 
-**Next.** The user's decision on the clock; a decision zone from a cover — the replacement for
-`DecisionZone.subpath`'s chain of `S_k`, which was a stop-gap and is to be discarded — and then
-the fitness for (1) and (2).
+**Then the set of all shortest loops, the user's construction.** A starting line across the
+straight; `F(s)` and `R(s)` the fewest quarter-ticks from the line to `s` and from `s` to the
+line, minima over the four offsets; `L = F + R` the shortest loop through `s`; `P_N` the states on
+loops of `N` or less; `N*` the least `N` whose projection holds an 8-connected loop round the
+route; **the whole of `P_{N*}` is the answer**. `PhasePath.shortestLoops`, `EDGES.md` §5 "The set
+of all shortest loops". **`N* = 260.00 ticks; `P*` = 22,240 states over 5,842 pixels, the same
+set from every starting line** (digest `997408ed259c78fc`), every state with a successor and
+predecessor in it; `F/4` advances exactly one tick along 98.1% of its transitions and never more,
+so it is a quarter-tick clock on `P*` — with two things for the user to weigh: only 465 of the
+1,040 quarter-tick values are populated, and `F` and `N* − R` disagree by up to 3 quarter-ticks
+on the faster loops.
+
+**Next.** The user's decision on the clock — `F`, `R`, or something between; a decision zone
+from a cover — the replacement for `DecisionZone.subpath`'s chain of `S_k`, which was a stop-gap
+and is to be discarded — and then the fitness for (1) and (2).
 
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won

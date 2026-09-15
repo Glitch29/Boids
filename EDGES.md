@@ -18,7 +18,9 @@ pixels, where to a single-phase path it jumps by seven. **§5 gained the phase-c
 and the geometric clock the same day** — every strand of the loop is a single lap of 277 or 278
 ticks, and a tau read off the coasting sweep agrees with every strand to within half a tick;
 then the **shortest lap**, a quarter tick at a time: an integer 260, eighteen under the coast,
-and the loop clamps phase to one residue rather than carrying it.
+and the loop clamps phase to one residue rather than carrying it; then **the set of all shortest
+loops**: every state on a loop of 260 ticks or less, 22,240 of them, the same set from any
+starting line, on which `F/4` is a quarter-tick clock exact along 98% of transitions.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -1069,6 +1071,52 @@ quarter-tick tau does not carry round the loop, because the loop does not carry 
 phase-complete shortest loop, if one is wanted, is the union of the four 260-tick inlets
 (`178, 179, 180, 181 → 181`), which merge at the clamp and are not a union of cycles; whether
 that is the object the clock should be built on is the user's call.
+
+### The set of all shortest loops — 2026-09-15
+
+**The user's construction, and the answer.** Draw a **starting line** across a straight, between
+pixel columns `x₀−1` and `x₀`. For every route state `s`, `F(s)` is the fewest quarter-ticks from
+the line to `s` travelling forward — a tick is four, and a start `k` px past the line contributes
+`k` — and `R(s)` the fewest from `s` forward to the line, a finish `k+1` px short of it
+contributing `k+1`; both are minima over the four offsets, eight breadth-first searches round the
+route in all. `L(s) = F(s) + R(s)` is the shortest loop through `s`, in quarter-ticks. `P_N` is
+every state on a loop of length `N` or less, and **`N*` is the least `N` at which the projection
+of `P_N` holds an 8-connected loop round the route** — tested by cutting the line's own pixels out
+of the projection and asking whether the columns either side of it are still joined, which they
+can only be the long way round. `P_{N*}` is the set of all the shortest phase-complete loops, and
+**the whole set is the answer** — the shortest, not the smallest. `PhasePath.shortestLoops`, run by
+hand. (A first cut had the line's states as both starts and finishes at distance zero, so their
+loops read zero; the finishes must lie strictly before the line.)
+
+**Measured, dabeone `609cffdb84be218c`, route `[2, 7, 4]`, lines at `x₀ = 180, 181, 182, 183` on
+edge 7's bottom straight.** Every route state lies on some loop through the line. The shortest
+loop through any state is **1,037 quarter-ticks = 259.25 ticks**, and:
+
+| `N` | ticks | states in `P_N` | pixels | 8-components | loop round? |
+| --- | --- | --- | --- | --- | --- |
+| 1,037 | 259.25 | 3,745 | 1,010 | 259 | no |
+| 1,038 | 259.50 | 8,587 | 2,299 | 245 | no |
+| 1,039 | 259.75 | 15,245 | 4,162 | 178 | no |
+| **1,040** | **260.00** | **22,240** | **5,842** | **1** | **yes** |
+
+1. **`N* = 260.00 ticks, an integer**, and `P*` has 22,240 states — half the route's 43,970 —
+   over 5,842 pixels; 85.5 states per tick of loop, 0.045 ticks per pixel, 3.8 states per pixel.
+   It is *fat*: from almost anywhere in the corridor a boid can join the inside lane within a
+   few quarter-ticks, so almost every state is on some 260-tick loop, and what is left out is the
+   outer edge of every bend (`render/phase-path/dabeone-…-loops2-7-4-x180.png`, coloured by loop
+   length, the stripes being the phase pattern of §5 above).
+2. **`P*` does not depend on the line.** From all four columns — four phases — the same `N*`,
+   and the same set to the state (digest `997408ed259c78fc`); only the split of `P*` between
+   1,037, 1,038 and 1,039 shifts with the line's phase, as it must, since those are a quarter-tick
+   accounting against the line. Every state of `P*` has a successor and a predecessor in `P*`.
+3. **`F` is a clock on `P*`.** Of the 49,900 transitions inside `P*`, **48,970 advance `F` by
+   exactly four quarter-ticks** (98.1%), 459 by three, 211 by two, 120 by one, 143 by none, 436
+   cross the line, and none advances more — `F` is a shortest-path distance, so it can only fall
+   short where a faster lane merges. So `tau(s) = F(s)/4` labels every state of `P*` with a
+   quarter-tick resolution and is exact along 98% of transitions. Two caveats for the decision:
+   the minimum over offsets favours small `k`, so only 465 of the 1,040 quarter-tick values are
+   populated (up to 452 states each, mean 21 over all 1,040); and `F` and `N* − R` disagree by
+   `N* − L(s)`, 0 to 3 quarter-ticks, on the states of the faster loops.
 
 ---
 

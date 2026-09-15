@@ -77,6 +77,7 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | phase-complete paths | the user's definition — a cover of `S` navigable to both gates within itself, projection 8-connected — built as strands on three stretches of dabeone's stable route: **6–14 strands**, and the join time to the cover never changes by more than **1 tick** between neighbouring pixels at the same heading, where to the single-phase path it jumps by **7 or more** hundreds of times; a saturated cover with 2–3× the strands is identical | `PhasePath`, `EDGES.md` §2a |
 | the phase-complete loop | the coasting cycle of dabeone's stable route plus closed strands until the projection is 8-connected: **every strand a single lap of 277 or 278 ticks**, 12–14 after pruning, ~1,320 states on ~1,075 pixels; the coasting-sweep tau advances +0.5 to +1.5 per transition along every strand, mean exactly 1 or 278/277 | `PhasePath.loop`, `EDGES.md` §5 |
 | the shortest lap | measured a quarter tick at a time from every horizontal-step state of a column on edge 7's bottom straight: **260 ticks, an integer**, eighteen under the coasting cycle, hugging the inside wall; the fractional readings (259.25 from `x ≡ 2`) are a one-time gain, and **the loop clamps phase to `x ≡ 1 (mod 4)`** — never carrying a boid past it in 260 ticks and charging a full tick to get there | `PhasePath.lap`, `EDGES.md` §5 |
+| the set of all shortest loops | every route state on a loop of `N` or fewer quarter-ticks, at the least `N` whose projection loops round: **`N* = 260.00` ticks, 22,240 states over 5,842 pixels, the same set from every starting line**; `F/4` advances exactly one tick along 98.1% of its transitions and never more | `PhasePath.shortestLoops`, `EDGES.md` §5 |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -267,7 +268,10 @@ and reports the join field to each beside `S` alone; a flag adds the first defin
 each, prunes it, and reports every strand's ticks and laps and the geometric tau along it.
 `PhasePath.lap` takes a route, an edge and a column `x` on a straight, and reports from every
 horizontal-step state there the shortest lap to itself or 0–3 px ahead, the advances reachable at
-the first depth and three after, and the chain of laps from the landing state. `explain` prints one sampled exit tick by tick, marking which
+the first depth and three after, and the chain of laps from the landing state.
+`PhasePath.shortestLoops` takes a route, an edge and a starting line `x₀`, computes `F`, `R` and
+`L` for every route state, grows `P_N` until its projection loops round, and reports the set and
+`F` as a clock on it. `explain` prints one sampled exit tick by tick, marking which
 ticks actually **demand** a leader and which are free because coasting or the veto produced the
 move anyway.
 
@@ -329,6 +333,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `render/phase-path/<map>-<hash>-e<edge>-{cover,join}.png` | `PhasePath.run` | the strands over the lane between the four gates; and the join field upstream of `B` for `S` alone, the connected cover and the saturated cover — shortest join, join at the coasting heading, and jaggedness. `-funnels.png` with the flag |
 | `render/phase-path/<map>-<hash>-loop<route>.png` | `PhasePath.loop` | the whole route with the coasting cycle white and each strand of the pruned loop in its own colour |
 | `render/phase-path/<map>-<hash>-lap<route>.png` | `PhasePath.lap` | the chain of shortest laps from the best column state, each lap in its own colour |
+| `render/phase-path/<map>-<hash>-loops<route>-x<line>.png` | `PhasePath.shortestLoops` | `P*` coloured by loop length, the shortest white, a quarter-tick warmer each; the line in blue |
 | `archive/<date>/` | hand | retired output, ignored. **Not a backup** — the maps it came from are in `areas/` |
 
 **Retired 2026-09-04.** `analysis/`, `ingests/` (the eighteen pre-physics-3 hashes), `render/`,

@@ -1567,6 +1567,243 @@ public final class PhasePath {
         javax.imageio.ImageIO.write(img, "png", out.toFile());
     }
 
+    // ---------------------------------------------------------------------- shortest loops
+
+    /**
+     * The set of all shortest phase-complete loops of a route, by the user's construction of
+     * 2026-09-15.
+     * <p>
+     * Draw a <b>starting line</b> across a straight, the column {@code x0}. For every route state
+     * {@code s}, {@code F(s)} is the fewest quarter-ticks from the line to {@code s} travelling
+     * forward — a tick is four quarter-ticks, and a start {@code k} px past the line contributes
+     * {@code k} — and {@code R(s)} the fewest from {@code s} forward to the line, a finish {@code k}
+     * px short of it contributing {@code k}. The line lies between columns {@code x0 - 1} and
+     * {@code x0}, so starts are at {@code x0 … x0 + 3}, finishes at {@code x0 - 4 … x0 - 1}, and no
+     * state is both — a state on the line has a loop through it, not a loop of length zero. {@code L(s) = F(s) + R(s)} is then the length of the
+     * shortest loop through {@code s}, in quarter-ticks. {@code P_N} is every state on a loop of
+     * length {@code N} or less; the least {@code N} at which the projection of {@code P_N} holds an
+     * 8-connected loop round the route names the set of all the shortest phase-complete loops, and
+     * <b>the whole of that set is the answer</b> — the shortest, not the smallest.
+     * <p>
+     * Whether a projection holds a loop is tested by removing the line's own pixels from it — the
+     * column {@code x0} within the straight's edge — and asking whether pixels just before and
+     * just after the line are still 8-connected, which they can only be the long way round.
+     */
+    public static void shortestLoops(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route,
+                                     int edge, int x0) throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+        int[] edgeOf = l.edge();
+        int w = map.width(), h = map.height(), n = edgeOf.length;
+
+        int m = route.length, slot = -1;
+        for (int i = 0; i < m; i++) if (route[i] == edge) slot = i;
+        int[] rotated = new int[m];
+        int shift = Math.floorMod(slot - m / 2, m);
+        for (int i = 0; i < m; i++) rotated[i] = route[(i + shift) % m];
+        Corridor c = new Corridor(map, edgeOf, l.live(), l.liveCount(), rotated);
+        System.out.printf("%n=== %s @%s: shortest loops of route %s, starting line x = %d on edge %d ===%n",
+                preset.name(), preset.ingest().hash(), Arrays.toString(rotated), x0, edge);
+
+        // F and R, each the minimum over the four quarter-tick offsets of the line.
+        int[] F = new int[n], R = new int[n];
+        Arrays.fill(F, Integer.MAX_VALUE);
+        Arrays.fill(R, Integer.MAX_VALUE);
+        for (int k = 0; k < 4; k++) {
+            // The line lies between columns x0-1 and x0: a start at x0+k is k quarter-ticks past it, a
+            // finish at x0-1-k is k+1 short of it, and no state is on both sides.
+            int[] ahead = columnStates(c, edge, x0 + k), behind = columnStates(c, edge, x0 - 1 - k);
+            int[] df = bfs(c, ahead, true), dr = bfs(c, behind, false);
+            for (int s : c.states) {
+                if (df[s] >= 0) F[s] = Math.min(F[s], 4 * df[s] + k);
+                if (dr[s] >= 0) R[s] = Math.min(R[s], 4 * dr[s] + k + 1);
+            }
+            System.out.printf("offset %d: %d states on the line ahead, %d behind%n", k, ahead.length, behind.length);
+        }
+        int[] L = new int[n];
+        int reached = 0, minL = Integer.MAX_VALUE;
+        for (int s : c.states) {
+            if (F[s] == Integer.MAX_VALUE || R[s] == Integer.MAX_VALUE) { L[s] = Integer.MAX_VALUE; continue; }
+            L[s] = F[s] + R[s];
+            reached++;
+            minL = Math.min(minL, L[s]);
+        }
+        System.out.printf("%d of %d route states lie on some loop through the line; the shortest is %d quarter-ticks = %.2f ticks%n",
+                reached, c.states.length, minL, minL / 4.0);
+
+        // The line's own pixels within this edge, to cut out of the projection for the loop test.
+        boolean[] cut = new boolean[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int d = 0; d < c.turns; d++) {
+                int s = map.index(x0, y, d);
+                if (map.alive(x0, y, d) && c.in(s) && edgeOf[s] == edge) { cut[x0 + y * w] = true; break; }
+            }
+        }
+
+        // P_N for N ascending over the distinct loop lengths, until the projection closes.
+        java.util.TreeSet<Integer> lengths = new java.util.TreeSet<>();
+        for (int s : c.states) if (L[s] != Integer.MAX_VALUE) lengths.add(L[s]);
+        System.out.printf("%8s %8s %7s %7s %6s  %s%n", "N (q-t)", "ticks", "states", "pixels", "comps", "loop?");
+        int star = -1;
+        boolean[] inP = new boolean[n];
+        for (int N : lengths) {
+            if (N > minL + 64) break;
+            for (int s : c.states) inP[s] = L[s] <= N;
+            int states = 0;
+            boolean[] pix = new boolean[w * h];
+            for (int s : c.states) if (inP[s]) { states++; pix[c.cell(s)] = true; }
+            int pixels = 0;
+            for (boolean v : pix) if (v) pixels++;
+            int[] label = new int[w * h];
+            int comps = label(pix, w, h, true, label, true);
+            boolean loop = closesRound(c, pix, cut, x0, w, h);
+            System.out.printf("%8d %8.2f %7d %7d %6d  %s%n", N, N / 4.0, states, pixels, comps, loop ? "yes" : "no");
+            if (loop) { star = N; break; }
+        }
+        if (star < 0) { System.out.println("no loop closed within 16 ticks of the shortest; stopping"); return; }
+
+        for (int s : c.states) inP[s] = L[s] <= star;
+        int[] P = Arrays.stream(c.states).filter(s -> inP[s]).toArray();
+        boolean[] pix = new boolean[w * h];
+        for (int s : P) pix[c.cell(s)] = true;
+        int pixels = 0;
+        for (boolean v : pix) if (v) pixels++;
+        System.out.printf("%nN* = %d quarter-ticks = %.2f ticks: %d states over %d pixels; states/tick %.3f, ticks/pixel %.3f, states/pixel %.3f%n",
+                star, star / 4.0, P.length, pixels, P.length / (star / 4.0), (star / 4.0) / pixels, P.length / (double) pixels);
+        int[] byLength = new int[star - minL + 1];
+        for (int s : P) byLength[L[s] - minL]++;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < byLength.length; i++) if (byLength[i] > 0) sb.append(String.format(" %d:%d", minL + i, byLength[i]));
+        System.out.println("states by loop length:" + sb);
+
+        // Flow within P: every state should have a successor and a predecessor in P, if P is a union of loops.
+        int noSucc = 0, noPred = 0;
+        int[] out = new int[3];
+        for (int s : P) {
+            boolean ok = false;
+            int k = c.succRound(s, out);
+            for (int j = 0; j < k && !ok; j++) ok = inP[out[j]];
+            if (!ok) noSucc++;
+            ok = false;
+            k = c.predRound(s, out);
+            for (int j = 0; j < k && !ok; j++) ok = inP[out[j]];
+            if (!ok) noPred++;
+        }
+        System.out.printf("flow within P: %d states without a successor in P, %d without a predecessor%n", noSucc, noPred);
+
+        // F as a clock on P: how many quarter-ticks each transition inside P advances it, the line crossing aside.
+        int[] hist = new int[12];
+        int crossing = 0, other = 0;
+        for (int s : P) {
+            int k = c.succRound(s, out);
+            for (int j = 0; j < k; j++) {
+                int u = out[j];
+                if (!inP[u]) continue;
+                int dF = F[u] - F[s];
+                if (dF < 0) { crossing++; continue; }
+                if (dF < hist.length) hist[dF]++; else other++;
+            }
+        }
+        sb = new StringBuilder();
+        for (int i = 0; i < hist.length; i++) if (hist[i] > 0) sb.append(String.format(" %d:%d", i, hist[i]));
+        System.out.printf("F as a clock: quarter-ticks advanced per transition within P —%s; %d crossing the line, %d beyond 11%n",
+                sb, crossing, other);
+        // The slices of the clock: how many states carry each value of F, and whether any value is empty.
+        int[] slice = new int[star + 1];
+        for (int s : P) if (F[s] <= star) slice[F[s]]++;
+        int empty = 0, least = Integer.MAX_VALUE, most = 0;
+        for (int i = 0; i < star; i++) { if (slice[i] == 0) empty++; least = Math.min(least, slice[i]); most = Math.max(most, slice[i]); }
+        long digest = 0;
+        for (int s : P) digest = digest * 1000003L + s;
+        System.out.printf("slices of F over 0..%d: %d empty, %d to %d states each, mean %.1f; P digest %016x%n", star - 1, empty, least, most,
+                P.length / (double) star, digest);
+
+        Path dir = Path.of("render", "phase-path");
+        Files.createDirectories(dir);
+        String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-loops"
+                + Arrays.toString(rotated).replaceAll("[\\[\\] ]", "").replace(',', '-') + "-x" + x0;
+        drawLoops(c, P, L, minL, star, x0, dir.resolve(name + ".png"));
+        System.out.printf("wrote %s.png in %s%n", name, dir);
+    }
+
+    /** Every route state on edge {@code edge} at column {@code x}, any row, any heading. */
+    static int[] columnStates(Corridor c, int edge, int x) {
+        List<Integer> out = new ArrayList<>();
+        for (int y = 0; y < c.map.height(); y++) {
+            for (int d = 0; d < c.turns; d++) {
+                if (!c.map.alive(x, y, d)) continue;
+                int s = c.map.index(x, y, d);
+                if (c.in(s) && c.edgeOf[s] == edge) out.add(s);
+            }
+        }
+        return out.stream().mapToInt(Integer::intValue).toArray();
+    }
+
+    /** Ticks from the nearest source to every state, forward or backward round the route; -1 unreached. */
+    static int[] bfs(Corridor c, int[] sources, boolean forward) {
+        int[] depth = new int[c.edgeOf.length];
+        Arrays.fill(depth, -1);
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        for (int s : sources) { depth[s] = 0; queue.add(s); }
+        int[] out = new int[3];
+        while (!queue.isEmpty()) {
+            int s = queue.poll();
+            int k = forward ? c.succRound(s, out) : c.predRound(s, out);
+            for (int j = 0; j < k; j++) {
+                int u = out[j];
+                if (depth[u] >= 0) continue;
+                depth[u] = depth[s] + 1;
+                queue.add(u);
+            }
+        }
+        return depth;
+    }
+
+    /** Whether the pixel set, with the line's column cut out, still joins the columns either side of it. */
+    static boolean closesRound(Corridor c, boolean[] pix, boolean[] cut, int x0, int w, int h) {
+        boolean[] rest = new boolean[w * h];
+        for (int i = 0; i < rest.length; i++) rest[i] = pix[i] && !cut[i];
+        int[] label = new int[w * h];
+        label(rest, w, h, true, label, true);
+        java.util.Set<Integer> left = new java.util.HashSet<>(), right = new java.util.HashSet<>();
+        for (int y = 0; y < h; y++) {
+            if (!cut[x0 + y * w]) continue;
+            if (x0 > 0 && rest[x0 - 1 + y * w]) left.add(label[x0 - 1 + y * w]);
+            if (x0 + 1 < w && rest[x0 + 1 + y * w]) right.add(label[x0 + 1 + y * w]);
+        }
+        for (int a : left) if (right.contains(a)) return true;
+        return false;
+    }
+
+    /** {@code P} coloured by loop length: the shortest white, then warmer with each quarter-tick; the line in blue. */
+    static void drawLoops(Corridor c, int[] P, int[] L, int minL, int star, int x0, Path out) throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        boolean[] any = new boolean[c.edgeOf.length];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 4);
+        int scale = 3;
+        int[] paint = new int[w * h];
+        for (int s : c.states) paint[c.cell(s)] = 0x30343C;
+        int[] ramp = {0xFFFFFF, 0xFFE119, 0xF58231, 0xE6194B, 0xF032E6, 0x911EB4, 0x4363D8, 0x46F0F0, 0x3CB44B, 0xBCF60C};
+        // Longest loops first so the shortest paint over them.
+        Integer[] order = new Integer[P.length];
+        for (int i = 0; i < P.length; i++) order[i] = P[i];
+        Arrays.sort(order, (a, bb) -> Integer.compare(L[bb], L[a]));
+        for (int s : order) paint[c.cell(s)] = ramp[Math.min(ramp.length - 1, L[s] - minL)];
+        for (int y = 0; y < h; y++) if (c.in(c.map.index(x0, y, 0)) || c.in(c.map.index(x0, y, 1))) paint[x0 + y * w] = 0x25408F;
+        BufferedImage img = new BufferedImage((box[2] - box[0]) * scale, (box[3] - box[1]) * scale, BufferedImage.TYPE_INT_RGB);
+        for (int y = box[1]; y < box[3]; y++) {
+            for (int x = box[0]; x < box[2]; x++) {
+                int rgb = c.map.oob(x, y) ? 0x000000 : paint[x + y * w];
+                for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) {
+                    img.setRGB((x - box[0]) * scale + sx, (y - box[1]) * scale + sy, rgb);
+                }
+            }
+        }
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
     // ---------------------------------------------------------------------------- renders
 
     private static final int[] PALETTE = {0xFFFFFF, 0x3CB44B, 0xFFE119, 0xF032E6, 0x46F0F0, 0xF58231,

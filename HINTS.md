@@ -456,6 +456,18 @@ never past it; the phase past the ceiling costs a full tick. So a quarter-tick t
 survive a lap, which is the same fact as straight travel collapsing every phase into one orbit
 (§10b), seen from the fast line.
 
+**The shortest loops of a route are a set, not a path, and a distance from a line is a clock on
+them.** Draw a line across a straight; for every state take the fewest quarter-ticks from the
+line to it and from it back to the line, minima over the four offsets — eight breadth-first
+searches — and their sum is the shortest loop through that state. Grow the set of states on loops
+of `N` or less until its projection joins up round the route: on dabeone that is at exactly 260
+ticks, and the set is half the route's states, the same set whichever column the line is drawn
+at. The forward distance is then a clock on it — it advances exactly one tick along 98% of the
+set's transitions and never more, since a shortest-path distance can only fall short where a
+faster lane merges — with quarter-tick resolution that the minimum over offsets leaves half
+unused. Ask for the shortest loops rather than the smallest: the set costs eight searches and no
+search over covers, and the clock comes with it.
+
 ## 4. The clock — tick values and edge lengths
 
 **The problem it solves.** The decomposition says which stretch a state is on but not where
