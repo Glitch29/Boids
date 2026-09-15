@@ -11,7 +11,7 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
-## 2026-09-15 — the second definition, built as strands and measured by the join field; then the loop and the geometric clock
+## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap
 
 **The user's second definition**, after the two findings below: a cover `P` of `S` whose every
 point navigates to `B` backward and `Y` forward within `P`, and **whose projection to `(x, y)` is
@@ -63,8 +63,24 @@ nearest for the rest — advances +0.5 to +1.5 per transition along every strand
 `EDGES.md` §5 "The phase-complete loop", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary, README.
 Render `render/phase-path/dabeone-…-loop7-4-2.png`.
 
-**Open.** How the geometric clock is carried off the lane (nearest pixel, the join field, or a
-fit) — the user's call. A decision zone from a cover — the replacement for
+**Then the correction, and the shortest lap.** The user: the cover was phase-complete for an `S`
+chosen arbitrarily, which fixed the lane; what is wanted is the *shortest* phase-complete path,
+found as the fewest ticks from a state on a horizontal straight to itself or 0–3 px ahead on the
+same row and heading, furthest on ties, a pixel being a quarter tick. Built `PhasePath.lap`
+(breadth-first round the route, cut crossing allowed; the advances first reached at the first
+depth and three after; the chain from the landing state). Six columns `x = 178 … 183` on edge 7's
+bottom straight, 21 states each (`y` 354–360, headings 63/0/1): **every state in a column agrees;
+260 ticks first reaches `+0` from every column**, and the further advances depend on `x mod 4`:
+from `≡ 2` all of `+0…+3` at 260 (259.25), from `≡ 3` `+0…+2` (259.50), from `≡ 0` `+0, +1`
+(259.75), from `≡ 1` `+0` only (260.00), the rest first at 261. Every chain lands at `x ≡ 1` and
+then reads 260 to itself for sixteen laps. **The shortest lap is the integer 260**, eighteen under
+the coast, on the inside wall; **the loop clamps phase to `x ≡ 1 (mod 4)`**. Recorded in
+`EDGES.md` §5 "The shortest lap", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary, README; render
+`render/phase-path/dabeone-…-lap2-7-4.png`.
+
+**Open.** What the clock is built on, now that the shortest period is an integer and the loop
+does not carry phase — the user's call; the union of the four 260-tick inlets is one candidate
+and is not a union of cycles. A decision zone from a cover — the replacement for
 `DecisionZone.subpath`; then the fitness for the handoff's (1) and (2). A stretch narrow enough
 to lock a single-phase path out, which dabeone's stable route does not offer.
 

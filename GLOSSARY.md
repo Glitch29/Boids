@@ -457,6 +457,18 @@ nearest lane pixel's; a state's tau is its pixel's. Along every strand of the lo
 between +0.5 and +1.5 a transition, mean exactly 1 on a 278 strand and 278/277 on a 277. Decisive
 on the loop; keyed on the pixel off it, which is the shortcut question. `PhasePath.geometricTau`.
 
+**shortest lap** — of a route, measured where a pixel is a quarter tick: from a state on a
+horizontal straight, the fewest ticks to itself or 0–3 px ahead on the same row and heading, the
+furthest ahead on ties, read as `N − k/4`. The user's construction, 2026-09-15. `PhasePath.lap`.
+On dabeone's stable loop **260 ticks, an integer**, eighteen under the coasting cycle, from every
+row and heading of the column; the fractional readings are a one-time gain. `EDGES.md` §5.
+
+**phase ceiling / the loop clamps phase** — what the shortest-lap table shows: in 260 ticks a
+boid at phase `p` on the straight can land at any phase from `p` up to `x ≡ 1 (mod 4)` in the
+order `2, 3, 0, 1`, never past it, and reaching a phase past the ceiling costs a full tick. Phase
+1 is a fixed point. So the sub-tick phase is not carried round the loop, and a quarter-tick tau
+cannot be either. `EDGES.md` §5.
+
 **funnel** — for a path `P` and a segment `[A, Z]`, the sets exactly `N` steps before (or after)
 `P`, for every `N` until they leave the segment; the **cumulative** funnel is within `N` steps.
 `PhasePath.funnel`, behind a flag. The first definition's test: the exact funnel has a **comb** at
@@ -798,6 +810,7 @@ anything not listed.
 | subpath search | `SubpathSearch`, driven by `SimTest.subpathSearch` — seeds from the best six-step runs, grown by `F` = tau gained over footprint, per route on its own clock | `render/subpaths/<map>-<hash>-{shortcuts,longcuts}.png` |
 | phase-complete path | `PhasePath`, run by hand — the connected and saturated strand covers over the lane between four insertion-built gates, and the join field to each against `S` alone; the first definition's funnels behind a flag | `render/phase-path/<map>-<hash>-e<edge>-{cover,join}.png`; printed |
 | phase-complete loop, geometric clock | `PhasePath.loop`, run by hand — the coasting cycle plus closed strands round a whole route, pruned, from several starts; the coasting-sweep tau along each strand | `render/phase-path/<map>-<hash>-loop<route>.png`; printed |
+| shortest lap | `PhasePath.lap`, run by hand — breadth-first round the route from every horizontal-step state of a column on a straight, to itself or 0–3 px ahead; the reachable advances at the first depth and three after; the chain from the landing state | `render/phase-path/<map>-<hash>-lap<route>.png`; printed |
 | the clock on one route (fit) | `RouteClock.of` — the corridor and the refit; `Fit.tau` is `T`, one continuous coordinate round the loop | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |

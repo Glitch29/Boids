@@ -1353,6 +1353,220 @@ public final class PhasePath {
         javax.imageio.ImageIO.write(img, "png", out.toFile());
     }
 
+    // --------------------------------------------------------------------------------- lap
+
+    /** One lap search: from {@code from}, the fewest ticks to a state 0–3 px ahead on the same row and heading. */
+    public record Lap(int from, int ticks, int ahead, int[] path, int[] reachable) {
+        /** The lap in ticks: a pixel ahead on a horizontal step is a quarter tick. */
+        public double length() { return ticks - ahead / 4.0; }
+        public int to() { return path[path.length - 1]; }
+    }
+
+    /**
+     * The shortest lap of a route, measured where a pixel is exactly a quarter tick.
+     * <p>
+     * <b>The user's construction, 2026-09-15.</b> From a state {@code S} on a horizontal straight,
+     * find the minimal number of ticks to reach {@code S} itself or a state a fractional tick in
+     * front of it — the same row and heading, {@code 0} to {@code 3} px ahead — with ties broken by
+     * the furthest spot reachable in that many ticks. A lap is then {@code N − k/4}. Chaining laps
+     * from the landing state walks the phases; the chain closes on {@code S}'s own straight-travel
+     * line once the pixels advanced sum to a multiple of four, and the union of its laps is the
+     * shortest closed path through {@code S}'s phase class — phase-complete if the chain visits
+     * every residue, which it does iff {@code k} is odd.
+     *
+     * @param x the column on the straight; every route state there with a horizontal step
+     *          (headings 63, 0, 1), at every row, is searched from
+     */
+    public static void lap(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, int edge, int x)
+            throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+        int[] edgeOf = l.edge();
+        int w = map.width(), h = map.height();
+
+        int m = route.length, slot = -1;
+        for (int i = 0; i < m; i++) if (route[i] == edge) slot = i;
+        int[] rotated = new int[m];
+        int shift = Math.floorMod(slot - m / 2, m);
+        for (int i = 0; i < m; i++) rotated[i] = route[(i + shift) % m];
+        Corridor c = new Corridor(map, edgeOf, l.live(), l.liveCount(), rotated);
+        System.out.printf("%n=== %s @%s: shortest lap of route %s from the column x = %d ===%n",
+                preset.name(), preset.ingest().hash(), Arrays.toString(rotated), x);
+
+        List<Integer> column = new ArrayList<>();
+        for (int y = 0; y < h; y++) {
+            for (int d : new int[]{63, 0, 1}) {
+                if (map.stepX(d) != 4 || map.stepY(d) != 0) throw new IllegalStateException("heading " + d + " is not a horizontal step");
+                if (!map.alive(x, y, d)) continue;
+                int s = map.index(x, y, d);
+                if (c.in(s) && edgeOf[s] == edge) column.add(s);
+            }
+        }
+        System.out.printf("%d states in the column with a horizontal step%n", column.size());
+
+        Lap best = null;
+        List<Lap> bestChain = null;
+        java.util.Map<String, List<String>> rows = new java.util.LinkedHashMap<>();
+        for (int s : column) {
+            Lap first = lapFrom(c, s);
+            if (first == null) {
+                System.out.printf("%5d %3d   none%n", c.y(s), c.d(s));
+                continue;
+            }
+            // Chain: from the landing state, again, until the pixels advanced sum to a multiple of four.
+            List<Lap> chain = new ArrayList<>();
+            chain.add(first);
+            int advanced = first.ahead;
+            Lap cur = first;
+            while (advanced % 4 != 0 && chain.size() < 16) {
+                cur = lapFrom(c, cur.to());
+                if (cur == null) break;
+                chain.add(cur);
+                advanced += cur.ahead;
+            }
+            StringBuilder sb = new StringBuilder();
+            double total = 0;
+            for (int i = 0; i < chain.size(); i++) {
+                Lap lp = chain.get(i);
+                if (i < 5) sb.append(String.format(" %d-%d/4", lp.ticks, lp.ahead));
+                else if (i == 5) sb.append(" …");
+                total += lp.length();
+            }
+            StringBuilder reach = new StringBuilder();
+            for (int i = 0; i <= EXTRA; i++) {
+                reach.append(i == 0 ? "" : " ").append(first.ticks + i).append(":{");
+                for (int k = 0; k < 4; k++) if ((first.reachable[i] & (1 << k)) != 0) reach.append(k);
+                reach.append('}');
+            }
+            String row = String.format("%6d %6d %8.2f   reachable %s   chain%s = %.2f over %d laps%s", first.ticks, first.ahead,
+                    first.length(), reach, sb, total, chain.size(), advanced % 4 == 0 ? "" : " (did not close)");
+            rows.computeIfAbsent(row, k -> new ArrayList<>()).add(c.y(s) + "/" + c.d(s));
+            if (best == null || first.length() < best.length()) { best = first; bestChain = chain; }
+        }
+        for (var e : rows.entrySet()) System.out.printf("  %2d states (y/d %s%s): %s%n", e.getValue().size(), e.getValue().get(0),
+                e.getValue().size() > 1 ? " … " + e.getValue().get(e.getValue().size() - 1) : "", e.getKey());
+        if (best == null) return;
+        System.out.printf("%nshortest lap: %.2f ticks from (%d,%d,%d): %d ticks landing %d px ahead%n", best.length(),
+                c.x(best.from), c.y(best.from), c.d(best.from), best.ticks, best.ahead);
+
+        // The chain as one closed walk: its states, its projection's connectivity, and how many
+        // of the four phases it visits on the straight.
+        boolean[] inWalk = new boolean[edgeOf.length];
+        boolean[] pix = new boolean[w * h];
+        int states = 0, walkTicks = 0;
+        for (Lap lp : bestChain) {
+            walkTicks += lp.ticks;
+            for (int i = 0; i + 1 < lp.path.length; i++) {
+                int s = lp.path[i];
+                if (!inWalk[s]) { inWalk[s] = true; states++; }
+                pix[c.cell(s)] = true;
+            }
+        }
+        int[] label = new int[w * h];
+        int comps = label(pix, w, h, true, label, true);
+        int pixels = 0;
+        for (boolean v : pix) if (v) pixels++;
+        boolean[] phase = new boolean[4];
+        for (Lap lp : bestChain) phase[Math.floorMod(c.x(lp.from) - x, 4)] = true;
+        int phases = 0;
+        for (boolean v : phase) if (v) phases++;
+        System.out.printf("the chain as a closed walk: %d laps, %d ticks, %d distinct states over %d pixels in %d component%s,"
+                        + " %d of 4 phases on the straight%s%n", bestChain.size(), walkTicks, states, pixels, comps,
+                comps == 1 ? "" : "s", phases, phases == 4 && comps == 1 ? " — phase-complete" : "");
+        System.out.printf("states/tick %.3f, ticks/pixel %.3f, states/pixel %.3f  (tick = one lap of %.2f)%n",
+                states / best.length(), best.length() / pixels, states / (double) pixels, best.length());
+
+        Path dir = Path.of("render", "phase-path");
+        Files.createDirectories(dir);
+        String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-lap" + Arrays.toString(rotated).replaceAll("[\\[\\] ]", "").replace(',', '-');
+        drawLaps(c, bestChain, dir.resolve(name + ".png"));
+        System.out.printf("wrote %s.png in %s%n", name, dir);
+    }
+
+    /** How many depths past the first hit the search keeps counting reachable advances for. */
+    static final int EXTRA = 3;
+
+    /**
+     * Breadth-first from {@code from} round the route, the cut crossing allowed, until some state
+     * on the same row and heading 0–3 px ahead is reached; at that depth the furthest ahead wins.
+     */
+    static Lap lapFrom(Corridor c, int from) {
+        int n = c.edgeOf.length, w = c.map.width();
+        int x0 = c.x(from), y0 = c.y(from), d0 = c.d(from);
+        int[] target = new int[4];
+        for (int k = 0; k < 4; k++) {
+            target[k] = x0 + k < w && c.map.alive(x0 + k, y0, d0) && c.in(c.map.index(x0 + k, y0, d0))
+                    ? c.map.index(x0 + k, y0, d0) : -1;
+        }
+        int[] depth = new int[n], parent = new int[n];
+        Arrays.fill(depth, -1);
+        Arrays.fill(parent, -1);
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        depth[from] = 0;
+        queue.add(from);
+        int[] out = new int[3];
+        int found = -1, foundK = -1, hitStart = -1, startParent = -1;
+        int[] reachable = new int[EXTRA + 1];   // per depth from the first hit, a bitmask of the k reached
+        while (!queue.isEmpty() && (found < 0 || depth[queue.peek()] < found + EXTRA)) {
+            int layer = depth[queue.peek()];
+            List<Integer> next = new ArrayList<>();
+            while (!queue.isEmpty() && depth[queue.peek()] == layer) {
+                int s = queue.poll();
+                int k = c.succRound(s, out);
+                for (int j = 0; j < k; j++) {
+                    int u = out[j];
+                    if (u == from) {
+                        if (hitStart < 0) { hitStart = layer + 1; startParent = s; }
+                        continue;
+                    }
+                    if (depth[u] >= 0) continue;
+                    depth[u] = layer + 1;
+                    parent[u] = s;
+                    next.add(u);
+                }
+            }
+            queue.addAll(next);
+            int mask = hitStart == layer + 1 ? 1 : 0, bestK = hitStart == layer + 1 ? 0 : -1;
+            for (int k = 1; k < 4; k++) if (target[k] >= 0 && depth[target[k]] == layer + 1) { mask |= 1 << k; bestK = k; }
+            if (bestK >= 0 && found < 0) { found = layer + 1; foundK = bestK; }
+            if (found >= 0 && layer + 1 - found <= EXTRA) reachable[layer + 1 - found] = mask;
+        }
+        if (found < 0) return null;
+        List<Integer> path = new ArrayList<>();
+        int t = foundK == 0 ? from : target[foundK];
+        path.add(t);
+        int cur = foundK == 0 ? startParent : parent[t];
+        while (cur != from) { path.add(0, cur); cur = parent[cur]; }
+        path.add(0, from);
+        return new Lap(from, found, foundK, path.stream().mapToInt(Integer::intValue).toArray(), reachable);
+    }
+
+    /** The chain of laps on the route, each lap in its own colour, drawn last first. */
+    static void drawLaps(Corridor c, List<Lap> chain, Path out) throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        boolean[] any = new boolean[c.edgeOf.length];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 4);
+        int scale = 3;
+        int[] paint = new int[w * h];
+        for (int s : c.states) paint[c.cell(s)] = 0x30343C;
+        for (int i = chain.size() - 1; i >= 0; i--) {
+            int rgb = PALETTE[(i + 1) % PALETTE.length];
+            for (int s : chain.get(i).path) paint[c.cell(s)] = rgb;
+        }
+        BufferedImage img = new BufferedImage((box[2] - box[0]) * scale, (box[3] - box[1]) * scale, BufferedImage.TYPE_INT_RGB);
+        for (int y = box[1]; y < box[3]; y++) {
+            for (int x = box[0]; x < box[2]; x++) {
+                int rgb = c.map.oob(x, y) ? 0x000000 : paint[x + y * w];
+                for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) {
+                    img.setRGB((x - box[0]) * scale + sx, (y - box[1]) * scale + sy, rgb);
+                }
+            }
+        }
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
     // ---------------------------------------------------------------------------- renders
 
     private static final int[] PALETTE = {0xFFFFFF, 0x3CB44B, 0xFFE119, 0xF032E6, 0x46F0F0, 0xF58231,

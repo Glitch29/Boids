@@ -4,8 +4,9 @@
 and the specifications for it. **§0i is the live thread — read that first**, and within it the
 handoff dated 2026-09-14: the placement fitness has three known defects and phase-complete
 pathing is the prerequisite — now defined by the user, built as `PhasePath` and measured (§0i,
-"Phase-complete paths"), and extended to a whole route as the first step of a new route clock
-(`EDGES.md` §5); carrying that clock off the lane is the next decision. §0h is closed; its
+"Phase-complete paths"), and the shortest lap of a route measured a quarter tick at a time
+(`EDGES.md` §5): an integer 260 on dabeone's stable loop, the loop clamping phase rather than
+carrying it; what the clock is built on is the next decision. §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
 ---
@@ -2068,7 +2069,20 @@ and +1.5 per transition along every strand with a mean of exactly 1 (278s) or 27
 decisive for `P`'s states to a third–fifth of a tick. Off the lane it is keyed on the pixel, which
 is the shortcut question; how to carry it into the corridor is the next decision, the user's.
 
-**Next.** The clock off the lane; a decision zone from a cover — the replacement for
+**Then the shortest lap, the user's correction.** The cover above had fixed the lane to the
+coasting cycle before any search; what was wanted was the *shortest* phase-complete path. The
+user's construction: from a state on a horizontal straight, the fewest ticks to itself or 0–3 px
+ahead on the same row and heading, furthest ahead on ties, a pixel being a quarter tick.
+`PhasePath.lap`, `EDGES.md` §5 "The shortest lap". **The shortest lap is an integer, 260 ticks**
+— eighteen under the coast, hugging the inside wall — from every row and heading of the column;
+the fractional readings (259.25 from `x ≡ 2`, 259.50 from 3, 259.75 from 0) are a one-time gain,
+after which the chain sits at 260 for ever: **the loop clamps phase to `x ≡ 1 (mod 4)`**, never
+carrying a boid past it in 260 ticks and charging a full tick to get there. So the period is
+decisive and integer, and a quarter-tick tau does not carry round the loop. Passed back: whether
+the union of the four 260-tick inlets, which merge at the clamp, is the object to build the clock
+on.
+
+**Next.** The user's decision on the clock; a decision zone from a cover — the replacement for
 `DecisionZone.subpath`'s chain of `S_k`, which was a stop-gap and is to be discarded — and then
 the fitness for (1) and (2).
 

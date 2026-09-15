@@ -445,6 +445,17 @@ cycle sweeps it — quarters on a straight, thirds on a diagonal — and along e
 advances by between half a tick and a tick and a half per transition, averaging exactly one, or
 278/277 on a shortcut. A clock for the lane needs no fit; the fit is for what lies off it.
 
+**The shortest lap is an integer, and the loop clamps phase rather than carrying it.** Measure a
+lap where a pixel is a quarter tick — on a horizontal straight, the fewest ticks from a state to
+itself or 0–3 px ahead on the same row and heading, furthest ahead on ties — and on dabeone's
+stable loop it is 260 ticks, eighteen under the coasting cycle, along the inside wall, from every
+row and heading of the column. The fractional readings are real but happen once: from `x ≡ 2` a
+boid lands 3 px ahead after 260 ticks and reads 259.25, and from there the fastest lap is 260 to
+itself for ever. In 260 ticks a boid can land at any phase from its own up to `x ≡ 1 (mod 4)` and
+never past it; the phase past the ceiling costs a full tick. So a quarter-tick tau does not
+survive a lap, which is the same fact as straight travel collapsing every phase into one orbit
+(§10b), seen from the fast line.
+
 ## 4. The clock — tick values and edge lengths
 
 **The problem it solves.** The decomposition says which stretch a state is on but not where

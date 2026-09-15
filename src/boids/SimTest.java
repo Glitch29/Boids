@@ -2307,7 +2307,7 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        PhasePath.loop(PresetScenarioParameter.DABEONE, dab, new int[]{2, 7, 4}, 4, new int[]{0, 70, 140, 210});
+        for (int x = 178; x <= 183; x++) PhasePath.lap(PresetScenarioParameter.DABEONE, dab, new int[]{2, 7, 4}, 7, x);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

@@ -16,7 +16,9 @@ construction that realises it, and the join field that measures what it is for: 
 phase-complete cover the join time never changes by more than one tick between neighbouring
 pixels, where to a single-phase path it jumps by seven. **§5 gained the phase-complete loop
 and the geometric clock the same day** — every strand of the loop is a single lap of 277 or 278
-ticks, and a tau read off the coasting sweep agrees with every strand to within half a tick.
+ticks, and a tau read off the coasting sweep agrees with every strand to within half a tick;
+then the **shortest lap**, a quarter tick at a time: an integer 260, eighteen under the coast,
+and the loop clamps phase to one residue rather than carrying it.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -1013,6 +1015,60 @@ not is a labelling of the corridor: it is keyed on the pixel, so a state a pixel
 shares its tau with the lane state beside it, and that is exactly the shortcut the 277s take —
 the residual the least-squares clock of §5 spreads over the edge. Whether to carry it off the lane
 by nearest pixel, by the join field, or by a fit is the next question.
+
+> **Superseded the same day.** The cover above is phase-complete for the coasting cycle, which
+> was chosen arbitrarily and fixed the lane before any search began; the user wanted the
+> *shortest* phase-complete path, which is a different object. The section below is that. The
+> cover and the geometric clock stand as measurements of the coasting lane.
+
+### The shortest lap, measured a quarter tick at a time — 2026-09-15
+
+**The user's construction.** From a state `S` on a horizontal straight — where a pixel is exactly
+a quarter tick — find the minimal number of ticks to reach `S` itself or a state a fractional
+tick in front of it: the same row and heading, 0 to 3 px ahead, ties broken by the furthest spot
+reachable in that many ticks. Then chain laps from the landing state. `PhasePath.lap`, run by
+hand: breadth-first round the route with the cut crossing allowed, the first depth at which any
+of the four targets is reached, recording which advances are first reached at that depth and the
+three after it.
+
+**Measured, dabeone `609cffdb84be218c`, route `[2, 7, 4]`, the bottom straight of edge 7
+(`y = 354 … 360`, headings 63/0/1), six columns.** Every one of the 21 states in a column gives
+the same answer as every other — the row and the heading do not matter — and the answer depends
+on the column only through `x mod 4`:
+
+| `x` | `x mod 4` | first reached at 260 ticks | at 261 | first lap, `N − k/4` | lands at |
+| --- | --- | --- | --- | --- | --- |
+| 178 | 2 | `+0 +1 +2 +3` | — | **259.25** | 181 |
+| 179 | 3 | `+0 +1 +2` | `+3` | 259.50 | 181 |
+| 180 | 0 | `+0 +1` | `+2 +3` | 259.75 | 181 |
+| 181 | 1 | `+0` | `+1 +2 +3` | **260.00** | 181 |
+| 182 | 2 | `+0 +1 +2 +3` | — | 259.25 | 185 |
+| 183 | 3 | `+0 +1 +2` | `+3` | 259.50 | 185 |
+
+1. **The shortest lap is an integer: 260 ticks**, eighteen under the coasting cycle's 278, and it
+   hugs the inside wall the whole way round (`render/phase-path/dabeone-…-lap2-7-4.png`).
+   Every phase has a 260-tick cycle through itself (`+0` is first reached at 260 from every
+   column).
+2. **The fractional laps are a one-time gain, not a period.** From `x ≡ 2` the fastest lap lands
+   3 px ahead and reads 259.25; from the landing state the fastest lap is 260 to itself, and stays
+   260 for ever after. The chain never advances again — sixteen laps, `260-3/4` then fifteen
+   `260-0/4`. No multi-lap period exists other than 260.
+3. **The loop clamps phase.** Every 260-tick lap lands at `x ≡ 1 (mod 4)` or short of it: from
+   phase `p` the reachable phases in 260 ticks run from `p` up to 1 in the cyclic order
+   `2, 3, 0, 1`, and never past. Phase 1 is a fixed point; the others can keep their phase or
+   gain up to the ceiling for free, and reaching a phase past the ceiling costs a full tick
+   (`+1, +2, +3` from 181 are first reached at 261). So on this loop the sub-tick phase is not
+   conserved round a lap — it is preserved or advanced, and clamped — which is `HINTS.md` §10b's
+   collapse of straight travel into one orbit, seen from the fast line rather than the coasting
+   one.
+4. **The starting offset changes the first lap only**, through `x mod 4`; not through `y`, not
+   through the heading, and not the sustained lap.
+
+**What this means for a clock.** The route's shortest period is the integer 260, decisive; a
+quarter-tick tau does not carry round the loop, because the loop does not carry phase. A
+phase-complete shortest loop, if one is wanted, is the union of the four 260-tick inlets
+(`178, 179, 180, 181 → 181`), which merge at the clamp and are not a union of cycles; whether
+that is the object the clock should be built on is the user's call.
 
 ---
 
