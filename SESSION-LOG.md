@@ -110,6 +110,14 @@ spread mean 0.0093, max 0.658. Renders `render/phase-path/dabeone-…-clock2-7-4
 Recorded in `EDGES.md` §5 "The anchored route clock", `ROADMAP.md` §0i, `HINTS.md` §3a, glossary,
 README.
 
+**Then the visualiser, the user's specification.** `TauSlices`: a per-state scalar over
+`(x, y, d mod 16)`, sixteen slices tiled four by four, the value modulo a period as hue,
+collisions at half saturation. Run on the anchored clock and the map-wide fitted clock of the
+stable loop, tau mod 16: **0 collisions in 43,970 states**; bands count ticks by sixteens, the
+seam at the line shows as a quarter-turn of hue (260 ≡ 4 mod 16), the straights are clean
+gradients across the corridor and the bends skew the bands inside-ahead. Renders
+`render/phase-path/dabeone-…-clock2-7-4-slices.png`, `-slices-fitted.png`.
+
 **Open.** Whether the anchored clock replaces `RouteClock` / `EdgeMetric` for routes, and with
 what weighting — the user's call. A decision zone from a cover — the replacement for
 `DecisionZone.subpath`; then the fitness for the handoff's (1) and (2). A stretch narrow enough to

@@ -502,6 +502,14 @@ the project reads — that is still `EdgeMetric` and `RouteClock`.
 much the clock says a boid's next choice matters. Mean 0.009, max 0.66 on dabeone's stable loop
 under the anchored clock. `PhasePath.clock`, drawn per pixel.
 
+**slice sheet / `(x, y, d mod 16)`** — a per-state scalar drawn for its texture: the heading
+folded by 16 (collision-free on a route, whose headings at a pixel span far less than a quarter
+turn), the sixteen slices tiled four by four in reading order, the value modulo a period as hue —
+sixteen for a clock, so bands can be counted. A collision — two states at one pixel of one slice —
+shows one value at **half saturation**, the project's rule being a change orthogonal to every
+channel carrying data. `TauSlices.draw`, the user's specification of 2026-09-15; run on the
+anchored and the fitted clock of dabeone's stable loop from `PhasePath.clock`.
+
 **funnel** — for a path `P` and a segment `[A, Z]`, the sets exactly `N` steps before (or after)
 `P`, for every `N` until they leave the segment; the **cumulative** funnel is within `N` steps.
 `PhasePath.funnel`, behind a flag. The first definition's test: the exact funnel has a **comb** at
@@ -846,6 +854,7 @@ anything not listed.
 | shortest lap | `PhasePath.lap`, run by hand — breadth-first round the route from every horizontal-step state of a column on a straight, to itself or 0–3 px ahead; the reachable advances at the first depth and three after; the chain from the landing state | `render/phase-path/<map>-<hash>-lap<route>.png`; printed |
 | the set of all shortest loops | `PhasePath.shortestLoops`, run by hand — `F`, `R` and `L` from a starting line by eight breadth-first searches; `P_N` for `N` ascending until its projection loops round; `F` as a clock on it | `render/phase-path/<map>-<hash>-loops<route>-x<line>.png`; printed |
 | the anchored route clock | `PhasePath.clock`, run by hand — the stable lap by four-lap closure, `F/4` on the states of exactly that loop, least squares for the rest; the advance along the fastest loop and the coasting cycle; the successor spread | `render/phase-path/<map>-<hash>-clock<route>-{tau,coast,spread}.png`; printed |
+| slice sheet | `TauSlices.draw` — any per-state scalar over `(x, y, d mod 16)`, tiled, modulo a period as hue | `render/phase-path/…-slices.png` |
 | the clock on one route (fit) | `RouteClock.of` — the corridor and the refit; `Fit.tau` is `T`, one continuous coordinate round the loop | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |

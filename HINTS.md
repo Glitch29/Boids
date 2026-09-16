@@ -874,6 +874,15 @@ Two things follow, and both are about where the information is.
 
 ## 10. Method notes that repeatedly paid off
 
+- **Look at a per-state field by folding the heading, not by collapsing it.** `(x, y, d)` is too
+  sparse to see and `(x, y)` alone paints every heading over every other. Fold `d` by 16 — a
+  route's headings at any pixel span far less than a quarter turn, so the fold is almost always
+  collision-free (none in 43,970 states on dabeone's stable loop) — tile the sixteen slices four
+  by four in reading order, and show the value modulo a period as hue, sixteen for a clock so the
+  bands can be counted. Where two states do land on one pixel of one slice, show one of them and
+  mark the collision by a change orthogonal to every data channel — half saturation when hue is
+  the data. `TauSlices`, the user's specification of 2026-09-15; it showed a clock's texture
+  that no residual statistic had.
 - **Cache expensive results content-addressed, and put the *code version* in the key.** A
   metric store keyed only on inputs silently returned answers from the old solver after a bug
   fix, producing bit-identical wrong numbers. That cost a full wrong conclusion.

@@ -2093,6 +2093,18 @@ public final class PhasePath {
         if (coast != null) drawRate(c, coast, coastAdvance, dir.resolve(name + "-coast.png"));
         drawSpread(c, spread, dir.resolve(name + "-spread.png"));
         System.out.printf("wrote %s-{tau,coast,spread}.png in %s%n", name, dir);
+
+        // The texture, slice by slice: the anchored clock, and the map-wide fitted clock beside it.
+        boolean[] routePixel = new boolean[w * h];
+        for (int s : c.states) routePixel[c.cell(s)] = true;
+        boolean[] any = new boolean[n];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 3);
+        TauSlices.draw(map, c.states, tau, 16, routePixel, box, 2, dir.resolve(name + "-slices.png"));
+        double[] fitted = new double[n];
+        Arrays.fill(fitted, Double.NaN);
+        for (int s : c.states) fitted[s] = b.facts().tickOf()[s];
+        TauSlices.draw(map, c.states, fitted, 16, routePixel, box, 2, dir.resolve(name + "-slices-fitted.png"));
     }
 
     /** The clock's seam: the starting line, crossed by a transition on its edge from {@code x < x0} to {@code x >= x0}. */

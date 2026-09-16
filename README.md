@@ -149,7 +149,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 61 files.
+One package, `src/boids`, 62 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -207,7 +207,9 @@ replaced flew identically and was retired 2026-09-13) · `SubpathSearch` (where 
 should run: grows paths by tau gained over footprint, and draws them; finding only) · `PhasePath` (the user's
 definition of a phase-complete path — a cover of `S` navigable to both gates within itself whose
 projection is 8-connected — built as strands and measured by the join field; run by hand —
-`EDGES.md` §2a) · `RouteClock` (the clock refitted on one
+`EDGES.md` §2a) · `TauSlices` (a per-state
+scalar drawn over `(x, y, d mod 16)`, sixteen slices tiled, the value modulo a period as hue;
+the user's visualiser for a clock's texture) · `RouteClock` (the clock refitted on one
 route alone, for `routeClock` and the search) · `CorpusPreset` (named recipes, so a
 corpus is addressed by the settings that produced it). See `CORPUS.md`.
 
@@ -338,6 +340,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `render/phase-path/<map>-<hash>-lap<route>.png` | `PhasePath.lap` | the chain of shortest laps from the best column state, each lap in its own colour |
 | `render/phase-path/<map>-<hash>-loops<route>-x<line>.png` | `PhasePath.shortestLoops` | `P*` coloured by loop length, the shortest white, a quarter-tick warmer each; the line in blue |
 | `render/phase-path/<map>-<hash>-clock<route>-{tau,coast,spread}.png` | `PhasePath.clock` | the clock as hue round the lap, anchors brighter; the coasting cycle by its advance per tick with a strip chart; the successor spread per pixel |
+| `render/phase-path/<map>-<hash>-clock<route>-slices.png`, `-slices-fitted.png` | `TauSlices`, from `PhasePath.clock` | the clock's texture: `(x, y, d mod 16)` tiled four by four in reading order, tau mod 16 as hue, collisions at half saturation; the anchored clock and the map-wide fitted clock on the same route |
 | `archive/<date>/` | hand | retired output, ignored. **Not a backup** — the maps it came from are in `areas/` |
 
 **Retired 2026-09-04.** `analysis/`, `ingests/` (the eighteen pre-physics-3 hashes), `render/`,
