@@ -147,7 +147,8 @@ an edge by a longer or shorter route than coasting takes. Ranked per override ti
 size, because override ticks will eventually be budgeted.
 
 **shortcut / longcut** — a route through an edge that leaves by the same exit coasting does, in
-fewer or more ticks. **Coasting is not always in the middle of the range**: plait's edge 0 has a
+fewer or more ticks. **Redefined 2026-09-15 against the shortest-route clock**: see *longcut*
+below — a basin of the excess field — and the shortcut is the fast band alongside. **Coasting is not always in the middle of the range**: plait's edge 0 has a
 64-tick span with coasting 83% of the way up it, so a boid there can arrive 53 ticks early and only
 11 late. Dabeone is on rails by comparison — 63 ticks of hurry available map-wide against 133 of
 dawdle.
@@ -510,6 +511,32 @@ the project reads — that is still `EdgeMetric` and `RouteClock`.
 much the clock says a boid's next choice matters. Mean 0.009, max 0.66 on dabeone's stable loop
 under the anchored clock. `PhasePath.clock`, drawn per pixel.
 
+**excess** — `E(s) = L(s) − 4T`: the quarter-ticks by which the shortest loop through a state
+exceeds the route's stable lap — how far behind a boid there has unavoidably fallen. `E ≤ 0` is
+the **fast band**. `Clocked.excess`.
+
+**longcut** (2026-09-15, canonical) — **a basin of the excess field**: every state at least a
+tick behind, assigned to a peak by watershed over transitions, peaks less than a tick proud
+merged into a higher neighbour, then basins that touch in projection with tau ranges overlapping
+by half the shorter merged greedily best pair first. Its **depth** is the largest excess in it;
+its **loss** the longest lag path through it under the anchored clock; its **shortcut** the fast
+band over the same tau range. `PhasePath.longcuts`, `Region`; `EDGES.md` §5 "Longcuts from the
+shortest-route clock". Supersedes the fitness-search reading of §2a. On dabeone's stable loop
+seven — the outer wall of every bend, the bulges deepest; on plait's simple loops fourteen — the
+bulb's far side at 11.5 ticks and twelve identical bends at 2.5.
+
+**basin / prominence** — the watershed's pieces and the rule for keeping one: a peak must stand
+`PROMINENCE` (a tick) above its saddle to a higher basin, else it joins it. Then the projection
+merge, at `OVERLAP` (half). Three thresholds, all a person's.
+
+**ring pass** — on a self-inverse edge, the fewest ticks from the states entered from the edge
+before to those leaving for the edge after, unrestricted and confined to each sense of turn about
+the edge's centroid. Dabeone's scoring ring: 65 / 65 / 65, so the fast lap goes round it and
+neither way is preferred.
+
+**routes** — every simple cycle of the edge graph, listed from its lowest edge, with whether it is
+the unsteered cycle and whether it scores. `PhasePath.routes`; four on dabeone, three on plait.
+
 **slice sheet / `(x, y, d mod 16)`** — a per-state scalar drawn for its texture: the heading
 folded by 16 (collision-free on a route, whose headings at a pixel span far less than a quarter
 turn), the sixteen slices tiled four by four in reading order, the value modulo a period as hue —
@@ -863,6 +890,7 @@ anything not listed.
 | the set of all shortest loops | `PhasePath.shortestLoops`, run by hand — `F`, `R` and `L` from a starting line by eight breadth-first searches; `P_N` for `N` ascending until its projection loops round; `F` as a clock on it | `render/phase-path/<map>-<hash>-loops<route>-x<line>.png`; printed |
 | the anchored route clock | `PhasePath.clock`, run by hand — the stable lap by four-lap closure, `F/4` on the states of exactly that loop, least squares for the rest; the advance along the fastest loop and the coasting cycle; the successor spread | `render/phase-path/<map>-<hash>-clock<route>-{tau,coast,spread}.png`; printed |
 | slice sheet | `TauSlices.draw` — any per-state scalar over `(x, y, d mod 16)`, tiled, modulo a period as hue | `render/phase-path/…-slices.png` |
+| longcuts from the clock | `PhasePath.longcuts`, over `PhasePath.routes` — the excess field's basins with depth, loss, loss path, entries, exits, tau range and the fast band beside; the ring pass by sense | `render/phase-path/<map>-<hash>-longcuts<route>.png`, `-slices.png`; printed |
 | the clock on one route (fit) | `RouteClock.of` — the corridor and the refit; `Fit.tau` is `T`, one continuous coordinate round the loop | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |

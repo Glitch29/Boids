@@ -2307,9 +2307,9 @@ picks, never in what is available to it.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
-        PhasePath.clock(PresetScenarioParameter.DABEONE, dab, new int[]{2, 7, 4}, null);
-        PhasePath.clock(PresetScenarioParameter.DABEONE, dab, new int[]{4, 2, 1, 5, 8}, null);
-        PhasePath.clock(PresetScenarioParameter.DABEONE, dab, new int[]{4, 0, 3, 5, 8}, null);
+        SolverFacts.Gate plait = new SolverFacts.Gate(true, 360, 335, 350, 0);
+        for (int[] route : PhasePath.routes(Pipeline.build(PresetScenarioParameter.DABEONE, dab).facts())) PhasePath.longcuts(PresetScenarioParameter.DABEONE, dab, route, null);
+        for (int[] route : PhasePath.routes(Pipeline.build(PresetScenarioParameter.PLAIT, plait).facts())) PhasePath.longcuts(PresetScenarioParameter.PLAIT, plait, route, null);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

@@ -468,6 +468,21 @@ faster lane merges — with quarter-tick resolution that the minimum over offset
 unused. Ask for the shortest loops rather than the smallest: the set costs eight searches and no
 search over covers, and the clock comes with it.
 
+**A longcut is a basin of the excess field, and every bend has one on its outer wall.** The
+excess of a state — how far the shortest loop through it exceeds the stable lap — is the whole
+of what a longcut is: where it is positive a boid is behind, and it can be behind by that much.
+Cut the field into basins and merge what is one place seen at different phases (basins that touch
+in projection with tau ranges half-overlapping, greedily, best pair first — union-find chains
+bends together through the small basins at their junctions), and out come the outer wall of
+every bend, deepest where the corridor widens; on plait the far side of the bulb at eleven and a
+half ticks, and the twelve identical bends of the braid at two and a half each, in identical
+sizes. A ring with its entrance and exit at one junction is the same length either way round;
+the field says so directly, sixty-five ticks in each sense, where a sliver of fast-band states
+would have said whichever way the return corridor's phase happened to fall. And a route's stable
+lap can be a half-integer — plait's simple loops close in 3,126 ticks over four laps — so the
+anchors are the states within half a tick of it, which on plait is exact for sixty percent of
+the corridor.
+
 **The stable lap is what four laps close on, and the anchors of a clock need not be connected to
 anything.** A lap can be flown in 259.25 ticks once; the length that repeats is the fewest ticks
 for four cut crossings back to the same state, over four — 260.00 here, and one search finds it.
@@ -1325,12 +1340,10 @@ Documents:
 - **Three-way joints.** Settled 2026-09-12 that a bifurcated `E⊥S` cannot be kept as two edges —
   the joint braids, §3a. What is open is whether an altered rule, or a sub-edge structure beneath
   the decomposition, could carry a one-to-three joint without braiding. Parked, not planned.
-- **Where a shortcut should run.** The first fitness — tau gained beyond one a tick over the
-  path's footprint — finds lanes along the insides and outsides of bends, but rewards a path for
-  starting where a boid is veering toward the *long* line, and for starting and ending in the
-  middle of the cross-section. A found path is canonical, not phase-complete; making it one is
-  now defined and built (§3a, `PhasePath`) but not yet turned into a decision zone, and the
-  fitness has not been revisited. `EDGES.md` §2a, "Placing a subpath".
+- **Turning a longcut basin into a decision zone.** Where longcuts are is settled — basins of
+  the excess field of the shortest-route clock, §3a — and the fitness that had three defects is
+  superseded. What is not built is the zone: the gate a psyboid crosses to commit to the outer
+  wall of a bend, and its shortcut twin. `EDGES.md` §5, "Longcuts from the shortest-route clock".
 - Constructing a cut on a map that is not phase-locked. Drawing one at constant `d` works where
   the corridor is straight and locked; elsewhere the cut has to be found. One definition: score a
   one-tick band of tunnel −1 to 1 per state and choose the removal maximising the sum of squared

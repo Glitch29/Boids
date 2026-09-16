@@ -2,12 +2,10 @@
 
 **Status:** 2026-09-15. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it. **§0i is the live thread — read that first**, and within it the
-handoff dated 2026-09-14: the placement fitness has three known defects and phase-complete
-pathing is the prerequisite — now defined by the user, built as `PhasePath` and measured (§0i,
-"Phase-complete paths"), and the shortest lap of a route measured a quarter tick at a time
-(`EDGES.md` §5): an integer 260 on dabeone's stable loop, and the set of all states on loops of
-that length — and a route clock anchored on the 6,995 states of exactly the stable lap, `1 ± 0.087`
-per transition; whether it replaces the fitted clock for routes is the next decision. §0h is closed; its
+entries of 2026-09-15: the handoff of 2026-09-14 is closed — phase-complete paths are defined and
+built, a route clock is anchored on the shortest lap, and **longcuts are basins of that clock's
+excess field**, found on every route of both maps (`EDGES.md` §5). The placement fitness of
+2026-09-13 and its three defects are superseded. Next is a decision zone from a longcut. §0h is closed; its
 handoff is kept as the record of what the benchmark measured and why that search was abandoned.
 
 ---
@@ -2120,10 +2118,25 @@ not at all on `[4, 2, 1, 5, 8]`; anchors are `F/4` regardless. Clocks `1 ± 0.08
 directions in the corridor. `EDGES.md` §5 "The clock on the three routes" has the table and the
 programmatic-versus-judgement split.
 
-**Next.** Whether this clock replaces `RouteClock` / the map-wide `EdgeMetric` for routes, and
-with what weighting — the user's call; whether a self-inverse edge's other direction belongs in a
-route's corridor; a flown lap for the coasting report on scoring routes; then the decision zone
-from a cover and the fitness for (1) and (2).
+**Then longcuts, from the clock — and this closes the handoff's (1) and (2).** The user's
+framing: with a clock round the shortest lap, a longcut is where a boid can be behind it, and the
+shortcut is the transitions alongside that do not lose. `E = L − 4T`, the excess of a state's
+shortest loop over the stable lap, is the field; a longcut is a **basin** of it — watershed over
+transitions, peaks less than a tick proud merged, then basins that touch in projection with tau
+ranges half-overlapping merged greedily, which is what it took to keep the two sides of a bulb
+apart while joining the phase stripes of one bend. `PhasePath.longcuts`, over every simple cycle
+of the edge graph (`PhasePath.routes`). **Every prediction landed**: the outer wall of every bend
+on every route; the beginning of edge 7 (dabeone's left bulge, 4.75 deep); one side of plait's
+bulb (11.5 deep); and for the scoring ring a decisive negative — the fast lap goes round it and
+scores, and a pass round it costs 65 ticks in either sense, so no preferred direction. Plait's
+simple loops have a **half-integer stable lap, 781.50** — the two-lap period asked about at the
+start — and 93,456 states sit on it to the quarter-tick. `EDGES.md` §5 "Longcuts from the
+shortest-route clock"; the §2a placement fitness is superseded.
+
+**Next.** A decision zone from a longcut basin — the psyboid's "take the long way round this
+bend" — and its shortcut twin; whether a longcut is the basin or the loss path; whether this clock
+replaces `RouteClock` / `EdgeMetric` for routes, and with what weighting; whether a self-inverse
+edge's other direction belongs in a route's corridor.
 
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won

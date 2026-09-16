@@ -1814,8 +1814,16 @@ public final class PhasePath {
      * {@code k+1} px short of it at {@code at - dir*(k+1)}, and no state is both. On a cardinal
      * straight a pixel along the axis is exactly a quarter tick.
      */
-    public record Line(int edge, int axis, int at, int dir) {
+    public record Line(int edge, int axis, int at, int dir, int otherLo, int otherHi) {
+        /** A line across a whole edge, unbounded across: only where the edge crosses the coordinate once. */
+        public Line(int edge, int axis, int at, int dir) { this(edge, axis, at, dir, Integer.MIN_VALUE, Integer.MAX_VALUE); }
+
         int coord(Corridor c, int s) { return axis == 0 ? c.x(s) : c.y(s); }
+
+        int other(Corridor c, int s) { return axis == 0 ? c.y(s) : c.x(s); }
+
+        /** Whether a state lies within the straight the line was drawn across, not another crossing of the coordinate. */
+        boolean within(Corridor c, int s) { int o = other(c, s); return o >= otherLo && o <= otherHi; }
 
         /** Whether heading {@code d} steps four pixels along the axis in the line's direction and none across. */
         boolean cardinal(NavMap map, int d) {
@@ -1827,13 +1835,14 @@ public final class PhasePath {
         int[] states(Corridor c, int k) {
             int v = at + dir * k;
             List<Integer> out = new ArrayList<>();
-            for (int s : c.states) if (c.edgeOf[s] == edge && coord(c, s) == v) out.add(s);
+            for (int s : c.states) if (c.edgeOf[s] == edge && coord(c, s) == v && within(c, s)) out.add(s);
             return out.stream().mapToInt(Integer::intValue).toArray();
         }
 
         /** Whether the transition {@code s -> u} crosses the line. */
         boolean crosses(Corridor c, int s, int u) {
-            return c.edgeOf[s] == edge && c.edgeOf[u] == edge && (coord(c, s) - at) * dir < 0 && (coord(c, u) - at) * dir >= 0;
+            return c.edgeOf[s] == edge && c.edgeOf[u] == edge && within(c, s) && within(c, u)
+                    && (coord(c, s) - at) * dir < 0 && (coord(c, u) - at) * dir >= 0;
         }
 
         /** The state {@code k} px along the axis from {@code s}, same other coordinate and heading, or -1. */
@@ -1846,8 +1855,9 @@ public final class PhasePath {
 
         @Override
         public String toString() {
-            return String.format("edge %d, %s = %d, travelling %s", edge, axis == 0 ? "x" : "y", at,
-                    axis == 0 ? (dir > 0 ? "+x" : "-x") : (dir > 0 ? "+y" : "-y"));
+            return String.format("edge %d, %s = %d, travelling %s%s", edge, axis == 0 ? "x" : "y", at,
+                    axis == 0 ? (dir > 0 ? "+x" : "-x") : (dir > 0 ? "+y" : "-y"),
+                    otherLo == Integer.MIN_VALUE ? "" : String.format(", %s in [%d, %d]", axis == 0 ? "y" : "x", otherLo, otherHi));
         }
     }
 
@@ -1865,22 +1875,29 @@ public final class PhasePath {
         for (int e : c.route) {
             for (int axis = 0; axis < 2; axis++) {
                 for (int dir = -1; dir <= 1; dir += 2) {
-                    int size = axis == 0 ? w : h;
-                    boolean[] counts = new boolean[size];
+                    // The pixels carrying a cardinal state of this edge, axis and direction, in
+                    // 8-connected pieces: each piece is one straight stretch.
                     Line probe = new Line(e, axis, 0, dir);
-                    for (int s : c.states) {
-                        if (c.edgeOf[s] != e || !probe.cardinal(c.map, c.d(s))) continue;
-                        counts[axis == 0 ? c.x(s) : c.y(s)] = true;
+                    boolean[] pix = new boolean[w * h];
+                    for (int s : c.states) if (c.edgeOf[s] == e && probe.cardinal(c.map, c.d(s))) pix[c.cell(s)] = true;
+                    int[] label = new int[w * h];
+                    int pieces = label(pix, w, h, true, label, true);
+                    int[] vLo = new int[pieces + 1], vHi = new int[pieces + 1], oLo = new int[pieces + 1], oHi = new int[pieces + 1];
+                    Arrays.fill(vLo, Integer.MAX_VALUE);
+                    Arrays.fill(vHi, Integer.MIN_VALUE);
+                    Arrays.fill(oLo, Integer.MAX_VALUE);
+                    Arrays.fill(oHi, Integer.MIN_VALUE);
+                    for (int i = 0; i < pix.length; i++) {
+                        if (!pix[i]) continue;
+                        int p = label[i], x = i % w, y = i / w, v = axis == 0 ? x : y, o = axis == 0 ? y : x;
+                        vLo[p] = Math.min(vLo[p], v); vHi[p] = Math.max(vHi[p], v);
+                        oLo[p] = Math.min(oLo[p], o); oHi[p] = Math.max(oHi[p], o);
                     }
-                    for (int v = 0; v < size; v++) {
-                        if (!counts[v]) continue;
-                        int end = v;
-                        while (end + 1 < size && counts[end + 1]) end++;
-                        int run = end - v + 1;
-                        Line line = new Line(e, axis, (v + end) / 2, dir);
+                    for (int p = 1; p <= pieces; p++) {
+                        int run = vHi[p] - vLo[p] + 1;
+                        Line line = new Line(e, axis, (vLo[p] + vHi[p]) / 2, dir, oLo[p] - 2, oHi[p] + 2);
                         if (run > bestRun) { second = best; secondRun = bestRun; best = line; bestRun = run; }
                         else if (run > secondRun) { second = line; secondRun = run; }
-                        v = end;
                     }
                 }
             }
@@ -2005,8 +2022,25 @@ public final class PhasePath {
     }
 
     /**
-     * The route's clock, anchored on the set of states whose shortest loop is exactly the stable
-     * lap — the user's construction of 2026-09-15.
+     * A route's clock, built: the corridor it was built on, the line and the stable lap, the
+     * distances from the line, the anchors and tau on every route state.
+     *
+     * @param T4   the stable lap in quarter-ticks
+     * @param inS  per state, whether it is an anchor
+     * @param tau  per state, the clock; NaN off the route
+     */
+    public record Clocked(Pipeline.Built built, Corridor c, Line line, int T4, Distances dist, boolean[] inS, double[] tau) {
+        public double T() { return T4 / 4.0; }
+
+        /** Quarter-ticks the shortest loop through {@code s} exceeds the stable lap by; MAX_VALUE off every loop. */
+        public int excess(int s) { return dist.L[s] == Integer.MAX_VALUE ? Integer.MAX_VALUE : dist.L[s] - T4; }
+
+        public double advance(int s, int u) { return PhasePath.advance(c, line, tau, s, u, T()); }
+    }
+
+    /**
+     * Builds the route's clock, anchored on the set of states whose shortest loop is exactly the
+     * stable lap — the user's construction of 2026-09-15.
      * <ol>
      *   <li>A <b>starting line</b> across the longest cardinal straight on the route, found by
      *       {@link #findLine}, or the one given; the route is cut at the crossing furthest round
@@ -2023,26 +2057,23 @@ public final class PhasePath {
      *       endpoints to differ by one tick, one lap less across the seam — with {@code S} held
      *       fixed. Unit weights.</li>
      * </ol>
-     * Then what the user asked to see: the advance of tau per tick along the fastest loop and,
-     * where a straight-travel cycle lies on the route, along the coasting cycle; the spread of tau
-     * among each state's successors; and the texture, slice by slice, beside the map-wide clock's.
      *
      * @param given the line to use, or null to find one
+     * @return null where no line could be found or no state closes on itself
      */
-    public static void clock(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, Line given)
+    public static Clocked build(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, Line given)
             throws IOException {
         Pipeline.Built b = Pipeline.build(preset, gate);
         EdgeDecomposition.Labelling l = b.labelling();
         NavMap map = l.map();
         int[] edgeOf = l.edge();
-        int w = map.width(), h = map.height(), n = edgeOf.length;
+        int n = edgeOf.length;
 
-        // 1. The line, on a corridor cut as far from it as the route allows.
         Corridor whole = new Corridor(map, edgeOf, l.live(), l.liveCount(), route);
         System.out.printf("%n=== %s @%s: the clock of route %s anchored on its stable lap ===%n",
                 preset.name(), preset.ingest().hash(), Arrays.toString(route));
         Line line = given != null ? given : findLine(whole);
-        if (line == null) { System.out.println("no cardinal straight of " + MIN_STRAIGHT + " px on this route: a line has to be chosen by hand"); return; }
+        if (line == null) { System.out.println("no cardinal straight of " + MIN_STRAIGHT + " px on this route: a line has to be chosen by hand"); return null; }
         System.out.printf("starting line: %s%s%n", line, given != null ? " (given)" : " (found)");
         int m = route.length, slot = -1;
         for (int i = 0; i < m; i++) if (route[i] == line.edge) slot = i;
@@ -2052,11 +2083,10 @@ public final class PhasePath {
         Corridor c = new Corridor(map, edgeOf, l.live(), l.liveCount(), rotated);
         System.out.printf("route as %s, cut %d->%d, %d route states%n", Arrays.toString(rotated), c.cutFrom, c.cutTo, c.states.length);
 
-        // 2. The stable lap.
         int[] landings = cutLandings(c);
         long t0 = System.currentTimeMillis();
         int[] four = fewestTicksForLaps(c, landings, 4);
-        if (four[0] == Integer.MAX_VALUE) { System.out.println("no state closes four laps on itself"); return; }
+        if (four[0] == Integer.MAX_VALUE) { System.out.println("no state closes four laps on itself"); return null; }
         int T4 = four[0];
         int one = fewestTicksForLaps(c, landings, 1)[0];
         System.out.printf("four laps back to the same state: fewest %d ticks, from (%d,%d,%d), %d of %d cut landings achieve it (%.1f s);"
@@ -2065,7 +2095,6 @@ public final class PhasePath {
         double T = T4 / 4.0;
         System.out.printf("stable lap %.2f ticks%s%n", T, T4 % 4 == 0 ? "" : "   <-- not a whole number of ticks");
 
-        // 3. S, its connectivity to the cut (reported, not relied on), and its labels.
         Distances dist = distances(c, line);
         boolean[] inS = new boolean[n];
         int sizeS = 0, onLoops = 0, minL = Integer.MAX_VALUE;
@@ -2077,7 +2106,30 @@ public final class PhasePath {
         }
         System.out.printf("S: %d states whose shortest loop is exactly %d quarter-ticks (shortest loop through any state %d = %.2f; %d of %d states on some loop)%n",
                 sizeS, T4, minL, minL / 4.0, onLoops, c.states.length);
-        if (sizeS == 0) { System.out.println("no state has a shortest loop of exactly the stable lap; stopping"); return; }
+        {
+            StringBuilder sb = new StringBuilder();
+            for (int q = minL; q <= minL + 12; q++) { int cnt = 0; for (int s : c.states) if (dist.L[s] == q) cnt++; sb.append(String.format(" %d:%d", q, cnt)); }
+            System.out.println("states by shortest loop, from the shortest:" + sb);
+        }
+        if (sizeS == 0) {
+            // A half-integer lap: single laps alternate either side of it, and no loop is exactly it.
+            // Anchor on the states within half a tick of it instead, and say so.
+            for (int s : c.states) if (dist.L[s] != Integer.MAX_VALUE && Math.abs(dist.L[s] - T4) <= 2) { inS[s] = true; sizeS++; }
+            System.out.printf("no state has a shortest loop of exactly the stable lap; anchoring on the %d within half a tick of it instead%n", sizeS);
+            if (sizeS == 0) { System.out.println("none within half a tick either; stopping"); return null; }
+        }
+        // Does the stable lap score? The cheapest scoring state says.
+        {
+            int scoringStates = 0, minScoring = Integer.MAX_VALUE, fastScoring = 0;
+            for (int s : c.states) {
+                if (c.map.score(c.x(s), c.y(s)) <= 0 || dist.L[s] == Integer.MAX_VALUE) continue;
+                scoringStates++;
+                minScoring = Math.min(minScoring, dist.L[s] - T4);
+                if (dist.L[s] <= T4) fastScoring++;
+            }
+            if (scoringStates > 0) System.out.printf("scoring states on the route: %d, of them %d on the fast band; the cheapest scoring state is %.2f ticks behind the stable lap%s%n",
+                    scoringStates, fastScoring, minScoring / 4.0, fastScoring == 0 ? "   <-- the stable lap does not score" : "");
+        }
         int[] out = new int[3];
         {
             int[] fwd = new int[n], back = new int[n];
@@ -2109,21 +2161,10 @@ public final class PhasePath {
             }
             System.out.printf("a search within S from the cut would reach %d forward, %d backward, %d by neither%s%n", f, bb, neither,
                     neither > 0 ? "   <-- S is not connected to the cut; anchors are F/4 regardless" : "");
-            int[] adv = new int[6];
-            for (int s : c.states) {
-                if (!inS[s]) continue;
-                int k = c.succRound(s, out);
-                for (int j = 0; j < k; j++) if (inS[out[j]]) { int d = dist.F[out[j]] - dist.F[s]; if (d >= 0) adv[Math.min(5, d)]++; }
-            }
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < adv.length; i++) if (adv[i] > 0) sb.append(String.format(" %d:%d", i, adv[i]));
-            System.out.printf("within S, F advances per transition by%s quarter-ticks%n", sb);
         }
         double[] tau = new double[n];
         Arrays.fill(tau, Double.NaN);
         for (int s : c.states) if (inS[s]) tau[s] = dist.F[s] / 4.0;
-
-        // 4. The clock everywhere else.
         int iterations = anchoredLeastSquares(c, inS, tau, T, line);
         double rms = 0;
         int edges = 0, worst = -1;
@@ -2139,8 +2180,28 @@ public final class PhasePath {
         }
         System.out.printf("clock: %d free states solved in %d iterations; over %d transitions the advance is 1 %+.4f rms, worst %+.2f at (%d,%d,%d)%n",
                 c.states.length - sizeS, iterations, edges, Math.sqrt(rms / edges), worstR, c.x(worst), c.y(worst), c.d(worst));
+        return new Clocked(b, c, line, T4, dist, inS, tau);
+    }
 
-        // (a) The fastest loop: from two pixels short of the line, landing three past its start.
+    /**
+     * Builds the clock and reports what the user asked to see: the advance of tau per tick along
+     * the fastest loop and, where a straight-travel cycle lies on the route, along the coasting
+     * cycle; the spread of tau among each state's successors; and the texture, slice by slice,
+     * beside the map-wide clock's.
+     */
+    public static Clocked clock(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, Line given)
+            throws IOException {
+        Clocked k = build(preset, gate, route, given);
+        if (k == null) return null;
+        Corridor c = k.c;
+        Line line = k.line;
+        NavMap map = c.map;
+        EdgeDecomposition.Labelling l = k.built.labelling();
+        int w = map.width(), h = map.height(), n = c.edgeOf.length;
+        double T = k.T();
+        double[] tau = k.tau;
+        int[] out = new int[3];
+
         int[] fast = null;
         for (int s : line.states(c, -2)) {
             if (!line.cardinal(map, c.d(s))) continue;
@@ -2154,7 +2215,6 @@ public final class PhasePath {
             System.out.println("\n-- no lap from two pixels short of the line lands three ahead; the fast loop is not reported --");
         }
 
-        // (b) The coasting cycle, where straight travel has one on the route.
         MapStates lattice = MapStates.of(map, Flocking.of(preset.turningRadius()), l.live(), l.liveCount());
         int[] coast = null;
         for (int[] cy : lattice.cycles(lattice.pureStable(1))) {
@@ -2174,18 +2234,17 @@ public final class PhasePath {
             System.out.println("\n-- no straight-travel cycle lies on this route; the coasting report needs a flown lap, which is not built --");
         }
 
-        // (c) The spread of tau among each state's successors.
         double[] spread = new double[n];
         double maxSpread = 0, meanSpread = 0;
         int counted = 0;
         for (int s : c.states) {
-            int k = c.succRound(s, out);
-            if (k < 2) continue;
+            int kk = c.succRound(s, out);
+            if (kk < 2) continue;
             double sum = 0;
             int pairs = 0;
-            for (int i = 0; i < k; i++) {
-                for (int j = i + 1; j < k; j++) {
-                    double d = advance(c, line, tau, s, out[i], T) - advance(c, line, tau, s, out[j], T);
+            for (int i = 0; i < kk; i++) {
+                for (int j = i + 1; j < kk; j++) {
+                    double d = k.advance(s, out[i]) - k.advance(s, out[j]);
                     sum += d * d;
                     pairs++;
                 }
@@ -2202,7 +2261,7 @@ public final class PhasePath {
         Files.createDirectories(dir);
         String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-clock"
                 + Arrays.toString(route).replaceAll("[\\[\\] ]", "").replace(',', '-');
-        drawClock(c, tau, inS, T, dir.resolve(name + "-tau.png"));
+        drawClock(c, tau, k.inS, T, dir.resolve(name + "-tau.png"));
         if (coast != null) drawRate(c, coast, coastAdvance, dir.resolve(name + "-coast.png"));
         drawSpread(c, spread, dir.resolve(name + "-spread.png"));
         System.out.printf("wrote %s-{tau,%sspread}.png in %s%n", name, coast != null ? "coast," : "", dir);
@@ -2212,11 +2271,12 @@ public final class PhasePath {
         boolean[] any = new boolean[n];
         for (int s : c.states) any[s] = true;
         int[] box = crop(c, any, 3);
-        TauSlices.draw(map, c.states, tau, 16, routePixel, box, 2, dir.resolve(name + "-slices.png"));
+        TauSlices.draw(map, c.states, tau, 16, true, routePixel, box, 2, dir.resolve(name + "-slices.png"));
         double[] fitted = new double[n];
         Arrays.fill(fitted, Double.NaN);
-        for (int s : c.states) fitted[s] = b.facts().tickOf()[s];
-        TauSlices.draw(map, c.states, fitted, 16, routePixel, box, 2, dir.resolve(name + "-slices-fitted.png"));
+        for (int s : c.states) fitted[s] = k.built.facts().tickOf()[s];
+        TauSlices.draw(map, c.states, fitted, 16, true, routePixel, box, 2, dir.resolve(name + "-slices-fitted.png"));
+        return k;
     }
 
     /** {@code tau(u) - tau(s)}, plus a lap where the transition crosses the line. */
@@ -2444,6 +2504,512 @@ public final class PhasePath {
             }
         }
         javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
+    // ---------------------------------------------------------------------------- longcuts
+
+    /**
+     * One longcut: a connected region of states whose shortest loop exceeds the stable lap.
+     *
+     * @param states   its states
+     * @param pixels   distinct pixels under them
+     * @param maxE     the largest excess in it, quarter-ticks
+     * @param deepest  a state with that excess
+     * @param tauLo    the clock's range over it
+     * @param loss     the most tau a path through it can lose, in ticks: the longest lag path from
+     *                 an entry to an exit
+     * @param lossPath that path
+     * @param entries  transitions into it from outside; {@code exits} out of it
+     * @param beside   states of the fast band ({@code E <= 0}) whose tau lies in its range — the
+     *                 shortcut alongside
+     * @param byEdge   per route edge, how many of its states lie there
+     */
+    public record Region(int id, int[] states, int pixels, int maxE, int deepest, double tauLo, double tauHi,
+                         double loss, int[] lossPath, int entries, int exits, int beside, java.util.Map<Integer, Integer> byEdge) {
+        public int size() { return states.length; }
+    }
+
+    /** A state is in a longcut when its shortest loop is at least this many quarter-ticks over the stable lap: one tick. */
+    static final int LONGCUT_THRESHOLD = 4;
+
+    /**
+     * Finds the longcuts of a route from its clock: the connected regions (over transitions, the
+     * cut excluded) of states whose shortest loop through the line exceeds the stable lap by at
+     * least a tick. For each, the depth (largest excess), the longest lag path through it — the
+     * most a boid can lose by way of it, under the anchored clock — and the fast band beside it,
+     * which is the shortcut: the states that do not lose tau over the same range. Ranked by loss.
+     */
+    public static List<Region> longcuts(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, Line given)
+            throws IOException {
+        Clocked k = build(preset, gate, route, given);
+        if (k == null) return List.of();
+        Corridor c = k.c;
+        NavMap map = c.map;
+        int w = map.width(), h = map.height(), n = c.edgeOf.length;
+        int[] out = new int[3];
+
+        boolean[] member = new boolean[n];
+        int members = 0, fast = 0, behind = 0;
+        for (int s : c.states) {
+            int e = k.excess(s);
+            if (e == Integer.MAX_VALUE) continue;
+            if (e >= LONGCUT_THRESHOLD) { member[s] = true; members++; }
+            else if (e <= 0) fast++;
+            else behind++;
+        }
+        System.out.printf("%nlongcuts of route %s: %d states at least a tick behind the stable lap, %d within a tick, %d on the fast band%n",
+                Arrays.toString(route), members, behind, fast);
+
+        // Basins of the excess field, one per peak that stands a tick proud.
+        List<Integer> peaks = new ArrayList<>();
+        int[] peakOf = new int[n];
+        int[] comp = basins(k, peakOf, peaks);
+        List<List<Integer>> comps = new ArrayList<>();
+        for (int i = 0; i < peaks.size(); i++) comps.add(new ArrayList<>());
+        for (int s : c.states) if (member[s] && comp[s] >= 0) comps.get(comp[s]).add(s);
+
+        // Per component, everything the record holds; the loss path by memoised longest path on
+        // the component's own transitions, which are acyclic once the cut is left out.
+        List<Region> regions = new ArrayList<>();
+        double[] best = new double[n];
+        int[] bestNext = new int[n];
+        for (int id = 0; id < comps.size(); id++) {
+            List<Integer> found = comps.get(id);
+            int[] states = found.stream().mapToInt(Integer::intValue).toArray();
+            Arrays.sort(states);
+            boolean[] pix = new boolean[w * h];
+            int maxE = Integer.MIN_VALUE, deepest = -1, entries = 0, exits = 0;
+            double tauLo = Double.MAX_VALUE, tauHi = -Double.MAX_VALUE;
+            java.util.Map<Integer, Integer> byEdge = new java.util.TreeMap<>();
+            for (int s : states) {
+                pix[c.cell(s)] = true;
+                int e = k.excess(s);
+                if (e > maxE) { maxE = e; deepest = s; }
+                tauLo = Math.min(tauLo, k.tau[s]);
+                tauHi = Math.max(tauHi, k.tau[s]);
+                byEdge.merge(c.edgeOf[s], 1, Integer::sum);
+                int kk = c.pred(s, out);
+                for (int j = 0; j < kk; j++) if (comp[out[j]] != id) entries++;
+                kk = c.succ(s, out);
+                for (int j = 0; j < kk; j++) if (comp[out[j]] != id) exits++;
+            }
+            int pixels = 0;
+            for (boolean v : pix) if (v) pixels++;
+            // Longest lag path: best[s] = max over successors in the component of lag + best[u].
+            for (int s : states) { best[s] = Double.NaN; }
+            double loss = 0;
+            int start = -1;
+            for (int s : states) {
+                double v = longestLag(c, k, comp, id, s, best, bestNext, out);
+                if (v > loss) { loss = v; start = s; }
+            }
+            List<Integer> path = new ArrayList<>();
+            for (int s = start; s >= 0 && path.size() < 5000; s = bestNext[s]) { path.add(s); if (comp[s] != id) break; }
+            int beside = 0;
+            for (int s : c.states) {
+                int e = k.excess(s);
+                if (e == Integer.MAX_VALUE || e > 0) continue;
+                if (k.tau[s] >= tauLo && k.tau[s] <= tauHi) beside++;
+            }
+            regions.add(new Region(id, states, pixels, maxE, deepest, tauLo, tauHi, loss,
+                    path.stream().mapToInt(Integer::intValue).toArray(), entries, exits, beside, byEdge));
+        }
+        regions.sort((a, b) -> Double.compare(b.loss, a.loss));
+
+        System.out.printf("%d basins after merging peaks less than a tick proud; the %d worth a tick or more of loss, by loss:%n", regions.size(),
+                regions.stream().filter(r -> r.loss >= 1).count());
+        System.out.printf("%4s %6s %6s %6s %6s %5s %5s %14s %6s   %s%n", "#", "loss", "depth", "states", "pixels", "in", "out", "tau", "beside", "edges, and the deepest state");
+        int shown = 0;
+        for (Region r : regions) {
+            if (r.loss < 1 && shown >= 10) break;
+            if (shown++ >= 30) break;
+            StringBuilder edges = new StringBuilder();
+            for (var e : r.byEdge.entrySet()) edges.append(edges.length() == 0 ? "" : " ").append(e.getKey()).append(':').append(e.getValue());
+            // The loss path's net turn, in headings: positive is a positive turn in screen coordinates.
+            int turn = 0;
+            for (int i = 0; i + 1 < r.lossPath.length; i++) turn += Math.floorMod(c.d(r.lossPath[i + 1]) - c.d(r.lossPath[i]) + 32, 64) - 32;
+            System.out.printf("%4d %6.2f %6.2f %6d %6d %5d %5d %6.1f-%6.1f %6d   %s  (%d,%d,%d)  path %d ticks, net turn %+d%n", r.id, r.loss, r.maxE / 4.0,
+                    r.size(), r.pixels, r.entries, r.exits, r.tauLo, r.tauHi, r.beside, edges, c.x(r.deepest), c.y(r.deepest), c.d(r.deepest),
+                    r.lossPath.length - 1, turn);
+        }
+        // Per edge: how much of it is longcut, and how deep.
+        System.out.println("per edge: states, of them at least a tick behind, the deepest excess in ticks");
+        for (int e : c.route) {
+            int total = 0, slow = 0, deep = 0;
+            for (int s : c.states) {
+                if (c.edgeOf[s] != e) continue;
+                total++;
+                int ex = k.excess(s);
+                if (ex == Integer.MAX_VALUE) continue;
+                if (ex >= LONGCUT_THRESHOLD) slow++;
+                deep = Math.max(deep, ex);
+            }
+            // The fast band's headings, in octants: on a self-inverse edge this is the preferred direction.
+            int[] octant = new int[8];
+            for (int s : c.states) if (c.edgeOf[s] == e && k.excess(s) != Integer.MAX_VALUE && k.excess(s) <= 0) octant[c.d(s) / 8]++;
+            System.out.printf("   edge %d: %6d states, %6d behind (%.0f%%), deepest %.2f; fast band by heading octant %s%n", e, total, slow,
+                    100.0 * slow / total, deep / 4.0, Arrays.toString(octant));
+        }
+
+        // On a self-inverse edge — one with states a half-turn apart at one pixel — the two senses
+        // of travel round it are told apart by the sign of the turn about its centroid, and the
+        // sense the fast band favours is the preferred direction round the ring.
+        for (int e : c.route) {
+            boolean selfInverse = false;
+            double cx = 0, cy = 0;
+            int count = 0;
+            for (int s : c.states) {
+                if (c.edgeOf[s] != e) continue;
+                cx += c.x(s); cy += c.y(s); count++;
+                if (!selfInverse) {
+                    int opposite = c.map.index(c.x(s), c.y(s), (c.d(s) + 32) % 64);
+                    selfInverse = c.map.alive(c.x(s), c.y(s), (c.d(s) + 32) % 64) && c.in(opposite) && c.edgeOf[opposite] == e;
+                }
+            }
+            if (!selfInverse) continue;
+            cx /= count; cy /= count;
+            int[] fastBy = new int[2], behindBy = new int[2], all = new int[2];
+            double[] sumE = new double[2];
+            for (int s : c.states) {
+                if (c.edgeOf[s] != e || k.excess(s) == Integer.MAX_VALUE) continue;
+                double bearing = Math.atan2(c.y(s) - cy, c.x(s) - cx), heading = c.d(s) * 2 * Math.PI / 64;
+                int sense = Math.sin(heading - bearing) >= 0 ? 0 : 1;   // 0: turning one way about the centre, 1: the other
+                all[sense]++;
+                sumE[sense] += k.excess(s) / 4.0;
+                if (k.excess(s) <= 0) fastBy[sense]++;
+                if (k.excess(s) >= LONGCUT_THRESHOLD) behindBy[sense]++;
+            }
+            System.out.printf("   edge %d is self-inverse (centroid %.0f,%.0f): sense A %d states, %d fast, %d behind, mean excess %.2f;"
+                            + " sense B %d states, %d fast, %d behind, mean excess %.2f  (A: positive turn about the centroid in screen coordinates)%n",
+                    e, cx, cy, all[0], fastBy[0], behindBy[0], sumE[0] / Math.max(1, all[0]), all[1], fastBy[1], behindBy[1], sumE[1] / Math.max(1, all[1]));
+            // The pass round the ring, sense by sense: the fewest ticks from the states entered
+            // from the edge before to those leaving for the edge after, over states of one sense
+            // only, against the fewest with no restriction. If the unrestricted pass is far
+            // shorter than either, the fast lap clips the ring rather than going round it.
+            {
+                int before = -1, after = -1;
+                for (int i = 0; i < c.route.length; i++) if (c.route[i] == e) { before = c.route[(i + c.route.length - 1) % c.route.length]; after = c.route[(i + 1) % c.route.length]; }
+                boolean[] entry = new boolean[c.edgeOf.length], exit = new boolean[c.edgeOf.length];
+                int[] tmp = new int[3];
+                for (int s : c.states) {
+                    if (c.edgeOf[s] != e) continue;
+                    int kk = c.map.steeredPredecessors(s, tmp);
+                    for (int j = 0; j < kk; j++) if (c.in(tmp[j]) && c.edgeOf[tmp[j]] == before) { entry[s] = true; break; }
+                    kk = c.map.steeredSuccessors(s, tmp);
+                    for (int j = 0; j < kk; j++) if (c.in(tmp[j]) && c.edgeOf[tmp[j]] == after) { exit[s] = true; break; }
+                }
+                int[] senseOf = new int[c.edgeOf.length];
+                Arrays.fill(senseOf, -1);
+                for (int s : c.states) {
+                    if (c.edgeOf[s] != e) continue;
+                    double bearing = Math.atan2(c.y(s) - cy, c.x(s) - cx), heading = c.d(s) * 2 * Math.PI / 64;
+                    senseOf[s] = Math.sin(heading - bearing) >= 0 ? 0 : 1;
+                }
+                int[] passes = new int[3];
+                for (int restrict = -1; restrict <= 1; restrict++) {
+                    int[] depth = new int[c.edgeOf.length];
+                    Arrays.fill(depth, -1);
+                    ArrayDeque<Integer> queue = new ArrayDeque<>();
+                    for (int s : c.states) if (entry[s] && (restrict < 0 || senseOf[s] == restrict)) { depth[s] = 0; queue.add(s); }
+                    int found = -1;
+                    while (!queue.isEmpty() && found < 0) {
+                        int s = queue.poll();
+                        if (exit[s] && depth[s] > 0) { found = depth[s]; break; }
+                        int kk = c.map.steeredSuccessors(s, tmp);
+                        for (int j = 0; j < kk; j++) {
+                            int u = tmp[j];
+                            if (!c.in(u) || c.edgeOf[u] != e || depth[u] >= 0) continue;
+                            if (restrict >= 0 && senseOf[u] != restrict) continue;
+                            depth[u] = depth[s] + 1;
+                            queue.add(u);
+                        }
+                    }
+                    passes[restrict + 1] = found;
+                }
+                System.out.printf("   edge %d, entered from %d and left for %d: fewest ticks across it %d unrestricted, %d in sense A only, %d in sense B only%s%n",
+                        e, before, after, passes[0], passes[1], passes[2],
+                        passes[0] > 0 && Math.min(passes[1], passes[2]) > passes[0] + 8 ? "   <-- the fast lap clips the ring; a pass round it is a longcut" : "");
+            }
+        }
+
+        Path dir = Path.of("render", "phase-path");
+        Files.createDirectories(dir);
+        String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-longcuts"
+                + Arrays.toString(route).replaceAll("[\\[\\] ]", "").replace(',', '-');
+        drawExcess(c, k, regions, dir.resolve(name + ".png"));
+        boolean[] routePixel = new boolean[w * h];
+        for (int s : c.states) routePixel[c.cell(s)] = true;
+        boolean[] any = new boolean[n];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 3);
+        double[] excess = new double[n];
+        Arrays.fill(excess, Double.NaN);
+        for (int s : c.states) { int e = k.excess(s); if (e != Integer.MAX_VALUE) excess[s] = e / 4.0; }
+        TauSlices.draw(map, c.states, excess, 16, false, routePixel, box, 2, dir.resolve(name + "-slices.png"));
+        System.out.printf("wrote %s.png and -slices.png in %s%n", name, dir);
+        return regions;
+    }
+
+    /**
+     * Basins of the excess field: every state at least a tick behind the stable lap is assigned
+     * to a peak by descending flood — states in order of falling excess, each joining the basin of
+     * its highest already-labelled neighbour, a state with none starting a basin of its own — and
+     * basins whose peak stands less than {@link #PROMINENCE} above the saddle to a higher
+     * neighbour are merged into that neighbour, until none is left. Neighbours are successors and
+     * predecessors either way, the cut included.
+     *
+     * @return per state, its basin, or -1
+     */
+    static int[] basins(Clocked k, int[] peakOf, List<Integer> peaks) {
+        Corridor c = k.c;
+        int n = c.edgeOf.length;
+        List<Integer> members = new ArrayList<>();
+        for (int s : c.states) { int e = k.excess(s); if (e != Integer.MAX_VALUE && e >= LONGCUT_THRESHOLD) members.add(s); }
+        members.sort((a, b) -> Integer.compare(k.excess(b), k.excess(a)));
+        int[] label = new int[n];
+        Arrays.fill(label, -1);
+        int[] out = new int[3];
+        for (int s : members) {
+            int best = -1, bestE = Integer.MIN_VALUE;
+            for (int pass = 0; pass < 2; pass++) {
+                int kk = pass == 0 ? c.succRound(s, out) : c.predRound(s, out);
+                for (int j = 0; j < kk; j++) {
+                    int u = out[j];
+                    if (label[u] < 0) continue;
+                    int e = k.excess(u);
+                    if (e > bestE || (e == bestE && label[u] < best)) { bestE = e; best = label[u]; }
+                }
+            }
+            if (best < 0) { best = peaks.size(); peaks.add(s); }
+            label[s] = best;
+        }
+        // Saddles between basins, then prominence merging until every basin stands a tick proud.
+        while (true) {
+            java.util.Map<Long, Integer> saddle = new java.util.HashMap<>();
+            for (int s : members) {
+                int kk = c.succRound(s, out);
+                for (int j = 0; j < kk; j++) {
+                    int u = out[j];
+                    if (label[u] < 0 || label[u] == label[s]) continue;
+                    long key = Math.min(label[s], label[u]) * 1_000_000L + Math.max(label[s], label[u]);
+                    saddle.merge(key, Math.min(k.excess(s), k.excess(u)), Math::max);
+                }
+            }
+            int[] into = new int[peaks.size()];
+            Arrays.fill(into, -1);
+            int[] bestSaddle = new int[peaks.size()];
+            Arrays.fill(bestSaddle, Integer.MIN_VALUE);
+            for (var e : saddle.entrySet()) {
+                int a = (int) (e.getKey() / 1_000_000L), b = (int) (e.getKey() % 1_000_000L), sad = e.getValue();
+                int pa = k.excess(peaks.get(a)), pb = k.excess(peaks.get(b));
+                // The lower peak (ties: the higher id) may merge into the higher.
+                int low = pa < pb || (pa == pb && a > b) ? a : b, high = low == a ? b : a;
+                if (sad > bestSaddle[low]) { bestSaddle[low] = sad; into[low] = high; }
+            }
+            int merged = 0;
+            int[] target = new int[peaks.size()];
+            for (int a = 0; a < peaks.size(); a++) target[a] = a;
+            for (int a = 0; a < peaks.size(); a++) {
+                if (into[a] < 0 || peaks.get(a) < 0) continue;
+                if (k.excess(peaks.get(a)) - bestSaddle[a] < PROMINENCE) { target[a] = into[a]; merged++; }
+            }
+            if (merged == 0) break;
+            // Resolve chains, then relabel; a merged basin keeps the higher peak.
+            for (int a = 0; a < peaks.size(); a++) {
+                int t = a, guard = 0;
+                while (target[t] != t && guard++ < 1000) t = target[t];
+                target[a] = t;
+            }
+            for (int s : members) label[s] = target[label[s]];
+            for (int a = 0; a < peaks.size(); a++) if (target[a] != a) peaks.set(a, -1);
+        }
+        // Then merge basins that are the same place seen at different phases: pixel sets that
+        // touch, and tau ranges that overlap by at least half of the shorter. Greedy, best pair
+        // first, the merged range recomputed each time, so a small basin bridging two bends joins
+        // one and then no longer half-overlaps the other. Two sides of a bulb do not touch.
+        {
+            int nb = peaks.size();
+            double[] lo = new double[nb], hi = new double[nb];
+            Arrays.fill(lo, Double.MAX_VALUE);
+            Arrays.fill(hi, -Double.MAX_VALUE);
+            java.util.Map<Integer, List<Integer>> atPixel = new java.util.HashMap<>();
+            for (int s : members) {
+                int a = label[s];
+                lo[a] = Math.min(lo[a], k.tau[s]);
+                hi[a] = Math.max(hi[a], k.tau[s]);
+                List<Integer> here = atPixel.computeIfAbsent(c.cell(s), q -> new ArrayList<>());
+                if (!here.contains(a)) here.add(a);
+            }
+            List<java.util.Set<Integer>> adj = new ArrayList<>();
+            for (int a = 0; a < nb; a++) adj.add(new java.util.HashSet<>());
+            int w = c.map.width(), h = c.map.height();
+            for (var e : atPixel.entrySet()) {
+                int cell = e.getKey(), x = cell % w, y = cell / w;
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                        List<Integer> there = atPixel.get(nx + ny * w);
+                        if (there == null) continue;
+                        for (int a : e.getValue()) for (int b : there) if (a != b) { adj.get(a).add(b); adj.get(b).add(a); }
+                    }
+                }
+            }
+            int[] alias = new int[nb];
+            for (int a = 0; a < nb; a++) alias[a] = a;
+            while (true) {
+                int ba = -1, bb = -1;
+                double best = OVERLAP;
+                for (int a = 0; a < nb; a++) {
+                    if (alias[a] != a) continue;
+                    for (int b : adj.get(a)) {
+                        if (b <= a || alias[b] != b) continue;
+                        double overlap = Math.min(hi[a], hi[b]) - Math.max(lo[a], lo[b]);
+                        double shorter = Math.min(hi[a] - lo[a], hi[b] - lo[b]);
+                        double f = overlap < 0 ? -1 : shorter <= 0 ? 1 : overlap / shorter;
+                        if (f >= best) { best = f; ba = a; bb = b; }
+                    }
+                }
+                if (ba < 0) break;
+                // Keep the higher peak's id.
+                int keep = k.excess(peaks.get(ba)) >= k.excess(peaks.get(bb)) ? ba : bb, drop = keep == ba ? bb : ba;
+                lo[keep] = Math.min(lo[keep], lo[drop]);
+                hi[keep] = Math.max(hi[keep], hi[drop]);
+                for (int o : adj.get(drop)) { if (o == keep) continue; adj.get(o).remove(drop); adj.get(o).add(keep); adj.get(keep).add(o); }
+                adj.get(keep).remove(drop);
+                adj.get(drop).clear();
+                alias[drop] = keep;
+            }
+            for (int a = 0; a < nb; a++) { int t = a, guard = 0; while (alias[t] != t && guard++ < nb) t = alias[t]; alias[a] = t; }
+            for (int s : members) label[s] = alias[label[s]];
+            for (int a = 0; a < nb; a++) if (alias[a] != a) peaks.set(a, -1);
+        }
+        // Compact the labels.
+        int[] fresh = new int[peaks.size()];
+        Arrays.fill(fresh, -1);
+        List<Integer> kept = new ArrayList<>();
+        for (int a = 0; a < peaks.size(); a++) if (peaks.get(a) >= 0) { fresh[a] = kept.size(); kept.add(peaks.get(a)); }
+        for (int s : members) label[s] = fresh[label[s]];
+        peaks.clear();
+        peaks.addAll(kept);
+        for (int s : members) peakOf[s] = peaks.get(label[s]);
+        return label;
+    }
+
+    private static int find(int[] parent, int a) {
+        while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; }
+        return a;
+    }
+
+    /** Two touching basins are one place at different phases when their tau ranges overlap by this much of the shorter. */
+    static final double OVERLAP = 0.5;
+
+    /** A basin's peak must stand this many quarter-ticks above its saddle to a higher basin to be a longcut of its own: one tick. */
+    static final int PROMINENCE = 4;
+
+    /** The longest lag path from {@code s} within its component: memoised over an acyclic corridor. */
+    private static double longestLag(Corridor c, Clocked k, int[] comp, int id, int s, double[] best, int[] bestNext, int[] scratch) {
+        if (!Double.isNaN(best[s])) return best[s];
+        best[s] = 0;   // guards against a cycle, which the cut-free corridor should not have
+        bestNext[s] = -1;
+        int[] out = new int[3];
+        int kk = c.succRound(s, out);
+        double top = 0;
+        int next = -1;
+        for (int j = 0; j < kk; j++) {
+            int u = out[j];
+            double lag = 1 - k.advance(s, u);
+            double v = lag + (comp[u] == id ? longestLag(c, k, comp, id, u, best, bestNext, scratch) : 0);
+            if (v > top) { top = v; next = u; }
+        }
+        best[s] = top;
+        bestNext[s] = next;
+        return top;
+    }
+
+    /** The excess per pixel — the largest over its headings, in ticks, black to yellow — with each region's id at its deepest pixel. */
+    static void drawExcess(Corridor c, Clocked k, List<Region> regions, Path out) throws IOException {
+        int w = c.map.width(), h = c.map.height();
+        boolean[] any = new boolean[c.edgeOf.length];
+        for (int s : c.states) any[s] = true;
+        int[] box = crop(c, any, 4);
+        int scale = 3;
+        int[] paint = new int[w * h];
+        double[] top = new double[w * h];
+        Arrays.fill(top, Double.NaN);
+        for (int s : c.states) {
+            int e = k.excess(s);
+            if (e == Integer.MAX_VALUE) continue;
+            int i = c.cell(s);
+            if (Double.isNaN(top[i]) || e > top[i]) top[i] = e;
+        }
+        double cap = 4;
+        for (double v : top) if (!Double.isNaN(v)) cap = Math.max(cap, v);   // the route's own deepest excess saturates
+        for (int i = 0; i < paint.length; i++) {
+            if (Double.isNaN(top[i])) { paint[i] = c.map.oob(i % w, i / w) ? 0 : 0x14161A; continue; }
+            double t = Math.max(0, Math.min(1, top[i] / cap));
+            int r = (int) (255 * Math.min(1, 1.5 * t)), g = (int) (255 * Math.max(0, Math.min(1, 1.5 * t - 0.3))), b = (int) (90 * Math.max(0, 1 - 2 * t));
+            paint[i] = top[i] <= 0 ? 0x30343C : (r << 16) | (g << 8) | b;
+        }
+        BufferedImage img = new BufferedImage((box[2] - box[0]) * scale, (box[3] - box[1]) * scale, BufferedImage.TYPE_INT_RGB);
+        for (int y = box[1]; y < box[3]; y++) {
+            for (int x = box[0]; x < box[2]; x++) {
+                int rgb = c.map.oob(x, y) ? 0x000000 : paint[x + y * w];
+                for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) img.setRGB((x - box[0]) * scale + sx, (y - box[1]) * scale + sy, rgb);
+            }
+        }
+        java.awt.Graphics2D g2 = img.createGraphics();
+        g2.setFont(new java.awt.Font("SansSerif", java.awt.Font.BOLD, 12));
+        int labelled = 0;
+        for (Region r : regions) {
+            if (r.loss < 1 || labelled++ >= 30) continue;
+            int x = (c.x(r.deepest) - box[0]) * scale, y = (c.y(r.deepest) - box[1]) * scale;
+            g2.setColor(java.awt.Color.WHITE);
+            g2.drawString(String.valueOf(r.id), x + 4, y - 2);
+        }
+        g2.dispose();
+        javax.imageio.ImageIO.write(img, "png", out.toFile());
+    }
+
+    // ------------------------------------------------------------------------------ routes
+
+    /**
+     * Every simple cycle of a map's edge graph, each listed from its lowest edge, with whether it
+     * is the unsteered cycle (every edge stable) and whether it scores. The routes a clock or a
+     * longcut search runs over, found rather than typed.
+     */
+    public static List<int[]> routes(SolverFacts f) {
+        int edges = f.edges();
+        List<List<Integer>> succ = new ArrayList<>();
+        for (int e = 0; e < edges; e++) succ.add(new ArrayList<>());
+        for (int e = 0; e < edges; e++) for (int p : f.predecessors(e)) succ.get(p).add(e);
+        List<int[]> found = new ArrayList<>();
+        for (int start = 0; start < edges; start++) {
+            ArrayDeque<Integer> path = new ArrayDeque<>();
+            boolean[] on = new boolean[edges];
+            cycles(start, start, succ, path, on, found);
+        }
+        System.out.printf("%d simple cycles in the edge graph:%n", found.size());
+        for (int[] r : found) {
+            boolean stable = true, scoring = false;
+            for (int e : r) { stable &= f.stable(e); scoring |= f.scoring(e); }
+            System.out.printf("   %s%s%s%n", Arrays.toString(r), stable ? "  stable" : "", scoring ? "  scoring" : "");
+        }
+        return found;
+    }
+
+    private static void cycles(int start, int at, List<List<Integer>> succ, ArrayDeque<Integer> path, boolean[] on, List<int[]> found) {
+        path.addLast(at);
+        on[at] = true;
+        for (int next : succ.get(at)) {
+            if (next == start) {
+                found.add(path.stream().mapToInt(Integer::intValue).toArray());
+            } else if (next > start && !on[next]) {
+                cycles(start, next, succ, path, on, found);
+            }
+        }
+        on[at] = false;
+        path.removeLast();
     }
 
     // ---------------------------------------------------------------------------- renders

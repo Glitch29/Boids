@@ -579,6 +579,10 @@ manipulation.
 
 ### Placing a subpath: the fitness search
 
+> **Superseded 2026-09-15** by the longcuts of §5 "Longcuts from the shortest-route clock": a
+> longcut is a basin of the excess field of the anchored clock, which has no footprint, no
+> starting tau and is phase-complete by construction. Kept as the record of what was tried.
+
 **Specified by the user and built 2026-09-13** — `SubpathSearch`, driven by
 `SimTest.subpathSearch`, drawn to `render/subpaths/`. Finding only: what comes out is a path, not
 a phase-complete subpath, and is not turned into a zone. **Per route**, on the route's own clock
@@ -1225,6 +1229,88 @@ route without a cardinal straight gets no line (plait is untested); unit weights
 squares; the fold by sixteen, which is right for a directed edge and wrong for a self-inverse
 one; whether a route's corridor should carry a self-inverse edge's other direction; and which of
 the three clocks — fitted, `F/4` on `P*`, anchored — the project reads.
+
+### Longcuts from the shortest-route clock — 2026-09-15
+
+**The idea, the user's.** With a clock built round the shortest lap, a longcut is where a boid
+can be *behind* it, and a shortcut is simply the transitions that do not lose tau over the same
+range. The field that says it is already computed: **`E(s) = L(s) − 4T`**, the quarter-ticks by
+which the shortest loop through `s` exceeds the stable lap — how far behind a boid at `s` has
+unavoidably fallen. `E ≤ 0` is the fast band; a **longcut is a basin of `E`**, its **depth** the
+largest `E` in it, its **loss** the longest lag path through it under the anchored clock (the
+most a boid can lose by way of it), and the **shortcut alongside** the fast-band states whose tau
+lies in its range. `PhasePath.longcuts`, run by hand; the routes it runs over are found, not
+typed — every simple cycle of the edge graph, `PhasePath.routes`.
+
+**How a basin is cut, and why it took three tries.** Connected components of `E ≥ 1 tick` over
+transitions work on the stable loop, where the fast band is half the corridor, and give one blob
+per half-lap on the scoring routes, where it is a ninth. A watershed — states in falling order of
+`E`, each joining its highest labelled neighbour, peaks merged into a higher neighbour when they
+stand less than a tick above the saddle — splits the blob but into hundreds of basins, because
+`E` is striped by phase and two states at one pixel a heading apart are two steps apart in the
+graph, so every stripe has its own peak. The cut that works is to merge basins that are the same
+place at different phases: **pixel sets that touch, and tau ranges overlapping by at least half
+the shorter, greedily best pair first with the merged range recomputed each time** — union-find
+chained every bend through the small basins at their junctions, and plain overlap did the same.
+Two sides of a bulb do not touch; stripes do; consecutive bends only graze.
+
+**Three other things it took.** The starting line has to be one connected piece of cardinal
+pixels, not a run of coordinates: plait's parallel strands put a `+y` state on every row of edge
+0 somewhere, and a line "across" all of them had starts and finishes a tick apart, reading loops
+of 1.75 ticks. A route whose four-lap closure is not a multiple of four — plait's `[0, 3]` and
+`[1, 4]` close four laps in **3,126 ticks, a stable lap of 781.50** — is the two-lap period the
+user asked about at the start of this, and there the anchors are the states within half a tick
+of the lap (on plait that turned out to be exact: 93,456 states have `L = 3,126` to the
+quarter-tick, and every one is reached from the cut both ways). And whether the stable lap scores
+is checked rather than assumed, by the cheapest scoring state's excess.
+
+**dabeone `609cffdb84be218c`, four cycles found: `[0,3,5,8,4]`, `[1,5,8,4,2]` scoring,
+`[2,7,4]` stable, `[3,5,6]` scoring.** Stable laps 495, 495, 260, 260; clocks `1 ± 0.064 /
+0.073 / 0.087 / 0.087`.
+
+- **`[2, 7, 4]`: seven longcuts, one per bend.** By loss in ticks (depth in brackets): the left
+  bulge on edge 2, 7.7 (4.0); the right bend, 5.4 (3.5); the top-left loop's outer wall, 5.0
+  (2.0); **the left bulge on edge 7 — the beginning of edge 7 — 4.8 (4.75)**; the upper bulge,
+  4.3 (3.5); the bottom-right S-bend, 4.3 (3.25); the bend into the upper bulge, 2.5 (3.5). The
+  deepest places are the two bulges, where the corridor widens; every bend's outer wall is a
+  2–3.5-tick longcut around them; the straights are the fast band. `[3, 5, 6]` is the inverse
+  loop and gives the same seven with the net turns mirrored.
+- **The scoring routes: eleven and eight.** The biggest on both is **the scoring ring, edge 8:
+  loss 10–11, depth 5.25–5.5, ~10,000 states** — its outer side. The fast lap goes round the
+  ring and scores (145 scoring states on the fast band; the cheapest scoring state is on the
+  stable lap), and **the ring has no preferred direction**: from the states entered from 5 to
+  those leaving for 4 the fewest ticks are 65 unrestricted, 65 confined to one sense of turn
+  about the ring's centre and 65 to the other. The fast band's 185 ring states fall in one sense
+  on one route and the other on the other, a tie broken by the return half's phase. Then the top
+  loop's outer wall (edge 1 / edge 0, 9–10 ticks), the bend after the top straight, the right
+  bend before the line, and the left loop's bends.
+
+**plait `46f880d41d2c1e4e`, three cycles: `[0,2,1,5]` scoring, `[0,3]` scoring, `[1,4]`
+stable.** Line on edge 0's vertical straight (`y = 263`, `x ∈ [233, 255]`, 335 px). Clocks
+`1 ± 0.045 / 0.065 / 0.065`.
+
+- **`[0, 3]` and `[1, 4]`, lap 781.50: fourteen longcuts.** **The bulb's far side: depth 11.5,
+  loss 11.0, 12,099 states of edge 3** — one side of the bulb, as predicted; the bulb's entry,
+  7.1 (2.5); then **twelve bends of the plait, each depth 2.5, in identical sizes** (2,664 /
+  2,664 / 2,664; 1,103 / 1,103; …), the repeated geometry of the braid giving repeated longcuts.
+- **`[0, 2, 1, 5]`, lap 1,643.00: twenty-six**, in mirrored pairs — the figure-eight runs each
+  corridor both ways, so each bend is a longcut twice, once per direction (1,459 / 1,459; 1,280 /
+  1,280; 1,133 / 1,133; …, net turns `±37`) — and the bulb's region on edge 2 at 10.5.
+
+**Made programmatic.** The routes; the line; the stable lap; the anchors and the clock; the
+excess field; the basins with their depth, loss, loss path, entries, exits, tau range, the fast
+band beside them and their net turn; the ring pass by sense; the two renders
+(`render/phase-path/<map>-<hash>-longcuts<route>.png`, the excess per pixel scaled to the
+route's deepest with basin ids at their deepest states, and `-slices.png`, the excess over
+`(x, y, d mod 16)` on a ramp).
+
+**Still chosen by a person.** Three thresholds — a tick to be behind, a tick of prominence, half
+overlap to be the same place — and the greedy order of merging; **loss** as the longest lag path,
+which weaves and can exceed the depth (17.8 ticks over a 173-tick path on `[1,5,8,4,2]`, one
+merged stretch along edge 1), where depth is the cleaner number for a decision; and whether a
+longcut is the basin or the path through it. What this replaces: the placement fitness of §2a,
+whose three defects are moot — there is no footprint to divide by, no starting tau to game, and
+the basin is phase-complete by construction because `E` is a property of the state.
 
 ---
 

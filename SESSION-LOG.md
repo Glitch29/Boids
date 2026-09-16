@@ -11,7 +11,7 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
-## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap; the set of all shortest loops; the anchored route clock
+## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap; the set of all shortest loops; the anchored route clock; longcuts as basins of its excess field
 
 **The user's second definition**, after the two findings below: a cover `P` of `S` whose every
 point navigates to `B` backward and `Y` forward within `P`, and **whose projection to `(x, y)` is
@@ -132,10 +132,40 @@ cut landing is in `S`; the `1→5` cut has 61 landings) / all both ways. Clocks 
 each scoring route — edge 8, self-inverse, both directions in the corridor. Recorded in `EDGES.md`
 §5 "The clock on the three routes", with the programmatic-versus-judgement split.
 
-**Open.** Whether the anchored clock replaces `RouteClock` / `EdgeMetric` for routes, and with
-what weighting — the user's call. Whether a self-inverse
-edge's other direction belongs in a route's corridor. A flown lap for the coasting report on the
-scoring routes. A decision zone from a cover — the replacement for
+**Then longcuts, open-ended.** The user's framing: with a clock round the shortest lap, a longcut
+is where a boid can be behind it and the shortcut is the transitions alongside that do not lose.
+The field is `E = L − 4T` (`Clocked.excess`); a longcut is a basin of it. Three cuts tried:
+components of `E ≥ 1 tick` (right on the stable loop, one blob per half-lap on the scoring
+routes, whose fast band is a ninth of the corridor); a watershed with one-tick prominence
+(hundreds of basins — `E` is striped by phase and states a heading apart at one pixel are two
+graph steps apart); then merging basins that touch in projection with tau ranges overlapping by
+half the shorter, greedily best pair first (union-find chained bends through junction basins;
+plain overlap did too). Per basin: depth, the longest lag path (loss) and its net turn, entries,
+exits, tau range, the fast band beside it, states per edge. Routes enumerated from the edge graph
+(`PhasePath.routes`: 4 on dabeone, 3 on plait). Two fixes plait forced: the line must be one
+8-connected piece of cardinal pixels (a run of rows read loops of 1.75 ticks); and a half-integer
+stable lap — `[0,3]`, `[1,4]` close four laps in 3,126 — anchors on states within half a tick,
+exact for 93,456 states there. Added: whether the stable lap scores (cheapest scoring state's
+excess), a self-inverse edge's sense split and its pass per sense, the excess render scaled to
+the route's deepest. Bugs on the way: alias chains in the greedy merge; two locals named `fast`.
+
+**Numbers.** dabeone `[2,7,4]` (260): seven longcuts — left bulge on edge 2, loss 7.7 (depth
+4.0); right bend 5.4 (3.5); top-left loop 5.0 (2.0); left bulge on edge 7 4.8 (4.75); upper
+bulge 4.3 (3.5); bottom-right S 4.3 (3.25); the bend into the upper bulge 2.5 (3.5); `[3,5,6]`
+the same seven mirrored. Scoring routes (495): 11 and 8; the ring's outer side 10–11 (5.25–5.5,
+~10k states); **ring pass 65 / 65 / 65 ticks unrestricted / sense A / sense B**; fast lap scores
+(145 scoring states on the fast band). plait `[0,3]`, `[1,4]` (781.50): 14 — the bulb's far side
+**11.0 (11.5), 12,099 states**; its entry 7.1; twelve bends at 2.5 in identical sizes.
+`[0,2,1,5]` (1,643): 26 in mirrored pairs plus the bulb region at 10.5. Clocks `1 ± 0.045–0.087`.
+Recorded in `EDGES.md` §5 "Longcuts from the shortest-route clock" (§2a placement marked
+superseded), `ROADMAP.md` §0i, `HINTS.md` §3a and §13, glossary, README. Renders
+`render/phase-path/<map>-<hash>-longcuts<route>{,-slices}.png`.
+
+**Open.** A decision zone from a longcut basin and its shortcut twin. Whether a longcut is the
+basin or the loss path (the path weaves and can exceed the depth). The three thresholds. Whether
+the anchored clock replaces `RouteClock` / `EdgeMetric` for routes, and with what weighting.
+Whether a self-inverse edge's other direction belongs in a route's corridor. A flown lap for the
+coasting report on the scoring routes. A decision zone from a cover — the replacement for
 `DecisionZone.subpath`; then the fitness for the handoff's (1) and (2). A stretch narrow enough to
 lock a single-phase path out, which dabeone's stable route does not offer.
 

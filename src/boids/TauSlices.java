@@ -33,12 +33,15 @@ public final class TauSlices {
      * @param map     the navmap, for dimensions and headings
      * @param states  the states to draw
      * @param value   per state (indexed by state), the scalar; NaN is not drawn
-     * @param period  the modulus the value is shown under
+     * @param period  the modulus the value is shown under; or, when not periodic, the value at which
+     *                the ramp saturates
+     * @param periodic whether the value wraps — hue round the wheel — or ramps from blue at zero to
+     *                red at {@code period}, values below zero and above it clamped
      * @param region  per pixel, whether it is in the region drawn dark where no state falls
      * @param box     {@code {x0, y0, x1, y1}} of the crop, exclusive at the far corner
      * @param scale   pixels per map pixel
      */
-    public static void draw(NavMap map, int[] states, double[] value, double period, boolean[] region,
+    public static void draw(NavMap map, int[] states, double[] value, double period, boolean periodic, boolean[] region,
                             int[] box, int scale, Path out) throws IOException {
         int w = map.width(), turns = Params.TURNS, fold = 16;
         int bw = box[2] - box[0], bh = box[3] - box[1];
@@ -70,7 +73,8 @@ public final class TauSlices {
                     int rgb;
                     if (!Double.isNaN(shown[slice][i])) {
                         double t = shown[slice][i] / period;
-                        t -= Math.floor(t);
+                        if (periodic) t -= Math.floor(t);
+                        else t = 0.66 * (1 - Math.max(0, Math.min(1, t)));
                         rgb = hsv(t, collided[slice][i] ? 0.5 : 1.0, 1.0);
                     } else if (region[mx + my * w]) {
                         rgb = 0x30343C;
@@ -85,7 +89,7 @@ public final class TauSlices {
             g2.setColor(java.awt.Color.WHITE);
             StringBuilder heads = new StringBuilder();
             for (int d = slice; d < turns; d += fold) heads.append(heads.length() == 0 ? "" : ",").append(d);
-            g2.drawString("d = " + heads + "   value mod " + fmt(period), ox + 2, oy - 3);
+            g2.drawString("d = " + heads + (periodic ? "   value mod " + fmt(period) : "   value 0 (blue) to " + fmt(period) + " (red)"), ox + 2, oy - 3);
         }
         g2.dispose();
         javax.imageio.ImageIO.write(img, "png", out.toFile());
