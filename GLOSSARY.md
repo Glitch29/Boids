@@ -513,7 +513,9 @@ under the anchored clock. `PhasePath.clock`, drawn per pixel.
 
 **excess** — `E(s) = L(s) − 4T`: the quarter-ticks by which the shortest loop through a state
 exceeds the route's stable lap — how far behind a boid there has unavoidably fallen. `E ≤ 0` is
-the **fast band**. `Clocked.excess`.
+the **fast band**. `Clocked.excess`. **Clock-free**: `L` is the shortest cycle through the state in
+the route's graph, the line only the way of computing it for every state at once, and `4T` only a
+constant offset; the basins do not depend on any of the three clocks.
 
 **longcut** (2026-09-15, canonical) — **a basin of the excess field**: every state at least a
 tick behind, assigned to a peak by watershed over transitions, peaks less than a tick proud

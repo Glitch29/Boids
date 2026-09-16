@@ -1304,6 +1304,14 @@ band beside them and their net turn; the ring pass by sense; the two renders
 route's deepest with basin ids at their deepest states, and `-slices.png`, the excess over
 `(x, y, d mod 16)` on a ramp).
 
+**It needs no clock, the user observed on 2026-09-16, and that is the point.** `L(s)` is the
+length of the shortest cycle through `s` in the route's state graph; the line is only the device
+that gets it for every state in eight searches instead of one per state, and `4T` is only where
+zero is — drop it and every basin, depth and prominence is unchanged. The strongest signal is
+simply where the shortest loop forced through a state exceeds the shortest loop at all. The clock
+enters the code in two dispensable places: the loss path's lag weights, where depth is the better
+number anyway, and the tau ranges of the projection merge, where `F` would serve.
+
 **Still chosen by a person.** Three thresholds — a tick to be behind, a tick of prominence, half
 overlap to be the same place — and the greedy order of merging; **loss** as the longest lag path,
 which weaves and can exceed the depth (17.8 ticks over a 173-tick path on `[1,5,8,4,2]`, one
