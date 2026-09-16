@@ -1806,17 +1806,102 @@ public final class PhasePath {
 
     // ------------------------------------------------------------------------- the clock
 
-    /** {@code F}, {@code R} and {@code L} for every route state from a starting line at {@code x0}, in quarter-ticks. */
+    /**
+     * A starting line across a cardinal straight of a route: on {@code edge}, at coordinate
+     * {@code at} along {@code axis} (0 for {@code x}, 1 for {@code y}), travel in direction
+     * {@code dir} ({@code +1} or {@code -1}) along that axis. The line lies between coordinates
+     * {@code at - dir} and {@code at}: a state {@code k} px past it is at {@code at + dir*k}, one
+     * {@code k+1} px short of it at {@code at - dir*(k+1)}, and no state is both. On a cardinal
+     * straight a pixel along the axis is exactly a quarter tick.
+     */
+    public record Line(int edge, int axis, int at, int dir) {
+        int coord(Corridor c, int s) { return axis == 0 ? c.x(s) : c.y(s); }
+
+        /** Whether heading {@code d} steps four pixels along the axis in the line's direction and none across. */
+        boolean cardinal(NavMap map, int d) {
+            int along = axis == 0 ? map.stepX(d) : map.stepY(d), across = axis == 0 ? map.stepY(d) : map.stepX(d);
+            return along == 4 * dir && across == 0;
+        }
+
+        /** Every route state on the edge {@code k} px past the line (negative {@code k}: short of it), any row, any heading. */
+        int[] states(Corridor c, int k) {
+            int v = at + dir * k;
+            List<Integer> out = new ArrayList<>();
+            for (int s : c.states) if (c.edgeOf[s] == edge && coord(c, s) == v) out.add(s);
+            return out.stream().mapToInt(Integer::intValue).toArray();
+        }
+
+        /** Whether the transition {@code s -> u} crosses the line. */
+        boolean crosses(Corridor c, int s, int u) {
+            return c.edgeOf[s] == edge && c.edgeOf[u] == edge && (coord(c, s) - at) * dir < 0 && (coord(c, u) - at) * dir >= 0;
+        }
+
+        /** The state {@code k} px along the axis from {@code s}, same other coordinate and heading, or -1. */
+        int shifted(Corridor c, int s, int k) {
+            int x = c.x(s) + (axis == 0 ? dir * k : 0), y = c.y(s) + (axis == 1 ? dir * k : 0);
+            if (x < 0 || y < 0 || x >= c.map.width() || y >= c.map.height() || !c.map.alive(x, y, c.d(s))) return -1;
+            int t = c.map.index(x, y, c.d(s));
+            return c.in(t) ? t : -1;
+        }
+
+        @Override
+        public String toString() {
+            return String.format("edge %d, %s = %d, travelling %s", edge, axis == 0 ? "x" : "y", at,
+                    axis == 0 ? (dir > 0 ? "+x" : "-x") : (dir > 0 ? "+y" : "-y"));
+        }
+    }
+
+    /**
+     * The longest cardinal straight on the route, and a line across its middle. Per edge, axis
+     * and direction, a coordinate counts if some route state on the edge there has a cardinal
+     * step along the axis in that direction; the longest run of consecutive counting coordinates
+     * wins, and the line is at its midpoint. Reports the runner-up too, so the choice can be
+     * judged; returns null if no run reaches {@code MIN_STRAIGHT} px.
+     */
+    static Line findLine(Corridor c) {
+        Line best = null, second = null;
+        int bestRun = 0, secondRun = 0;
+        int w = c.map.width(), h = c.map.height();
+        for (int e : c.route) {
+            for (int axis = 0; axis < 2; axis++) {
+                for (int dir = -1; dir <= 1; dir += 2) {
+                    int size = axis == 0 ? w : h;
+                    boolean[] counts = new boolean[size];
+                    Line probe = new Line(e, axis, 0, dir);
+                    for (int s : c.states) {
+                        if (c.edgeOf[s] != e || !probe.cardinal(c.map, c.d(s))) continue;
+                        counts[axis == 0 ? c.x(s) : c.y(s)] = true;
+                    }
+                    for (int v = 0; v < size; v++) {
+                        if (!counts[v]) continue;
+                        int end = v;
+                        while (end + 1 < size && counts[end + 1]) end++;
+                        int run = end - v + 1;
+                        Line line = new Line(e, axis, (v + end) / 2, dir);
+                        if (run > bestRun) { second = best; secondRun = bestRun; best = line; bestRun = run; }
+                        else if (run > secondRun) { second = line; secondRun = run; }
+                        v = end;
+                    }
+                }
+            }
+        }
+        System.out.printf("longest cardinal straight: %d px on %s; runner-up %d px on %s%n", bestRun, best, secondRun, second);
+        return bestRun >= MIN_STRAIGHT ? best : null;
+    }
+
+    /** The shortest straight a line is drawn across: eight ticks of cardinal travel. */
+    static final int MIN_STRAIGHT = 32;
+
+    /** {@code F}, {@code R} and {@code L} for every route state from the line, in quarter-ticks. */
     record Distances(int[] F, int[] R, int[] L) {}
 
-    static Distances distances(Corridor c, int edge, int x0) {
+    static Distances distances(Corridor c, Line line) {
         int n = c.edgeOf.length;
         int[] F = new int[n], R = new int[n], L = new int[n];
         Arrays.fill(F, Integer.MAX_VALUE);
         Arrays.fill(R, Integer.MAX_VALUE);
         for (int k = 0; k < 4; k++) {
-            int[] ahead = columnStates(c, edge, x0 + k), behind = columnStates(c, edge, x0 - 1 - k);
-            int[] df = bfs(c, ahead, true), dr = bfs(c, behind, false);
+            int[] df = bfs(c, line.states(c, k), true), dr = bfs(c, line.states(c, -(k + 1)), false);
             for (int s : c.states) {
                 if (df[s] >= 0) F[s] = Math.min(F[s], 4 * df[s] + k);
                 if (dr[s] >= 0) R[s] = Math.min(R[s], 4 * dr[s] + k + 1);
@@ -1840,7 +1925,7 @@ public final class PhasePath {
     /**
      * The fewest ticks in which a boid can cross the cut {@code laps} times and be back in the
      * state it started from, over every state just past the cut: breadth-first on
-     * {@code (state, crossings)}.
+     * {@code (state, crossings)}. Returns {@code {ticks, start, how many starts achieve it}}.
      */
     static int[] fewestTicksForLaps(Corridor c, int[] starts, int laps) {
         int n = c.edgeOf.length;
@@ -1876,25 +1961,75 @@ public final class PhasePath {
         return new int[]{best, bestStart, achieving};
     }
 
+    /** Breadth-first from {@code from} round the route until a state 0–3 px past it along the line's axis is reached, furthest first on ties. */
+    static Lap lapAlong(Corridor c, int from, Line line) {
+        int n = c.edgeOf.length;
+        int[] target = new int[4];
+        for (int k = 0; k < 4; k++) target[k] = line.shifted(c, from, k);
+        int[] depth = new int[n], parent = new int[n];
+        Arrays.fill(depth, -1);
+        Arrays.fill(parent, -1);
+        ArrayDeque<Integer> queue = new ArrayDeque<>();
+        depth[from] = 0;
+        queue.add(from);
+        int[] out = new int[3];
+        int found = -1, foundK = -1, hitStart = -1, startParent = -1;
+        while (!queue.isEmpty() && found < 0) {
+            int layer = depth[queue.peek()];
+            List<Integer> next = new ArrayList<>();
+            while (!queue.isEmpty() && depth[queue.peek()] == layer) {
+                int s = queue.poll();
+                int k = c.succRound(s, out);
+                for (int j = 0; j < k; j++) {
+                    int u = out[j];
+                    if (u == from) { if (hitStart < 0) { hitStart = layer + 1; startParent = s; } continue; }
+                    if (depth[u] >= 0) continue;
+                    depth[u] = layer + 1;
+                    parent[u] = s;
+                    next.add(u);
+                }
+            }
+            queue.addAll(next);
+            int bestK = hitStart == layer + 1 ? 0 : -1;
+            for (int k = 1; k < 4; k++) if (target[k] >= 0 && depth[target[k]] == layer + 1) bestK = k;
+            if (bestK >= 0) { found = layer + 1; foundK = bestK; }
+        }
+        if (found < 0) return null;
+        List<Integer> path = new ArrayList<>();
+        int t = foundK == 0 ? from : target[foundK];
+        path.add(t);
+        int cur = foundK == 0 ? startParent : parent[t];
+        while (cur != from) { path.add(0, cur); cur = parent[cur]; }
+        path.add(0, from);
+        return new Lap(from, found, foundK, path.stream().mapToInt(Integer::intValue).toArray(), new int[EXTRA + 1]);
+    }
+
     /**
      * The route's clock, anchored on the set of states whose shortest loop is exactly the stable
      * lap — the user's construction of 2026-09-15.
      * <ol>
+     *   <li>A <b>starting line</b> across the longest cardinal straight on the route, found by
+     *       {@link #findLine}, or the one given; the route is cut at the crossing furthest round
+     *       from it.</li>
      *   <li>The <b>stable lap</b>: the fewest ticks for a closed walk of four cut crossings from a
-     *       state back to itself, over four. Programmatic, where the quarter-tick search of
-     *       {@link #shortestLoops} could only be read by eye.</li>
-     *   <li>{@code S}: every route state whose shortest loop through the starting line is exactly
-     *       that many quarter-ticks. Asserted by the user to be navigationally connected to the
-     *       cut in at least one direction; checked, and shouted about if not. Each state of
-     *       {@code S} is labelled by breadth-first search within {@code S} from the cut.</li>
-     *   <li>Every other route state is labelled by least squares over the transitions — each asks
-     *       its endpoints to differ by one tick, one lap less across the cut — with {@code S} held
-     *       fixed. Unit weights: the flow weighting of the map-wide clock is not used here.</li>
+     *       state back to itself, over four.</li>
+     *   <li>{@code S}: every route state whose shortest loop through the line is exactly that many
+     *       quarter-ticks. Labelled {@code F/4}, the quarter-tick distance from the line — a
+     *       breadth-first search from a cut over the whole route, which needs no connectivity of
+     *       {@code S}; whether a search within {@code S} would have reached it is reported, since
+     *       the user asked to be told, and on the first route it would not have. The line is the
+     *       clock's seam.</li>
+     *   <li>Every other route state by least squares over the transitions — each asks its
+     *       endpoints to differ by one tick, one lap less across the seam — with {@code S} held
+     *       fixed. Unit weights.</li>
      * </ol>
-     * Then the three things the user asked to see: the advance of tau per tick along the fastest
-     * loop, along the coasting cycle, and the spread of tau among each state's successors.
+     * Then what the user asked to see: the advance of tau per tick along the fastest loop and,
+     * where a straight-travel cycle lies on the route, along the coasting cycle; the spread of tau
+     * among each state's successors; and the texture, slice by slice, beside the map-wide clock's.
+     *
+     * @param given the line to use, or null to find one
      */
-    public static void clock(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, int edge, int x0)
+    public static void clock(PresetScenarioParameter preset, SolverFacts.Gate gate, int[] route, Line given)
             throws IOException {
         Pipeline.Built b = Pipeline.build(preset, gate);
         EdgeDecomposition.Labelling l = b.labelling();
@@ -1902,127 +2037,101 @@ public final class PhasePath {
         int[] edgeOf = l.edge();
         int w = map.width(), h = map.height(), n = edgeOf.length;
 
+        // 1. The line, on a corridor cut as far from it as the route allows.
+        Corridor whole = new Corridor(map, edgeOf, l.live(), l.liveCount(), route);
+        System.out.printf("%n=== %s @%s: the clock of route %s anchored on its stable lap ===%n",
+                preset.name(), preset.ingest().hash(), Arrays.toString(route));
+        Line line = given != null ? given : findLine(whole);
+        if (line == null) { System.out.println("no cardinal straight of " + MIN_STRAIGHT + " px on this route: a line has to be chosen by hand"); return; }
+        System.out.printf("starting line: %s%s%n", line, given != null ? " (given)" : " (found)");
         int m = route.length, slot = -1;
-        for (int i = 0; i < m; i++) if (route[i] == edge) slot = i;
+        for (int i = 0; i < m; i++) if (route[i] == line.edge) slot = i;
         int[] rotated = new int[m];
         int shift = Math.floorMod(slot - m / 2, m);
         for (int i = 0; i < m; i++) rotated[i] = route[(i + shift) % m];
         Corridor c = new Corridor(map, edgeOf, l.live(), l.liveCount(), rotated);
-        System.out.printf("%n=== %s @%s: the clock of route %s anchored on its stable lap; line x = %d, cut %d->%d ===%n",
-                preset.name(), preset.ingest().hash(), Arrays.toString(rotated), x0, c.cutFrom, c.cutTo);
+        System.out.printf("route as %s, cut %d->%d, %d route states%n", Arrays.toString(rotated), c.cutFrom, c.cutTo, c.states.length);
 
-        // 1. The stable lap.
+        // 2. The stable lap.
         int[] landings = cutLandings(c);
         long t0 = System.currentTimeMillis();
         int[] four = fewestTicksForLaps(c, landings, 4);
         if (four[0] == Integer.MAX_VALUE) { System.out.println("no state closes four laps on itself"); return; }
         int T4 = four[0];
-        System.out.printf("four laps back to the same state: fewest %d ticks, from (%d,%d,%d), %d of %d cut landings achieve it (%.1f s)%n",
-                T4, c.x(four[1]), c.y(four[1]), c.d(four[1]), four[2], landings.length, (System.currentTimeMillis() - t0) / 1000.0);
-        if (T4 % 4 != 0) System.out.printf("  NOTE: %d is not a multiple of four; the stable lap is %.2f ticks%n", T4, T4 / 4.0);
-        double T = T4 / 4.0;
         int one = fewestTicksForLaps(c, landings, 1)[0];
-        System.out.printf("stable lap %.2f ticks (one lap back to the same state: fewest %d)%n", T, one);
+        System.out.printf("four laps back to the same state: fewest %d ticks, from (%d,%d,%d), %d of %d cut landings achieve it (%.1f s);"
+                        + " one lap: fewest %d%n", T4, c.x(four[1]), c.y(four[1]), c.d(four[1]), four[2], landings.length,
+                (System.currentTimeMillis() - t0) / 1000.0, one);
+        double T = T4 / 4.0;
+        System.out.printf("stable lap %.2f ticks%s%n", T, T4 % 4 == 0 ? "" : "   <-- not a whole number of ticks");
 
-        // 2. S, and tau on it from the cut.
-        Distances dist = distances(c, edge, x0);
+        // 3. S, its connectivity to the cut (reported, not relied on), and its labels.
+        Distances dist = distances(c, line);
         boolean[] inS = new boolean[n];
-        int sizeS = 0;
-        for (int s : c.states) if (dist.L[s] == T4) { inS[s] = true; sizeS++; }
-        int[] S = Arrays.stream(c.states).filter(s -> inS[s]).toArray();
-        System.out.printf("S: %d states whose shortest loop is exactly %d quarter-ticks%n", sizeS, T4);
-
-        int[] tauS = new int[n];
-        Arrays.fill(tauS, -1);
+        int sizeS = 0, onLoops = 0, minL = Integer.MAX_VALUE;
+        for (int s : c.states) {
+            if (dist.L[s] == Integer.MAX_VALUE) continue;
+            onLoops++;
+            minL = Math.min(minL, dist.L[s]);
+            if (dist.L[s] == T4) { inS[s] = true; sizeS++; }
+        }
+        System.out.printf("S: %d states whose shortest loop is exactly %d quarter-ticks (shortest loop through any state %d = %.2f; %d of %d states on some loop)%n",
+                sizeS, T4, minL, minL / 4.0, onLoops, c.states.length);
+        if (sizeS == 0) { System.out.println("no state has a shortest loop of exactly the stable lap; stopping"); return; }
         int[] out = new int[3];
-        // Forward from the cut landings in S.
         {
+            int[] fwd = new int[n], back = new int[n];
+            Arrays.fill(fwd, -1);
+            Arrays.fill(back, -1);
             ArrayDeque<Integer> queue = new ArrayDeque<>();
-            for (int s : landings) if (inS[s]) { tauS[s] = 0; queue.add(s); }
-            int seeds = queue.size();
+            for (int s : landings) if (inS[s]) { fwd[s] = 0; queue.add(s); }
             while (!queue.isEmpty()) {
                 int s = queue.poll();
-                int k = c.succ(s, out);   // not across the cut: a lap is 0 .. T-1
-                for (int j = 0; j < k; j++) {
-                    int u = out[j];
-                    if (inS[u] && tauS[u] < 0) { tauS[u] = tauS[s] + 1; queue.add(u); }
-                }
+                int k = c.succ(s, out);
+                for (int j = 0; j < k; j++) if (inS[out[j]] && fwd[out[j]] < 0) { fwd[out[j]] = fwd[s] + 1; queue.add(out[j]); }
             }
-            int reached = 0;
-            for (int s : S) if (tauS[s] >= 0) reached++;
-            System.out.printf("forward from the cut within S: %d seeds, %d of %d reached%s%n", seeds, reached, sizeS,
-                    reached == sizeS ? "" : "   <-- NOT ALL");
-            if (reached < sizeS) {
-                // Backward from the states of S about to cross the cut.
-                int[] back = new int[n];
-                Arrays.fill(back, -1);
-                for (int s : S) {
-                    int k = c.succRound(s, out);
-                    for (int j = 0; j < k; j++) if (c.cut(s, out[j])) { back[s] = 0; queue.add(s); break; }
-                }
-                int bseeds = queue.size();
-                while (!queue.isEmpty()) {
-                    int s = queue.poll();
-                    int k = c.pred(s, out);
-                    for (int j = 0; j < k; j++) {
-                        int u = out[j];
-                        if (inS[u] && back[u] < 0) { back[u] = back[s] + 1; queue.add(u); }
-                    }
-                }
-                int breached = 0, disagree = 0;
-                for (int s : S) {
-                    if (back[s] < 0) continue;
-                    breached++;
-                    if (tauS[s] >= 0 && tauS[s] + back[s] + 1 != T4 / 4) disagree++;
-                }
-                System.out.printf("backward from the cut within S: %d seeds, %d of %d reached; %d states where forward + backward + 1 != %d%s%n",
-                        bseeds, breached, sizeS, disagree, T4 / 4, breached == sizeS ? "" : "   <-- NOT ALL");
-                int neither = 0;
-                for (int s : S) {
-                    if (tauS[s] < 0 && back[s] >= 0) tauS[s] = T4 / 4 - 1 - back[s];
-                    if (tauS[s] < 0) neither++;
-                }
-                if (neither > 0) {
-                    System.out.printf("ALERT: %d states of S are reached from the cut in neither direction; they are dropped from the anchors%n", neither);
-                    for (int s : S) if (tauS[s] < 0) inS[s] = false;
-                }
+            for (int s : c.states) {
+                if (!inS[s]) continue;
+                int k = c.succRound(s, out);
+                for (int j = 0; j < k; j++) if (c.cut(s, out[j])) { back[s] = 0; queue.add(s); break; }
             }
-        }
-        // Is tau on S the quarter-tick clock F/4 up to a constant? Along transitions inside S, does F advance by exactly 4?
-        {
+            while (!queue.isEmpty()) {
+                int s = queue.poll();
+                int k = c.pred(s, out);
+                for (int j = 0; j < k; j++) if (inS[out[j]] && back[out[j]] < 0) { back[out[j]] = back[s] + 1; queue.add(out[j]); }
+            }
+            int f = 0, bb = 0, neither = 0;
+            for (int s : c.states) {
+                if (!inS[s]) continue;
+                if (fwd[s] >= 0) f++;
+                if (back[s] >= 0) bb++;
+                if (fwd[s] < 0 && back[s] < 0) neither++;
+            }
+            System.out.printf("a search within S from the cut would reach %d forward, %d backward, %d by neither%s%n", f, bb, neither,
+                    neither > 0 ? "   <-- S is not connected to the cut; anchors are F/4 regardless" : "");
             int[] adv = new int[6];
-            java.util.Map<Integer, Integer> offsets = new java.util.TreeMap<>();
-            for (int s : S) {
+            for (int s : c.states) {
                 if (!inS[s]) continue;
                 int k = c.succRound(s, out);
                 for (int j = 0; j < k; j++) if (inS[out[j]]) { int d = dist.F[out[j]] - dist.F[s]; if (d >= 0) adv[Math.min(5, d)]++; }
-                offsets.merge(dist.F[s] - 4 * tauS[s], 1, Integer::sum);
             }
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < adv.length; i++) if (adv[i] > 0) sb.append(String.format(" %d:%d", i, adv[i]));
-            System.out.printf("within S, F advances per transition by%s (quarter-ticks); F - 4*tau takes %d distinct values%s%n", sb, offsets.size(),
-                    offsets.size() <= 8 ? " " + offsets : "");
+            System.out.printf("within S, F advances per transition by%s quarter-ticks%n", sb);
         }
-
-        // 3. The clock everywhere else, by least squares with S fixed. The anchors are F/4 — the
-        // quarter-tick distance from the starting line over the whole route, which is a BFS from a
-        // cut that does not need S to be connected — shifted so the route's cut reads zero.
-        // The line is the clock's seam: tau runs from 0 just past it to T just before it, and a
-        // transition across it carries a lap. The route's own cut only counted laps above.
         double[] tau = new double[n];
         Arrays.fill(tau, Double.NaN);
-        for (int s : c.states) inS[s] = dist.L[s] == T4;
         for (int s : c.states) if (inS[s]) tau[s] = dist.F[s] / 4.0;
-        Seam seam = new Seam(c, edge, x0);
-        System.out.printf("anchors: all %d states of S, tau = F/4 from the line; the line is the seam%n", sizeS);
-        int iterations = anchoredLeastSquares(c, inS, tau, T, seam);
+
+        // 4. The clock everywhere else.
+        int iterations = anchoredLeastSquares(c, inS, tau, T, line);
         double rms = 0;
         int edges = 0, worst = -1;
         double worstR = 0;
         for (int s : c.states) {
             int k = c.succRound(s, out);
             for (int j = 0; j < k; j++) {
-                double r = advance(seam, tau, s, out[j], T) - 1;
+                double r = advance(c, line, tau, s, out[j], T) - 1;
                 rms += r * r;
                 edges++;
                 if (Math.abs(r) > Math.abs(worstR)) { worstR = r; worst = s; }
@@ -2031,19 +2140,21 @@ public final class PhasePath {
         System.out.printf("clock: %d free states solved in %d iterations; over %d transitions the advance is 1 %+.4f rms, worst %+.2f at (%d,%d,%d)%n",
                 c.states.length - sizeS, iterations, edges, Math.sqrt(rms / edges), worstR, c.x(worst), c.y(worst), c.d(worst));
 
-        // (a) The fastest loop: from x0 - 2, three pixels ahead in one lap.
+        // (a) The fastest loop: from two pixels short of the line, landing three past its start.
         int[] fast = null;
-        for (int s : columnStates(c, edge, x0 - 2)) {
-            if (map.stepX(c.d(s)) != 4 || map.stepY(c.d(s)) != 0) continue;
-            Lap lp = lapFrom(c, s);
+        for (int s : line.states(c, -2)) {
+            if (!line.cardinal(map, c.d(s))) continue;
+            Lap lp = lapAlong(c, s, line);
             if (lp != null && lp.ahead == 3 && (fast == null || lp.ticks < fast.length)) fast = lp.path;
         }
         if (fast != null) {
             System.out.printf("%n-- the %d-tick loop landing 3 px ahead (%.2f): advance of tau per tick --%n", fast.length - 1, fast.length - 1 - 0.75);
-            reportAlong(seam, tau, fast, false, T);
+            reportAlong(c, line, tau, fast, T);
+        } else {
+            System.out.println("\n-- no lap from two pixels short of the line lands three ahead; the fast loop is not reported --");
         }
 
-        // (b) The coasting cycle.
+        // (b) The coasting cycle, where straight travel has one on the route.
         MapStates lattice = MapStates.of(map, Flocking.of(preset.turningRadius()), l.live(), l.liveCount());
         int[] coast = null;
         for (int[] cy : lattice.cycles(lattice.pureStable(1))) {
@@ -2058,7 +2169,9 @@ public final class PhasePath {
             int[] rolled = new int[coast.length + 1];
             for (int i = 0; i <= coast.length; i++) rolled[i] = coast[(at + i) % coast.length];
             System.out.printf("%n-- the coasting cycle, %d ticks: advance of tau per tick --%n", coast.length);
-            coastAdvance = reportAlong(seam, tau, rolled, true, T);
+            coastAdvance = reportAlong(c, line, tau, rolled, T);
+        } else {
+            System.out.println("\n-- no straight-travel cycle lies on this route; the coasting report needs a flown lap, which is not built --");
         }
 
         // (c) The spread of tau among each state's successors.
@@ -2072,7 +2185,7 @@ public final class PhasePath {
             int pairs = 0;
             for (int i = 0; i < k; i++) {
                 for (int j = i + 1; j < k; j++) {
-                    double d = advance(seam, tau, s, out[i], T) - advance(seam, tau, s, out[j], T);
+                    double d = advance(c, line, tau, s, out[i], T) - advance(c, line, tau, s, out[j], T);
                     sum += d * d;
                     pairs++;
                 }
@@ -2088,13 +2201,12 @@ public final class PhasePath {
         Path dir = Path.of("render", "phase-path");
         Files.createDirectories(dir);
         String name = preset.name().toLowerCase() + "-" + preset.ingest().hash() + "-clock"
-                + Arrays.toString(rotated).replaceAll("[\\[\\] ]", "").replace(',', '-');
+                + Arrays.toString(route).replaceAll("[\\[\\] ]", "").replace(',', '-');
         drawClock(c, tau, inS, T, dir.resolve(name + "-tau.png"));
         if (coast != null) drawRate(c, coast, coastAdvance, dir.resolve(name + "-coast.png"));
         drawSpread(c, spread, dir.resolve(name + "-spread.png"));
-        System.out.printf("wrote %s-{tau,coast,spread}.png in %s%n", name, dir);
+        System.out.printf("wrote %s-{tau,%sspread}.png in %s%n", name, coast != null ? "coast," : "", dir);
 
-        // The texture, slice by slice: the anchored clock, and the map-wide fitted clock beside it.
         boolean[] routePixel = new boolean[w * h];
         for (int s : c.states) routePixel[c.cell(s)] = true;
         boolean[] any = new boolean[n];
@@ -2107,24 +2219,17 @@ public final class PhasePath {
         TauSlices.draw(map, c.states, fitted, 16, routePixel, box, 2, dir.resolve(name + "-slices-fitted.png"));
     }
 
-    /** The clock's seam: the starting line, crossed by a transition on its edge from {@code x < x0} to {@code x >= x0}. */
-    record Seam(Corridor c, int edge, int x0) {
-        boolean crosses(int s, int u) {
-            return c.edgeOf[s] == edge && c.edgeOf[u] == edge && c.x(s) < x0 && c.x(u) >= x0;
-        }
-    }
-
-    /** {@code tau(u) - tau(s)}, plus a lap where the transition crosses the seam. */
-    static double advance(Seam seam, double[] tau, int s, int u, double T) {
-        return tau[u] - tau[s] + (seam.crosses(s, u) ? T : 0);
+    /** {@code tau(u) - tau(s)}, plus a lap where the transition crosses the line. */
+    static double advance(Corridor c, Line line, double[] tau, int s, int u, double T) {
+        return tau[u] - tau[s] + (line.crosses(c, s, u) ? T : 0);
     }
 
     /**
      * Least squares over every transition of the route, {@code tau(u) - tau(s) = 1} (less a lap
-     * across the cut), the anchored states fixed: conjugate gradient on the normal equations.
+     * across the seam), the anchored states fixed: conjugate gradient on the normal equations.
      * Returns the iterations used.
      */
-    static int anchoredLeastSquares(Corridor c, boolean[] fixed, double[] tau, double T, Seam seam) {
+    static int anchoredLeastSquares(Corridor c, boolean[] fixed, double[] tau, double T, Line line) {
         int n = c.edgeOf.length;
         // The transitions, once.
         int[] out = new int[3];
@@ -2135,7 +2240,7 @@ public final class PhasePath {
         int e = 0;
         for (int s : c.states) {
             int k = c.succRound(s, out);
-            for (int j = 0; j < k; j++) { from[e] = s; to[e] = out[j]; target[e] = 1 - (seam.crosses(s, out[j]) ? T : 0); e++; }
+            for (int j = 0; j < k; j++) { from[e] = s; to[e] = out[j]; target[e] = 1 - (line.crosses(c, s, out[j]) ? T : 0); e++; }
         }
         boolean[] free = new boolean[n];
         int[] idx = new int[n];
@@ -2185,14 +2290,14 @@ public final class PhasePath {
     }
 
     /** The advance of tau along a path, tick by tick: min, max, mean, the count over one, and where it strays. Returns the advances. */
-    static double[] reportAlong(Seam seam, double[] tau, int[] path, boolean closed, double T) {
+    static double[] reportAlong(Corridor c, Line line, double[] tau, int[] path, double T) {
         int steps = path.length - 1;
         double[] adv = new double[steps];
         double min = Double.MAX_VALUE, max = -Double.MAX_VALUE, sum = 0;
         int over = 0, overBy = 0;
         int[] hist = new int[9];   // < 0.8, 0.8-0.9, ..., 1.2-1.3, >= 1.3
         for (int i = 0; i < steps; i++) {
-            adv[i] = advance(seam, tau, path[i], path[i + 1], T);
+            adv[i] = advance(c, line, tau, path[i], path[i + 1], T);
             min = Math.min(min, adv[i]);
             max = Math.max(max, adv[i]);
             sum += adv[i];

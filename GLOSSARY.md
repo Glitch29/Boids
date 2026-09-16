@@ -474,6 +474,13 @@ columns `x₀−1` and `x₀`: starts at `x₀+k` are `k` quarter-ticks past it,
 are `k+1` short of it, and no state is both. Where a pixel is exactly a quarter tick.
 `PhasePath.shortestLoops`.
 
+**starting line, found** — `PhasePath.findLine`: per edge, axis and direction, a coordinate
+counts if some route state on the edge there has a cardinal step (four pixels along the axis,
+none across); the longest run of counting coordinates is the straight and the line sits at its
+midpoint, taken if the run is 32 px or more. `Line(edge, axis, at, dir)` lies between coordinates
+`at − dir` and `at`; on dabeone every route picks edge 4's top straight, `x = 253` travelling
+`−x`. The line moves `S` and the clock's fine texture, not the stable lap.
+
 **`F`, `R`, `L`** — for every route state, the fewest quarter-ticks from the starting line to it
 travelling forward, from it forward to the line, and their sum: **the shortest loop through the
 state**. Minima over the four offsets of the line; eight breadth-first searches round the route.
@@ -493,7 +500,8 @@ flown once. `PhasePath.fewestTicksForLaps`; **260.00** on dabeone's stable loop.
 **anchored route clock** — tau on every state of a route: `F/4` — the quarter-tick distance from
 the starting line — on the states whose shortest loop is exactly the stable lap, and least squares
 over every transition for the rest, unit weights, the line as the seam. `PhasePath.clock`;
-advance `1 ± 0.087` rms per transition on dabeone's stable loop. **The anchor set is not connected
+advance `1 ± 0.087 / 0.064 / 0.073` rms per transition on dabeone's three routes, whose stable
+laps are **260.00, 495.00, 495.00** against fitted laps of 275, 528, 528. **The anchor set is not connected
 to the cut** (2,510 of 6,995 states reached in neither direction), which is why the anchors are
 `F/4` rather than a search within it. `EDGES.md` §5 "The anchored route clock". Not yet the clock
 the project reads — that is still `EdgeMetric` and `RouteClock`.

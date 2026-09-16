@@ -21,7 +21,10 @@ import java.util.Arrays;
  * channel that carries data. Data is hue alone, so a collision is drawn at half saturation. The
  * value shown is the first state's in index order, which is the lowest heading.
  * <p>
- * A pixel of the region with no state in the slice is dark; a pixel outside it is black.
+ * A pixel of the region with no state in the slice is dark; a pixel outside it is black — with,
+ * painted on the black before anything else, a faint grid whose lines run along and across the
+ * headings the slice folds, so the directions of travel depicted can be read off any tile without
+ * hunting for a safe place to put a glyph.
  */
 public final class TauSlices {
     private TauSlices() {}
@@ -71,8 +74,10 @@ public final class TauSlices {
                         rgb = hsv(t, collided[slice][i] ? 0.5 : 1.0, 1.0);
                     } else if (region[mx + my * w]) {
                         rgb = 0x30343C;
+                    } else if (map.oob(mx, my)) {
+                        rgb = onGrid(mx, my, slice) ? 0x24272E : 0x000000;
                     } else {
-                        rgb = map.oob(mx, my) ? 0x000000 : 0x14161A;
+                        rgb = 0x14161A;
                     }
                     for (int sy = 0; sy < scale; sy++) for (int sx = 0; sx < scale; sx++) img.setRGB(ox + x * scale + sx, oy + y * scale + sy, rgb);
                 }
@@ -87,6 +92,16 @@ public final class TauSlices {
         System.out.printf("   slices: %d states drawn over 16 slices, %d pixel collisions (shown at half saturation) -> %s%n",
                 states.length, collisions, out.getFileName());
     }
+
+    /** Whether a pixel lies on the faint grid of a slice: lines every {@code GRID} px along the slice's heading and across it. */
+    private static boolean onGrid(int x, int y, int slice) {
+        double theta = slice * 2 * Math.PI / Params.TURNS;
+        double ux = Math.cos(theta), uy = Math.sin(theta);
+        double along = x * ux + y * uy, across = -x * uy + y * ux;
+        return Math.abs(along - GRID * Math.rint(along / GRID)) < 0.5 || Math.abs(across - GRID * Math.rint(across / GRID)) < 0.5;
+    }
+
+    private static final double GRID = 24;
 
     private static String fmt(double v) { return v == Math.rint(v) ? String.valueOf((long) v) : String.valueOf(v); }
 

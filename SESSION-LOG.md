@@ -118,8 +118,24 @@ seam at the line shows as a quarter-turn of hue (260 ≡ 4 mod 16), the straight
 gradients across the corridor and the bends skew the bands inside-ahead. Renders
 `render/phase-path/dabeone-…-clock2-7-4-slices.png`, `-slices-fitted.png`.
 
+**Then the grid and the three routes.** `TauSlices` paints a faint grid along each slice's
+heading on the black before the map, so every tile carries its own compass. `PhasePath.findLine`
+finds the starting line — longest cardinal straight, 32 px minimum — and `Line` runs along either
+axis either way; `clock(preset, gate, route, null)` does the rest. All three routes: stable laps
+**260.00 / 495.00 / 495.00** (four-lap closure 1,040 / 1,980 / 1,980; one lap 260 / 495 / 495)
+against fitted laps 275.29 / 528.45 / 528.38; every route picked edge 4's top straight `x = 253`,
+`−x`. `S` 7,099 / 2,592 / 7,962; connectivity to the cut: 1,645 by neither / none either way (no
+cut landing is in `S`; the `1→5` cut has 61 landings) / all both ways. Clocks `1 ± 0.087 / 0.064
+/ 0.073` rms, worst −1.00 / −0.57 / −0.55. Fast loop found only on `[4, 0, 3, 5, 8]` (496 ticks,
+495.59 tau, 0.9992 per tick, 493 of 496 within 0.9–1.0); coasting report only on the stable loop
+(0.578–1.179 per tick from this line). Slice sheets: 0 collisions on the stable loop, ~15,500 on
+each scoring route — edge 8, self-inverse, both directions in the corridor. Recorded in `EDGES.md`
+§5 "The clock on the three routes", with the programmatic-versus-judgement split.
+
 **Open.** Whether the anchored clock replaces `RouteClock` / `EdgeMetric` for routes, and with
-what weighting — the user's call. A decision zone from a cover — the replacement for
+what weighting — the user's call. Whether a self-inverse
+edge's other direction belongs in a route's corridor. A flown lap for the coasting report on the
+scoring routes. A decision zone from a cover — the replacement for
 `DecisionZone.subpath`; then the fitness for the handoff's (1) and (2). A stretch narrow enough to
 lock a single-phase path out, which dabeone's stable route does not offer.
 

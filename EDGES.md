@@ -1175,6 +1175,57 @@ the route's clock. Three steps, `PhasePath.clock`, run by hand:
   bends. `-spread.png`, black to yellow at 0.32 on a square-root scale. `-tau.png` is the clock
   itself, hue round the lap, anchors brighter.
 
+### The clock on the three routes, and what chose what — 2026-09-15
+
+**Made programmatic.** The starting line is now found: per edge, axis and direction, a
+coordinate counts if some route state on that edge there has a cardinal step (four pixels along
+the axis, none across); the longest run of counting coordinates is the straight, and the line is
+at its midpoint, taken if the run is at least 32 px (`PhasePath.findLine`, `Line`). The route is
+rotated so its cut falls opposite the line's edge. The line runs along either axis in either
+direction, so a pixel is a quarter tick on it whichever way the straight lies. Everything after
+that — the stable lap, `S`, the anchors, the least squares, the reports, the slices — was already
+code. `PhasePath.clock(preset, gate, route, line)` with a null line does the lot.
+
+| route | line found | stable lap | fitted lap (§5) | `S` | `S` reached from the cut | clock, advance per transition |
+| --- | --- | --- | --- | --- | --- | --- |
+| `[2, 7, 4]` | edge 4, `x = 253`, `−x` (149 px) | **260.00** | 275.29 | 7,099 | 4,104 fwd, 1,350 back, **1,645 neither** | `1 ± 0.087` |
+| `[4, 2, 1, 5, 8]` | edge 4, `x = 253`, `−x` | **495.00** | 528.45 | 2,592 | **none either way** | `1 ± 0.064` |
+| `[4, 0, 3, 5, 8]` | edge 4, `x = 253`, `−x` | **495.00** | 528.38 | 7,962 | **all, both ways** | `1 ± 0.073` |
+
+1. **Both scoring routes have the same stable lap, 495.00**, from `1,980 / 4`, with one lap
+   closing at 495 as well — 33 ticks under their fitted laps and 40 under the flown lone-psyboid
+   lap of 535. The stable loop's 260 against its fitted 275.29 is the same story: the fitted
+   clock's lap is the traffic-weighted average of every way round, and the stable lap is the
+   fastest way round that repeats.
+2. **The line's position changes `S` but not the lap.** `[2, 7, 4]` from the top straight gives
+   260.00 and `1 ± 0.087` as from the bottom straight, but `S` is 7,099 states where it was 6,995,
+   since `L` is a quarter-tick accounting against the line; and the coasting cycle's advance runs
+   0.578–1.179 per tick where it ran 0.747–1.105. `P*` was line-independent; the anchor set and
+   the clock's fine texture are not, though its residual is.
+3. **The user's connectivity assertion holds on one route of three.** On `[4, 0, 3, 5, 8]` every
+   state of `S` is reached from the cut both ways; on `[4, 2, 1, 5, 8]` none is, because no cut
+   landing is in `S` at all — its cut, `1 → 5`, has 61 landings against the others' several
+   hundred. The anchors are `F/4` in every case, so nothing depends on it.
+4. **The slice sheets of the scoring routes carry ~15,500 collisions each, and they are edge 8.**
+   The scoring ring is self-inverse: both directions of travel through it are one edge, both are
+   in the route's corridor, every state of both is on some loop through the line (the ring lets a
+   boid come round the other way), and headings a half-turn apart fold to the same slice. The ring
+   shows at half saturation on every tile, which is the convention doing its job. Whether the
+   wrong-way states of a self-inverse edge belong in a route's clock at all is a question for the
+   user; they are in it now.
+5. **Two reports are conditional.** The fast-loop report needs a lap from two pixels short of the
+   line to land three ahead, which depends on the line's phase — found on `[4, 0, 3, 5, 8]`
+   (496 ticks, tau advancing 495.59, **0.9992 per tick and 493 of 496 ticks within 0.9–1.0**), not
+   from the top straight on the other two. The coasting report needs a straight-travel cycle on
+   the route, which only the stable loop has; a flown lap under `DecisionOverride` would serve the
+   scoring routes and is not wired in.
+
+**Still chosen by a person.** The line rule — longest cardinal run, 32 px minimum — and that a
+route without a cardinal straight gets no line (plait is untested); unit weights in the least
+squares; the fold by sixteen, which is right for a directed edge and wrong for a self-inverse
+one; whether a route's corridor should carry a self-inverse edge's other direction; and which of
+the three clocks — fitted, `F/4` on `P*`, anchored — the project reads.
+
 ---
 
 ## 6. Routes

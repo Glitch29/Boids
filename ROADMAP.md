@@ -2109,9 +2109,21 @@ ticks over 1); along the coasting cycle 260.00 in 278, at one on the straights a
 every bend; successor spread mean 0.009, max 0.66. `PhasePath.clock`; `EDGES.md` §5 "The
 anchored route clock"; renders `render/phase-path/dabeone-…-clock2-7-4-{tau,coast,spread}.png`.
 
+**Then all three routes, with the line found programmatically** (`PhasePath.findLine`: the
+longest cardinal straight, 32 px minimum; `Line` runs along either axis either way) and a faint
+heading-aligned grid under the slice tiles. **Both scoring routes: stable lap 495.00** (`1,980 /
+4`; one lap 495) against fitted laps 528.45 / 528.38 and a flown lone lap of 535; the stable loop
+260.00 again from the top straight, with `S` 7,099 where the bottom straight gave 6,995 — the
+line moves the anchor set, not the lap. `S` connected to the cut both ways on `[4, 0, 3, 5, 8]`,
+not at all on `[4, 2, 1, 5, 8]`; anchors are `F/4` regardless. Clocks `1 ± 0.087 / 0.064 /
+0.073`. The scoring routes' sheets carry ~15,500 collisions each: edge 8, self-inverse, both
+directions in the corridor. `EDGES.md` §5 "The clock on the three routes" has the table and the
+programmatic-versus-judgement split.
+
 **Next.** Whether this clock replaces `RouteClock` / the map-wide `EdgeMetric` for routes, and
-with what weighting — the user's call; then the decision zone from a cover and the fitness for
-(1) and (2).
+with what weighting — the user's call; whether a self-inverse edge's other direction belongs in a
+route's corridor; a flown lap for the coasting report on scoring routes; then the decision zone
+from a cover and the fitness for (1) and (2).
 
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won

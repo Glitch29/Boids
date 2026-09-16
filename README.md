@@ -79,6 +79,7 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | the shortest lap | measured a quarter tick at a time from every horizontal-step state of a column on edge 7's bottom straight: **260 ticks, an integer**, eighteen under the coasting cycle, hugging the inside wall; the fractional readings (259.25 from `x ≡ 2`) are a one-time gain, and **the loop clamps phase to `x ≡ 1 (mod 4)`** — never carrying a boid past it in 260 ticks and charging a full tick to get there | `PhasePath.lap`, `EDGES.md` §5 |
 | the set of all shortest loops | every route state on a loop of `N` or fewer quarter-ticks, at the least `N` whose projection loops round: **`N* = 260.00` ticks, 22,240 states over 5,842 pixels, the same set from every starting line**; `F/4` advances exactly one tick along 98.1% of its transitions and never more | `PhasePath.shortestLoops`, `EDGES.md` §5 |
 | the anchored route clock | the stable lap by four-lap closure — **1,040 / 4 = 260.00** from 161 of 382 cut landings — `F/4` on the 6,995 states of exactly that loop, least squares for the rest: **advance `1 ± 0.087` rms over 105,772 transitions**. The anchor set is not connected to the cut (2,510 of 6,995 reached in neither direction), the alert the user asked for | `PhasePath.clock`, `EDGES.md` §5 |
+| the three routes' clocks | with the line found programmatically: stable laps **260.00, 495.00, 495.00** against fitted laps 275.29, 528.45, 528.38; clocks `1 ± 0.087 / 0.064 / 0.073`; `S` connected to the cut on one route of three; the scoring ring's two directions are the slice sheets' collisions | `PhasePath.clock`, `PhasePath.findLine`, `EDGES.md` §5 |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -274,9 +275,10 @@ horizontal-step state there the shortest lap to itself or 0–3 px ahead, the ad
 the first depth and three after, and the chain of laps from the landing state.
 `PhasePath.shortestLoops` takes a route, an edge and a starting line `x₀`, computes `F`, `R` and
 `L` for every route state, grows `P_N` until its projection loops round, and reports the set and
-`F` as a clock on it. `PhasePath.clock` takes the same and builds the anchored route clock: the
-stable lap by four-lap closure, `F/4` on the states of exactly that loop, least squares for the
-rest; reports the advance along the fastest loop and the coasting cycle and the successor spread. `explain` prints one sampled exit tick by tick, marking which
+`F` as a clock on it. `PhasePath.clock` takes a route and a `Line` (null to find one) and builds the anchored route
+clock: the stable lap by four-lap closure, `F/4` on the states of exactly that loop, least squares
+for the rest; reports the advance along the fastest loop and the coasting cycle where they exist,
+the successor spread, and the slice sheets of it and the fitted clock. `explain` prints one sampled exit tick by tick, marking which
 ticks actually **demand** a leader and which are free because coasting or the veto produced the
 move anyway.
 

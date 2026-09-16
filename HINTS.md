@@ -883,6 +883,11 @@ Two things follow, and both are about where the information is.
   mark the collision by a change orthogonal to every data channel — half saturation when hue is
   the data. `TauSlices`, the user's specification of 2026-09-15; it showed a clock's texture
   that no residual statistic had.
+  A self-inverse edge is the case where the fold is wrong by construction — both directions of
+  travel are one edge and headings a half-turn apart share a slice — and there the half
+  saturation is the picture, not a blemish: dabeone's scoring ring is half-saturated on every
+  tile of both scoring routes. Paint a faint grid along the slice's heading on the black before
+  anything else, so each tile carries its own compass without any search for a safe place.
 - **Cache expensive results content-addressed, and put the *code version* in the key.** A
   metric store keyed only on inputs silently returned answers from the old solver after a bug
   fix, producing bit-identical wrong numbers. That cost a full wrong conclusion.
