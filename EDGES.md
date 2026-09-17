@@ -3,7 +3,7 @@
 **Canonical for edges, routes and leader windows.** Rewritten 2026-08-28 against dabeone
 ingest `609cffdb84be218c`, physics version 2.
 
-**Status:** 2026-09-15. Structure is physics-independent and stands; **figures are physics 2
+**Status:** 2026-09-16. Structure is physics-independent and stands; **figures are physics 2
 unless marked otherwise**, and the flown scoring lap in §6 and §9 is the first measured under
 physics 3. **§2 was rewritten and §2a added on 2026-09-08**: what was called a gate is now a *cut
 line*, and **gate** names a formal construct with an exactly-once guarantee. The rule "gates are a
@@ -581,7 +581,8 @@ manipulation.
 
 > **Superseded 2026-09-15** by the longcuts of §5 "Longcuts from the shortest-route clock": a
 > longcut is a basin of the excess field of the anchored clock, which has no footprint, no
-> starting tau and is phase-complete by construction. Kept as the record of what was tried.
+> starting tau and is phase-complete by construction. `SubpathSearch` was removed 2026-09-16
+> (git before `f162f76`); this section is the record of what was tried.
 
 **Specified by the user and built 2026-09-13** — `SubpathSearch`, driven by
 `SimTest.subpathSearch`, drawn to `render/subpaths/`. Finding only: what comes out is a path, not
@@ -804,7 +805,7 @@ same counts at every `N`. Renders: `render/phase-path/dabeone-609cffdb84be218c-e
 
 **Passed back at that point, as asked**, and the user replaced the funnel clauses with diagonal
 connectivity of `P`'s own projection — the definition at the head of this section. The funnel
-machinery stays in `PhasePath` behind a flag, as the record. The comb and the speckle are worth
+machinery was removed 2026-09-16 (git before `f162f76`); this section is the record. The comb and the speckle are worth
 remembering on their own: a set exactly `N` steps from a thin set is dotted on this lattice, and
 the landing set of an insertion boundary alternates by phase along a wall.
 
@@ -1029,7 +1030,9 @@ by nearest pixel, by the join field, or by a fit is the next question.
 > **Superseded the same day.** The cover above is phase-complete for the coasting cycle, which
 > was chosen arbitrarily and fixed the lane before any search began; the user wanted the
 > *shortest* phase-complete path, which is a different object. The section below is that. The
-> cover and the geometric clock stand as measurements of the coasting lane.
+> cover and the geometric clock stand as measurements of the coasting lane; their code was
+> removed 2026-09-16 (git before `f162f76`), as was the column search of the next section, whose
+> programmatic successor is the four-lap closure.
 
 ### The shortest lap, measured a quarter tick at a time — 2026-09-15
 
@@ -1249,8 +1252,9 @@ per half-lap on the scoring routes, where it is a ninth. A watershed — states 
 stand less than a tick above the saddle — splits the blob but into hundreds of basins, because
 `E` is striped by phase and two states at one pixel a heading apart are two steps apart in the
 graph, so every stripe has its own peak. The cut that works is to merge basins that are the same
-place at different phases: **pixel sets that touch, and tau ranges overlapping by at least half
-the shorter, greedily best pair first with the merged range recomputed each time** — union-find
+place at different phases: **pixel sets that touch, and ranges of `F/4` overlapping by at least half
+the shorter, greedily best pair first with the merged range recomputed each time** (the ranges
+were the smoothed clock's until 2026-09-16) — union-find
 chained every bend through the small basins at their junctions, and plain overlap did the same.
 Two sides of a bulb do not touch; stripes do; consecutive bends only graze.
 
@@ -1268,37 +1272,48 @@ is checked rather than assumed, by the cheapest scoring state's excess.
 `[2,7,4]` stable, `[3,5,6]` scoring.** Stable laps 495, 495, 260, 260; clocks `1 ± 0.064 /
 0.073 / 0.087 / 0.087`.
 
-- **`[2, 7, 4]`: seven longcuts, one per bend.** By loss in ticks (depth in brackets): the left
-  bulge on edge 2, 7.7 (4.0); the right bend, 5.4 (3.5); the top-left loop's outer wall, 5.0
-  (2.0); **the left bulge on edge 7 — the beginning of edge 7 — 4.8 (4.75)**; the upper bulge,
-  4.3 (3.5); the bottom-right S-bend, 4.3 (3.25); the bend into the upper bulge, 2.5 (3.5). The
-  deepest places are the two bulges, where the corridor widens; every bend's outer wall is a
-  2–3.5-tick longcut around them; the straights are the fast band. `[3, 5, 6]` is the inverse
-  loop and gives the same seven with the net turns mirrored.
-- **The scoring routes: eleven and eight.** The biggest on both is **the scoring ring, edge 8:
-  loss 10–11, depth 5.25–5.5, ~10,000 states** — its outer side. The fast lap goes round the
-  ring and scores (145 scoring states on the fast band; the cheapest scoring state is on the
-  stable lap), and **the ring has no preferred direction**: from the states entered from 5 to
-  those leaving for 4 the fewest ticks are 65 unrestricted, 65 confined to one sense of turn
-  about the ring's centre and 65 to the other. The fast band's 185 ring states fall in one sense
-  on one route and the other on the other, a tie broken by the return half's phase. Then the top
-  loop's outer wall (edge 1 / edge 0, 9–10 ticks), the bend after the top straight, the right
-  bend before the line, and the left loop's bends.
+- **`[2, 7, 4]`: seven longcuts, one per bend.** By loss in ticks (depth in brackets), loss the
+  forced-path formula of 2026-09-16: the left bulge on edge 2, 8.25 (4.0); **the left bulge on
+  edge 7 — the beginning of edge 7 — 5.75 (4.75)**; the upper bulge, 5.75 (3.5); the right bend,
+  5.75 (3.5); the bottom-right S-bend, 5.75 (3.25); the top-left loop's outer wall, 5.0 (2.0);
+  the bend into the upper bulge, 4.0 (3.5). The deepest places are the two bulges, where the
+  corridor widens; every bend's outer wall is a 2–3.5-tick longcut around them; the straights are
+  the fast band. `[3, 5, 6]` is the inverse loop and gives the same seven with the net turns
+  mirrored. Three specks of one to four states at exactly a tick also pass the threshold now
+  that loss can never be under depth; they need a size floor, not yet chosen.
+- **The scoring routes: ten and eight.** The biggest by depth on both is **the scoring ring,
+  edge 8: depth 5.25–5.5, loss 13.75–14.25, 10,400–12,900 states** — its outer side. The fast
+  lap goes round the ring and scores (142–145 scoring states on the fast band; the cheapest
+  scoring state is on the stable lap), and **the ring has no preferred direction**: from the
+  states entered from 5 to those leaving for 4 the fewest ticks are 65 unrestricted, 65 confined
+  to one sense of turn about the ring's centre and 65 to the other. The fast band's 185 ring
+  states fall in one sense on one route and the other on the other, a tie broken by the return
+  half's phase. The biggest by loss is **the top loop's outer wall on edge 1, 19.0 ticks from
+  3.25 deep** — 11,577 states and a forced path of 153 ticks through them, the case the
+  forced-path formula exists for: shallow everywhere, long enough to cost six times its depth.
+  Then the same wall on edge 0 (9.25 from 3.25), the bend after the top straight, the right bend
+  before the line, and the left loop's bends.
 
 **plait `46f880d41d2c1e4e`, three cycles: `[0,2,1,5]` scoring, `[0,3]` scoring, `[1,4]`
 stable.** Line on edge 0's vertical straight (`y = 263`, `x ∈ [233, 255]`, 335 px). Clocks
 `1 ± 0.045 / 0.065 / 0.065`.
 
 - **`[0, 3]` and `[1, 4]`, lap 781.50: fourteen longcuts.** **The bulb's far side: depth 11.5,
-  loss 11.0, 12,099 states of edge 3** — one side of the bulb, as predicted; the bulb's entry,
-  7.1 (2.5); then **twelve bends of the plait, each depth 2.5, in identical sizes** (2,664 /
-  2,664 / 2,664; 1,103 / 1,103; …), the repeated geometry of the braid giving repeated longcuts.
-- **`[0, 2, 1, 5]`, lap 1,643.00: twenty-six**, in mirrored pairs — the figure-eight runs each
-  corridor both ways, so each bend is a longcut twice, once per direction (1,459 / 1,459; 1,280 /
-  1,280; 1,133 / 1,133; …, net turns `±37`) — and the bulb's region on edge 2 at 10.5.
+  loss 12.0, 12,091 states of edge 3** — one side of the bulb, as predicted; under the `F`-range
+  merge its entry lane on edge 0 is a second basin at the same pixel, 9.5 (9.0), 1,148 states;
+  then **twelve bends of the plait, each depth 2.5, in identical sizes** (2,664 / 2,664 / 2,664
+  at loss 6.0; 1,103 / 1,103 at 2.5; …), the repeated geometry of the braid giving repeated
+  longcuts.
+- **`[0, 2, 1, 5]`, lap 1,643.00: ten of any size**, in mirrored pairs — the figure-eight runs
+  each corridor both ways, so each bend is a longcut twice, once per direction (1,459 / 1,459 at
+  5.75; 753 / 755; 811 / 807; 624 / 620; net turns `±`) — and the bulb's region on edge 2, 7.0
+  (3.0) and 6.75 (2.75). A further 105 specks of a few states at a tick pass the threshold, as
+  above. Edge 2, the crossing, is self-inverse, and no pass across it stays in one sense of turn
+  about its centroid (130 ticks unrestricted, none confined): the sense split is a ring's
+  question, not a crossing's.
 
 **Made programmatic.** The routes; the line; the stable lap; the anchors and the clock; the
-excess field; the basins with their depth, loss, loss path, entries, exits, tau range, the fast
+excess field; the basins with their depth, loss, loss path, entries, exits, `F/4` range, the fast
 band beside them and their net turn; the ring pass by sense; the two renders
 (`render/phase-path/<map>-<hash>-longcuts<route>.png`, the excess per pixel scaled to the
 route's deepest with basin ids at their deepest states, and `-slices.png`, the excess over
@@ -1309,14 +1324,25 @@ length of the shortest cycle through `s` in the route's state graph; the line is
 that gets it for every state in eight searches instead of one per state, and `4T` is only where
 zero is — drop it and every basin, depth and prominence is unchanged. The strongest signal is
 simply where the shortest loop forced through a state exceeds the shortest loop at all. The clock
-enters the code in two dispensable places: the loss path's lag weights, where depth is the better
-number anyway, and the tau ranges of the projection merge, where `F` would serve.
+entered the code in two dispensable places, both removed the same day: the loss path's lag
+weights and the tau ranges of the projection merge. **Loss is now the user's formula for a forced
+path**: the shortest loop containing a path from `a` to `b` is `F(a) + length + R(b)` (in the
+code's convention, `F` from the line to a state and `R` from a state to the line), so the most a
+path through a basin can lose is the longest path in it by that measure, less the stable lap — a
+plain longest-path search, and never below the depth, since a path of one state at the deepest
+point is itself a forced path. The merge overlaps ranges of `F/4`. `longcuts` no longer solves the
+clock at all. One effect: plait's bulb, which the smoothed clock had joined, splits into the
+entry lane and the far side, two basins at one pixel with `F` ranges that overlap by a quarter.
+
+**The stable lap and the cut, the user's remark.** `min L` is wanted because it is invariant to
+the cut; but there is provably a cut at which the minimum lap *is* the minimum stable lap, where
+the notion of a faster one-off lap disappears — visible on the `P*` map as the place where the
+ordering of the four bands collapses and inverts. Computing such a cut is possible and out of
+scope.
 
 **Still chosen by a person.** Three thresholds — a tick to be behind, a tick of prominence, half
-overlap to be the same place — and the greedy order of merging; **loss** as the longest lag path,
-which weaves and can exceed the depth (17.8 ticks over a 173-tick path on `[1,5,8,4,2]`, one
-merged stretch along edge 1), where depth is the cleaner number for a decision; and whether a
-longcut is the basin or the path through it. What this replaces: the placement fitness of §2a,
+overlap to be the same place — and the greedy order of merging; and whether a longcut is the
+basin or the path through it. What this replaces: the placement fitness of §2a,
 whose three defects are moot — there is no footprint to divide by, no starting tau to game, and
 the basin is phase-complete by construction because `E` is a property of the state.
 

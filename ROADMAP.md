@@ -1,12 +1,14 @@
 # What is being built now
 
-**Status:** 2026-09-15. `README.md` has the inventory; this file has the work in front of us
+**Status:** 2026-09-16. `README.md` has the inventory; this file has the work in front of us
 and the specifications for it. **§0i is the live thread — read that first**, and within it the
-entries of 2026-09-15: the handoff of 2026-09-14 is closed — phase-complete paths are defined and
-built, a route clock is anchored on the shortest lap, and **longcuts are basins of that clock's
-excess field**, found on every route of both maps (`EDGES.md` §5). The placement fitness of
-2026-09-13 and its three defects are superseded. Next is a decision zone from a longcut. §0h is closed; its
-handoff is kept as the record of what the benchmark measured and why that search was abandoned.
+entries of 2026-09-15 and 16: the handoff of 2026-09-14 is closed — phase-complete paths are
+defined and built, a route clock is anchored on the shortest lap, and **longcuts are basins of
+that clock's excess field**, found on every route of both maps, their loss the longest forced
+path and clock-free (`EDGES.md` §5). The placement fitness of 2026-09-13 is superseded and its
+code removed, with the session's other superseded experiments (the cleanup of 2026-09-16). Next
+is a decision zone from a longcut. §0h is closed; its handoff is kept as the record of what the
+benchmark measured and why that search was abandoned.
 
 ---
 
@@ -2052,7 +2054,7 @@ here is a detour, not a lockout.
 after `P` project to one region with no holes for every `N`, saturating far gates `A` and `Z`. It
 failed on the lattice's comb of side-feeders at small `N` and on the phase speckle of an
 insertion-built gate at the saturating `N` — neither a property of `P` — and was passed back;
-the funnel machinery stays behind a flag as the record.
+the funnel machinery was kept behind a flag as the record until the cleanup of 2026-09-16 below.
 
 **Then, the same day: a new clock for a route, first step.** The user asked for the shortest
 phase-complete path round a whole route, and whether it is an integer number of ticks, whether
@@ -2133,11 +2135,43 @@ simple loops have a **half-integer stable lap, 781.50** — the two-lap period a
 start — and 93,456 states sit on it to the quarter-tick. `EDGES.md` §5 "Longcuts from the
 shortest-route clock"; the §2a placement fitness is superseded.
 
-**Next.** A decision zone from a longcut basin — the psyboid's "take the long way round this
-bend" — and its shortcut twin; whether a longcut is the basin or the loss path; whether this clock
-replaces `RouteClock` / `EdgeMetric` for routes, and with what weighting; whether a self-inverse
-edge's other direction belongs in a route's corridor.
+**Then the loss of a forced path, and the whole analysis clock-free — 2026-09-16.** The user's
+reading of the result: the signal is where the long and short paths through a region differ most,
+`L − min L`, and no clock enters it — the stable lap is only the constant that makes the fast
+band read zero, and the line only a device for measuring `L`. Then the correction: `L − min L`
+is the cost of forcing a boid through one *state*; the cost of forcing it along a *path* is
+`F(start) + length + R(end) − 4T` (the user wrote `F` and `R` the other way round; the code's
+convention is `F` from the line, `R` to it). `PhasePath.longcuts` now reports a basin's loss as
+the longest forced path within it (`longestForced`, a DP over the basin's transitions), which is
+always at least the basin's depth and reads 8.25 against 4.0 on the left bulge, 12.0 against 11.5
+on plait's bulb. Also from the user, recorded and out of scope: the stable lap gives `min L`
+invariant to the cut, and there is provably a cut at which the minimum lap *is* the minimum
+stable lap — visible on the `P*` render where the band ordering collapses.
 
+**Next.** A decision zone from a longcut basin — the psyboid's "take the long way round this
+bend" — and its shortcut twin; whether a longcut is the basin or its loss path; the thresholds
+(`PROMINENCE`, `OVERLAP`, `LONGCUT_THRESHOLD`) are chosen by eye and plait's bulb splits into two
+basins at one pixel under the tau-range merge; whether this clock replaces `RouteClock` /
+`EdgeMetric` for routes, and with what weighting; whether a self-inverse edge's other direction
+belongs in a route's corridor.
+
+
+### The cleanup, 2026-09-16 — the experiments the shortest-route clock superseded
+
+The session's constructions each replaced the last, and the losers were still in the tree. All
+recoverable at `f162f76`.
+
+| removed | superseded by |
+| --- | --- |
+| the first definition's funnels (`GateSet` far gates `A`/`Z`, the `N`-step region check behind a flag) | the second definition, `PhasePath.run`: cover, navigation within `P`, 8-connected projection. The failure is recorded in `EDGES.md` §2a |
+| `PhasePath.loop` and the geometric clock (coasting cycle plus closed strands; lane pixels labelled by coasting tick) | `shortestLoops`: the lane was fixed to the coast before any search, and the shortest lap is eighteen ticks under it |
+| `PhasePath.lap`, `lapFrom`, `columnStates`, `drawLaps` — the column search (fewest ticks to itself or 0–3 px ahead) | `shortestLoops` and `fewestTicksForLaps`: the same 260, from a line instead of a column, and the whole set `P*` rather than one chain |
+| `coverSaturated` (one strand per lane pixel) | `coverConnected`: the two covers gave identical join fields on every stretch tried |
+| `SubpathSearch` and `SimTest.subpathSearch` (the placement fitness of 2026-09-13, three defects) | longcuts as basins of the excess field, `PhasePath.longcuts`; `EDGES.md` §2a keeps the record |
+
+**Left alone:** `RouteClock` and `EdgeMetric`, which the anchored clock has not yet been shown
+to replace; `DecisionZone` and `DecisionOverride`, which the next step builds on; `TauSlices`, new
+this session and the render every clock figure was read through.
 
 ### The cleanup, 2026-09-13 — one version of each thing, with the reason it won
 

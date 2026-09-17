@@ -24,8 +24,8 @@ import java.util.Arrays;
  * crossing it, and no edge boundaries at all. The residuals are identical, so it is the same
  * least squares reparametrised, not a different fit. {@link Fit#tau} is {@code T}.
  * <p>
- * Built for {@code SimTest.routeClock}, which compares it with the map-wide clock, and for
- * {@link SubpathSearch}, which the user wants run on a route's own tau.
+ * Built for {@code SimTest.routeClock}, which compares it with the map-wide clock. The placement
+ * search that also read it was removed 2026-09-16, superseded by the longcuts of {@link PhasePath}.
  */
 public final class RouteClock {
     private RouteClock() {}

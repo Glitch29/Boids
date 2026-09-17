@@ -1,6 +1,6 @@
 # Boids — the psyboid solver
 
-**Status:** 2026-09-15. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
+**Status:** 2026-09-16. **Physics 3** — see `ROADMAP.md` §0a-§0i. **Three maps:** dabeone
 `609cffdb84be218c`, plait `46f880d41d2c1e4e` and dabnt `48b46d3d06e54c75`. **The psyboid search,
 its benchmark and every corpus were removed on 2026-09-08** and are being respecified as a search
 over decision points — `ROADMAP.md` §0i. Verified against dabeone ingest
@@ -75,12 +75,11 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | subpath decision zones | a route within an edge as a chain of `S_k`, threaded by forbidding the way round each: three paths on dabeone edge 4 at tau 36–56, **all sound**, and a psyboid told to take one lands on every `S_k` in order on **every traversal, alone and in a flock**, then takes either exit. Entrance saturation needs `S_1` ≥ ~32–36 ticks in | `DecisionZone.subpath`, `SimTest.subpaths`, `EDGES.md` §2a |
 | the clock on one route | refit on each of dabeone's three loops alone: totals agree with the map-wide clock to **0.2 ticks**, spans to 0.3, and the change in tick within any edge is a constant to within **0.7** — the 13-tick shifts in edge length are gauge. Read subpath lengths off the map-wide clock | `SimTest.routeClock`, `EDGES.md` §5 |
 | phase-complete paths | the user's definition — a cover of `S` navigable to both gates within itself, projection 8-connected — built as strands on three stretches of dabeone's stable route: **6–14 strands**, and the join time to the cover never changes by more than **1 tick** between neighbouring pixels at the same heading, where to the single-phase path it jumps by **7 or more** hundreds of times; a saturated cover with 2–3× the strands is identical | `PhasePath`, `EDGES.md` §2a |
-| the phase-complete loop | the coasting cycle of dabeone's stable route plus closed strands until the projection is 8-connected: **every strand a single lap of 277 or 278 ticks**, 12–14 after pruning, ~1,320 states on ~1,075 pixels; the coasting-sweep tau advances +0.5 to +1.5 per transition along every strand, mean exactly 1 or 278/277 | `PhasePath.loop`, `EDGES.md` §5 |
-| the shortest lap | measured a quarter tick at a time from every horizontal-step state of a column on edge 7's bottom straight: **260 ticks, an integer**, eighteen under the coasting cycle, hugging the inside wall; the fractional readings (259.25 from `x ≡ 2`) are a one-time gain, and **the loop clamps phase to `x ≡ 1 (mod 4)`** — never carrying a boid past it in 260 ticks and charging a full tick to get there | `PhasePath.lap`, `EDGES.md` §5 |
+| the shortest lap | measured a quarter tick at a time from a column on edge 7's bottom straight: **260 ticks, an integer**, eighteen under the coasting cycle, hugging the inside wall; the fractional readings (259.25 from `x ≡ 2`) are a one-time gain, and **the loop clamps phase to `x ≡ 1 (mod 4)`**. The column search was removed 2026-09-16; `PhasePath.fewestTicksForLaps` is its programmatic successor | `EDGES.md` §5 |
 | the set of all shortest loops | every route state on a loop of `N` or fewer quarter-ticks, at the least `N` whose projection loops round: **`N* = 260.00` ticks, 22,240 states over 5,842 pixels, the same set from every starting line**; `F/4` advances exactly one tick along 98.1% of its transitions and never more | `PhasePath.shortestLoops`, `EDGES.md` §5 |
 | the anchored route clock | the stable lap by four-lap closure — **1,040 / 4 = 260.00** from 161 of 382 cut landings — `F/4` on the 6,995 states of exactly that loop, least squares for the rest: **advance `1 ± 0.087` rms over 105,772 transitions**. The anchor set is not connected to the cut (2,510 of 6,995 reached in neither direction), the alert the user asked for | `PhasePath.clock`, `EDGES.md` §5 |
 | the three routes' clocks | with the line found programmatically: stable laps **260.00, 495.00, 495.00** against fitted laps 275.29, 528.45, 528.38; clocks `1 ± 0.087 / 0.064 / 0.073`; `S` connected to the cut on one route of three; the scoring ring's two directions are the slice sheets' collisions | `PhasePath.clock`, `PhasePath.findLine`, `EDGES.md` §5 |
-| longcuts | basins of the anchored clock's excess field, over every simple cycle of both maps: **the outer wall of every bend**, dabeone's left bulge at the beginning of edge 7 (4.75 deep), **plait's bulb** (11.5 deep, one side), twelve identical 2.5-tick bends round the plait; the scoring ring is a 10-tick longcut on its outer side with **no preferred sense** (65 ticks round either way); plait's simple loops have a **half-integer stable lap, 781.50** | `PhasePath.longcuts`, `PhasePath.routes`, `EDGES.md` §5 |
+| longcuts | basins of the anchored clock's excess field, over every simple cycle of both maps: **the outer wall of every bend**, dabeone's left bulge at the beginning of edge 7 (4.75 deep), **plait's bulb** (11.5 deep, one side), twelve identical 2.5-tick bends round the plait; the scoring ring is a 5.5-tick-deep longcut on its outer side, 14 ticks of loss along it, with **no preferred sense** (65 ticks round either way); **loss is clock-free**, the longest forced path in a basin, and a shallow wall can cost six times its depth (19 ticks from 3.25 on the top loop); plait's simple loops have a **half-integer stable lap, 781.50** | `PhasePath.longcuts`, `PhasePath.routes`, `EDGES.md` §5 |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -151,7 +150,7 @@ and `SimTest.census` still exercises it on plain seeds.
 
 ## Map of the code
 
-One package, `src/boids`, 62 files.
+One package, `src/boids`, 61 files.
 
 **Simulation** — `Params` (constants; never edited) · `Spawn` (where a flock starts; `TAU_UNIFORM`
 by default, and part of a corpus's address) · `MovementLogic` (the flocking rules and
@@ -205,11 +204,10 @@ flocking rules; `held` is an analysis primitive and not a plan kind) ·
 edge's exit decision, or a subpath along it, as gates — a region entered, prohibited transitions
 per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zones alone —
 **one step of lookahead is all of navigation** — stateless, label prefix `g`; the route pilot it
-replaced flew identically and was retired 2026-09-13) · `SubpathSearch` (where a subpath
-should run: grows paths by tau gained over footprint, and draws them; finding only) · `PhasePath` (the user's
-definition of a phase-complete path — a cover of `S` navigable to both gates within itself whose
-projection is 8-connected — built as strands and measured by the join field; run by hand —
-`EDGES.md` §2a) · `TauSlices` (a per-state
+replaced flew identically and was retired 2026-09-13) · `PhasePath` (phase-complete
+paths, the shortest loops of a route and their excess field, the route clock anchored on the stable
+lap, and longcuts as basins of the excess; four entry points, all run by hand — `EDGES.md` §2a and
+§5. `SubpathSearch`, the placement fitness it replaced, was removed 2026-09-16) · `TauSlices` (a per-state
 scalar drawn over `(x, y, d mod 16)`, sixteen slices tiled, the value modulo a period as hue;
 the user's visualiser for a clock's texture) · `RouteClock` (the clock refitted on one
 route alone, for `routeClock` and the search) · `CorpusPreset` (named recipes, so a
@@ -263,17 +261,11 @@ ways → 6 edges.
 | `zones` | the exit decision zone of every edge, checked, then flown alone and in the flock: gates crossed in pairs, laps |
 | `subpaths` | three subpaths on one edge — coasting, left-hugging, right-hugging — each built as a zone, checked, and flown taken and skipped, alone and in a flock; plus the `S_1` saturation sweep |
 | `routeClock` | the clock refitted on one route at a time against the map-wide one: lengths, spans, and the within-edge spread of the change in tick |
-| `subpathSearch` | the top `count` shortcuts and longcuts on each stable or scoring route's own clock, no margin, footprint over the route; two pictures, one per kind, coloured by route and labelled by rank |
 
-`ThreeBoidPhase.run`, `ThreeBoidSamples.run`, `ThreeBoidSamples.explain` and `PhasePath.run` are the
-other entry points and do not live in `SimTest`. `PhasePath.run` takes a route, an edge and four
-tick offsets along the coasting path for `a, b, y, z`, builds the connected and saturated covers
-and reports the join field to each beside `S` alone; a flag adds the first definition's funnels.
-`PhasePath.loop` takes a route, an edge and starting offsets, builds the phase-complete loop from
-each, prunes it, and reports every strand's ticks and laps and the geometric tau along it.
-`PhasePath.lap` takes a route, an edge and a column `x` on a straight, and reports from every
-horizontal-step state there the shortest lap to itself or 0–3 px ahead, the advances reachable at
-the first depth and three after, and the chain of laps from the landing state.
+`ThreeBoidPhase.run`, `ThreeBoidSamples.run`, `ThreeBoidSamples.explain` and `PhasePath`'s four are
+the other entry points and do not live in `SimTest`. `PhasePath.run` takes a route, an edge and
+four tick offsets along the coasting path for `a, b, y, z`, builds the phase-complete cover of the
+stretch between the middle two and reports the join field to it beside `S` alone.
 `PhasePath.shortestLoops` takes a route, an edge and a starting line `x₀`, computes `F`, `R` and
 `L` for every route state, grows `P_N` until its projection loops round, and reports the set and
 `F` as a clock on it. `PhasePath.clock` takes a route and a `Line` (null to find one) and builds the anchored route
@@ -341,8 +333,6 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `render/*-samples.png`, `-atlas.png` | `ThreeBoidSamples` | one replayed arrangement per region or clump, at envelope entry |
 | `render/prop<f><t>-*.png` | `SimTest.proposedPhysics` | one physics against another, end to end, per arc |
 | `render/phase-path/<map>-<hash>-e<edge>-{cover,join}.png` | `PhasePath.run` | the strands over the lane between the four gates; and the join field upstream of `B` for `S` alone, the connected cover and the saturated cover — shortest join, join at the coasting heading, and jaggedness. `-funnels.png` with the flag |
-| `render/phase-path/<map>-<hash>-loop<route>.png` | `PhasePath.loop` | the whole route with the coasting cycle white and each strand of the pruned loop in its own colour |
-| `render/phase-path/<map>-<hash>-lap<route>.png` | `PhasePath.lap` | the chain of shortest laps from the best column state, each lap in its own colour |
 | `render/phase-path/<map>-<hash>-loops<route>-x<line>.png` | `PhasePath.shortestLoops` | `P*` coloured by loop length, the shortest white, a quarter-tick warmer each; the line in blue |
 | `render/phase-path/<map>-<hash>-clock<route>-{tau,coast,spread}.png` | `PhasePath.clock` | the clock as hue round the lap, anchors brighter; the coasting cycle by its advance per tick with a strip chart; the successor spread per pixel |
 | `render/phase-path/<map>-<hash>-clock<route>-slices.png`, `-slices-fitted.png` | `TauSlices`, from `PhasePath.clock` | the clock's texture: `(x, y, d mod 16)` tiled four by four in reading order, tau mod 16 as hue, collisions at half saturation; the anchored clock and the map-wide fitted clock on the same route |

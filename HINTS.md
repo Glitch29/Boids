@@ -6,9 +6,10 @@ reasoning about which intermediate problems turned out to matter and which did n
 Not instructions. Closer to: *X is a way to compute Y; Y is worth having because of Z; Z is
 how you know you are winning.* Numbers are from `dabeone` and `plait` unless stated.
 
-**Status:** 2026-09-15, physics 3. Figures taken under physics 2 are marked as such. §3a added
+**Status:** 2026-09-16, physics 3. Figures taken under physics 2 are marked as such. §3a added
 2026-09-11: gates, edge insertion, and what a cut across a corridor has to be; braiding added to
-it 2026-09-12, phase-complete paths and the join field 2026-09-15. This file is
+it 2026-09-12, phase-complete paths and the join field 2026-09-15, longcuts as basins of the
+excess field and the clock-free loss of a forced path 2026-09-16. This file is
 also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
@@ -472,13 +473,18 @@ search over covers, and the clock comes with it.
 excess of a state — how far the shortest loop through it exceeds the stable lap — is the whole
 of what a longcut is: where it is positive a boid is behind, and it can be behind by that much.
 Cut the field into basins and merge what is one place seen at different phases (basins that touch
-in projection with tau ranges half-overlapping, greedily, best pair first — union-find chains
-bends together through the small basins at their junctions), and out come the outer wall of
+in projection with ranges of the distance from the line half-overlapping, greedily, best pair
+first — union-find chains bends together through the small basins at their junctions), and out come the outer wall of
 every bend, deepest where the corridor widens; on plait the far side of the bulb at eleven and a
 half ticks, and the twelve identical bends of the braid at two and a half each, in identical
 sizes. A ring with its entrance and exit at one junction is the same length either way round;
 the field says so directly, sixty-five ticks in each sense, where a sliver of fast-band states
-would have said whichever way the return corridor's phase happened to fall. And a route's stable
+would have said whichever way the return corridor's phase happened to fall. None of it needs
+the clock: the excess is the shortest cycle through a state less a constant, and the cost of
+forcing a boid along a path is the shortest cycle containing the path — distance from the line
+to its start, its length, distance from its end back — less the same constant. A long shallow
+basin can cost far more than its depth this way: the top loop's wall on dabeone's scoring
+route is three and a quarter ticks deep and a forced path through it loses nineteen. And a route's stable
 lap can be a half-integer — plait's simple loops close in 3,126 ticks over four laps — so the
 anchors are the states within half a tick of it, which on plait is exact for sixty percent of
 the corridor.

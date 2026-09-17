@@ -11,6 +11,57 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-16 — the loss of a forced path, clock-free; the merge on `F`; the cleanup of the session's superseded experiments
+
+**The user's reading, then correction.** The strongest longcut signal is where the long and
+short paths through a region differ most, and it needs no clock — `L − min L`, the stable lap only
+a constant. Then: that is the cost of forcing a boid through one *state*; the cost of forcing it
+along a *path* is `F(start) + length + R(end) − 4T` (written `F`/`R` the other way round by the
+user; the code's `F` is from the line, `R` to it). And, recorded as out of scope: `min L` is
+wanted because it is invariant to the cut, and there is provably a cut at which the minimum lap
+*is* the minimum stable lap, visible on the `P*` render where the band ordering collapses.
+
+**Changed.** `PhasePath.longcuts`: loss is the longest forced path within a basin
+(`longestForced`, a DP over the basin's transitions with `R` at the leaves) less `4T`, never under
+the depth; the projection merge overlaps ranges of `F/4` instead of the fitted clock's tau;
+`longcuts` no longer solves the clock (`build(…, solve = false)`). `Region`'s `tauLo`/`tauHi`
+are now the `F/4` range.
+
+**Numbers, the same ingests.** dabeone `609cffdb84be218c` `[2,7,4]` (260): seven — left bulge
+on edge 2 **8.25** (depth 4.0, was 7.7 by the lag path); left bulge on edge 7 5.75 (4.75); upper
+bulge, right bend 5.75 (3.5); bottom-right S 5.75 (3.25); top-left wall 5.0 (2.0); bend into the
+upper bulge 4.0 (3.5) — plus three specks of 1–4 states at 1.00–1.25. Scoring routes (495): the
+ring 13.75 / 14.25 (5.25 / 5.5, 10,409 / 12,922 states); **the top loop's wall on edge 1, 19.0
+from 3.25 deep, 11,577 states, forced path 153 ticks**; ring pass 65 / 65 / 65 again. plait
+`46f880d41d2c1e4e` `[0,3]` / `[1,4]` (781.50): the bulb's far side **12.0 (11.5)**, 12,091 /
+12,099 states; on `[0,3]` the entry lane is now a second basin at the same pixel, 9.5 (9.0),
+1,148 states; twelve bends at 2.5 deep, three at loss 6.0 (2,664 each), two at 2.5 (1,103).
+`[0,2,1,5]` (1,643): ten of size in mirrored pairs (bulb region 7.0 / 6.75; 1,459 / 1,459 at
+5.75) and **105 specks** — one-tick states off the fast band, which the threshold admits now that
+loss is never under depth. Plait's crossing (edge 2, self-inverse): 130 ticks across, no pass
+confined to one sense.
+
+**The cleanup.** Removed, all at `f162f76`: the first definition's funnels and their flag;
+`PhasePath.loop` and the geometric clock; `PhasePath.lap` / `lapFrom` / `columnStates` /
+`drawLaps`; `coverSaturated`; `SubpathSearch` and `SimTest.subpathSearch` (`git rm`, under the
+cleanup request); `RouteClock`'s reference to it. `PhasePath` 3,260 → 2,301 lines; the class
+comment now states the four entry points (`run`, `shortestLoops`, `clock`, `longcuts`).
+`SimTest.main` runs `longcuts` over `routes` on both maps. Compiles; the run above is after it.
+
+**Docs.** `EDGES.md` §5 (route bullets re-figured; "It needs no clock"; the stable lap and the
+cut), §2a (funnel and `SubpathSearch` removal notes); `ROADMAP.md` §0i (the loss paragraph, Next,
+"The cleanup, 2026-09-16"); `HINTS.md` §3a; `GLOSSARY.md` (retired: footprint, phase-complete
+loop, geometric clock, shortest lap driver; longcut/basin wording); `README.md` (class map, entry
+points, headline row). All dated 2026-09-16.
+
+**Open.** A size floor for basins, so that specks do not pass on loss alone (three on dabeone's
+stable loop, 105 on plait's figure-eight). A decision zone from a longcut basin and its shortcut
+twin. Whether a longcut is the basin or its loss path. Whether the anchored clock replaces
+`RouteClock` / `EdgeMetric`. Whether a self-inverse edge's other direction belongs in a route's
+corridor. The cut at which the minimum lap is the minimum stable lap.
+
+---
+
 ## 2026-09-15 — the second definition, built as strands and measured by the join field; the loop and the geometric clock; the shortest lap; the set of all shortest loops; the anchored route clock; longcuts as basins of its excess field
 
 **The user's second definition**, after the two findings below: a cover `P` of `S` whose every

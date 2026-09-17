@@ -4,7 +4,7 @@ Every term in this project that carries a precise meaning, and the name it goes 
 code. Where a word has been used two ways, the collision is called out and one reading is
 declared canonical.
 
-**Status:** 2026-09-15, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
+**Status:** 2026-09-16, physics 3, against dabeone ingest `609cffdb84be218c`. The table at the end lists
 every named analysis and the class that owns it; check there before building anything.
 
 ---
@@ -415,7 +415,8 @@ does not stay in `E<S_k` or enter `S_k`. `DecisionZone.subpath`; options `SKIP` 
 **footprint** (of a subpath) — `|⋃ᵢ (E⊥Sᵢ ∪ Sᵢ)|`: the states of the edge level with the path
 rather than committed to it, one slab per step, some fifteen to twenty ticks of corridor each.
 The denominator of the subpath **fitness** `F = ±(tau gained − N) / footprint`, whose fixed cost
-is what makes a greedily grown path settle at a finite length. `SubpathSearch`; `EDGES.md` §2a.
+is what makes a greedily grown path settle at a finite length. **Retired 2026-09-16 with
+`SubpathSearch`** (git before `f162f76`), superseded by *longcut* below; `EDGES.md` §2a.
 
 **phase-complete path** — the user's definition, 2026-09-15: for a set `S` between gates `B` and
 `Y` on a route, a cover `P` of `S` whose every point backward-navigates to `B` and
@@ -435,8 +436,9 @@ passes through, less dead pixels. What the other phases of the step lattice stan
 **strand** — one `B → Y` path within `[B, Y]`, the cheapest through a given lane pixel with a
 state costing the square of its pixel's distance from the lane. The **connected** cover is `S`
 plus strands until the projection is 8-connected, each through the first uncovered sweep pixel
-where `S` changes component — 6 to 14 on dabeone; the **saturated** cover is one per lane pixel
-regardless, and adds nothing the join field can see. `PhasePath.coverConnected`, `coverSaturated`.
+where `S` changes component — 6 to 14 on dabeone. A saturated cover, one strand per lane pixel
+regardless, added nothing the join field could see and was removed 2026-09-16.
+`PhasePath.coverConnected`.
 
 **join field** — from every state before `Y`, the ticks to its first state of `P`; `-1` where `P`
 cannot be reached. Read over the states upstream of `B` as the count locked out and the histogram
@@ -450,17 +452,19 @@ states with the cut crossing allowed (a state costing `1 + 64·dist²`, so a str
 only where its phase cannot pass), until the projection is 8-connected, then pruned to what
 connectivity still needs. No gates; the cut counts laps. On dabeone's stable loop **every strand
 is a single lap of 277 or 278 ticks**, 12–14 of them after pruning, the set but not the structure
-depending on the start. `PhasePath.loop`; `EDGES.md` §5.
+depending on the start. **Superseded and removed 2026-09-16** — the cover was of a coasting cycle
+chosen arbitrarily; `EDGES.md` §5 keeps the measurement.
 
 **geometric clock / geometric tau** — every lane pixel labelled with the coasting tick at which
 the coast sweeps it, `k + j/n` for the `j`th of the `n` samples of step `k`; every other pixel its
 nearest lane pixel's; a state's tau is its pixel's. Along every strand of the loop it advances
 between +0.5 and +1.5 a transition, mean exactly 1 on a 278 strand and 278/277 on a 277. Decisive
-on the loop; keyed on the pixel off it, which is the shortcut question. `PhasePath.geometricTau`.
+on the loop; keyed on the pixel off it. **Removed 2026-09-16** with the loop it labelled.
 
 **shortest lap** — of a route, measured where a pixel is a quarter tick: from a state on a
 horizontal straight, the fewest ticks to itself or 0–3 px ahead on the same row and heading, the
-furthest ahead on ties, read as `N − k/4`. The user's construction, 2026-09-15. `PhasePath.lap`.
+furthest ahead on ties, read as `N − k/4`. The user's construction, 2026-09-15; the column search
+was removed 2026-09-16, the *stable lap* by four-lap closure being its programmatic successor.
 On dabeone's stable loop **260 ticks, an integer**, eighteen under the coasting cycle, from every
 row and heading of the column; the fractional readings are a one-time gain. `EDGES.md` §5.
 
@@ -519,10 +523,12 @@ constant offset; the basins do not depend on any of the three clocks.
 
 **longcut** (2026-09-15, canonical) — **a basin of the excess field**: every state at least a
 tick behind, assigned to a peak by watershed over transitions, peaks less than a tick proud
-merged into a higher neighbour, then basins that touch in projection with tau ranges overlapping
-by half the shorter merged greedily best pair first. Its **depth** is the largest excess in it;
-its **loss** the longest lag path through it under the anchored clock; its **shortcut** the fast
-band over the same tau range. `PhasePath.longcuts`, `Region`; `EDGES.md` §5 "Longcuts from the
+merged into a higher neighbour, then basins that touch in projection with ranges of `F` (the
+quarter-tick distance from the line) overlapping by half the shorter merged greedily best pair
+first. Its **depth** is the largest excess in it;
+its **loss** the most a forced path through it can lose — `F(start) + length + R(end)` less the
+stable lap, the user's formula of 2026-09-16, clock-free; its **shortcut** the fast band over the
+same range of `F`. `PhasePath.longcuts`, `Region`; `EDGES.md` §5 "Longcuts from the
 shortest-route clock". Supersedes the fitness-search reading of §2a. On dabeone's stable loop
 seven — the outer wall of every bend, the bulges deepest; on plait's simple loops fourteen — the
 bulb's far side at 11.5 ticks and twelve identical bends at 2.5.
@@ -549,7 +555,7 @@ anchored and the fitted clock of dabeone's stable loop from `PhasePath.clock`.
 
 **funnel** — for a path `P` and a segment `[A, Z]`, the sets exactly `N` steps before (or after)
 `P`, for every `N` until they leave the segment; the **cumulative** funnel is within `N` steps.
-`PhasePath.funnel`, behind a flag. The first definition's test: the exact funnel has a **comb** at
+The first definition's test, its code removed 2026-09-16 (git before `f162f76`): the exact funnel has a **comb** at
 small `N` — side-feeders at discrete pixels — and meets the **speckle** of an insertion-built gate
 at the saturating `N`.
 
@@ -885,14 +891,11 @@ anything not listed.
 | exit decision zones | `DecisionZone.exits`, flown by `DecisionOverride`, checked by `SimTest.zones` | in memory; printed |
 | subpath decision zones | `DecisionZone.subpath`, flown by `DecisionOverride`, checked by `SimTest.subpaths` | in memory; printed |
 | the clock on one route | `SimTest.routeClock` — refit on a loop alone, compared three ways | printed |
-| subpath search | `SubpathSearch`, driven by `SimTest.subpathSearch` — seeds from the best six-step runs, grown by `F` = tau gained over footprint, per route on its own clock | `render/subpaths/<map>-<hash>-{shortcuts,longcuts}.png` |
 | phase-complete path | `PhasePath`, run by hand — the connected and saturated strand covers over the lane between four insertion-built gates, and the join field to each against `S` alone; the first definition's funnels behind a flag | `render/phase-path/<map>-<hash>-e<edge>-{cover,join}.png`; printed |
-| phase-complete loop, geometric clock | `PhasePath.loop`, run by hand — the coasting cycle plus closed strands round a whole route, pruned, from several starts; the coasting-sweep tau along each strand | `render/phase-path/<map>-<hash>-loop<route>.png`; printed |
-| shortest lap | `PhasePath.lap`, run by hand — breadth-first round the route from every horizontal-step state of a column on a straight, to itself or 0–3 px ahead; the reachable advances at the first depth and three after; the chain from the landing state | `render/phase-path/<map>-<hash>-lap<route>.png`; printed |
 | the set of all shortest loops | `PhasePath.shortestLoops`, run by hand — `F`, `R` and `L` from a starting line by eight breadth-first searches; `P_N` for `N` ascending until its projection loops round; `F` as a clock on it | `render/phase-path/<map>-<hash>-loops<route>-x<line>.png`; printed |
 | the anchored route clock | `PhasePath.clock`, run by hand — the stable lap by four-lap closure, `F/4` on the states of exactly that loop, least squares for the rest; the advance along the fastest loop and the coasting cycle; the successor spread | `render/phase-path/<map>-<hash>-clock<route>-{tau,coast,spread}.png`; printed |
 | slice sheet | `TauSlices.draw` — any per-state scalar over `(x, y, d mod 16)`, tiled, modulo a period as hue | `render/phase-path/…-slices.png` |
-| longcuts from the clock | `PhasePath.longcuts`, over `PhasePath.routes` — the excess field's basins with depth, loss, loss path, entries, exits, tau range and the fast band beside; the ring pass by sense | `render/phase-path/<map>-<hash>-longcuts<route>.png`, `-slices.png`; printed |
+| longcuts from the clock | `PhasePath.longcuts`, over `PhasePath.routes` — the excess field's basins with depth, loss, loss path, entries, exits, `F/4` range and the fast band beside; the ring pass by sense | `render/phase-path/<map>-<hash>-longcuts<route>.png`, `-slices.png`; printed |
 | the clock on one route (fit) | `RouteClock.of` — the corridor and the refit; `Fit.tau` is `T`, one continuous coordinate round the loop | in memory |
 | per-edge navigation | `EdgeNavigation` | in `SolverFacts` |
 | the clock | `EdgeMetric` / `EdgeMetricStore` | `<ingest>/metric/` |

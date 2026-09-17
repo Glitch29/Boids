@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-371 prompts across 13 sessions.
+389 prompts across 15 sessions.
 
 ---
 
@@ -10681,3 +10681,265 @@ I'm also thinking that converting a path to a phase-complete path needs to be ad
 This thread is just about out of context, so I'm not going to try to do any more here. Let's prep for the next session.
 
 Once you've given a handoff note to the next thread, I'll take any comments.
+
+---
+
+## Session 14 - 2026-09-14
+
+*Log `a1881169-a56a-4bdb-9eec-8588221610b8`, 9 prompts.*
+
+### 1
+
+Wake up. Take a turn to explore the project.
+
+### 2
+
+I don't know anything about the current construction other than a sentence that was related to me. It was built off prompt (not that that's bad), is a stop-gap, and is going to be completely discarded. So the current implementation doesn't much matter.
+
+I'm going to take a swing at a non-constructive definition for a phase-complete path. See if you can convert it into a construction. Pass back early if you find a defect with the definition that requires a major change, or if you start to stall out.
+
+For a set of states S between gate B and gate Y on route R, a phase-complete path P is a cover of S that obeys the following:
+
+* Every point in P can backwards-navigate to B while remaining in P.
+* Every point in P can forwards-navigate to Y while remaining in P.
+* For some gate A and Z on R:
+   * The set of Nth-successors of P within AZ projected to the (x,y) plane has a single exterior border with no holes.
+      * For some N, A is fully saturated.
+   * The set of Nth-predecessors of P within AZ projected to the (x,y) plane has a single exterior border with no holes.
+      * For some N, Z is fully saturated.
+
+
+Note: A good setup to test this is to take a route R, and choose states A, B, Y, Z, that exist along some path. Cut the route far away from those states (using the existing function for route cutting and mending - I think it's named as "orbit" something rather than "route" something and can be renamed. Orbits are just a subset of routes and the operation doesn't care about the distinction.) and then use phantom edge insertion to create gates around A, B, Y, Z. Let S be the states in some path from B to Y.
+
+### 3
+
+[Image: original 15748x1134, displayed at 2000x144. Multiply coordinates by 7.87 to map to original image.]
+
+### 4
+
+[Image: original 3618x3852, displayed at 1879x2000. Multiply coordinates by 1.93 to map to original image.]
+
+### 5
+
+The setup you're testing with looks good. These are good findings. I can see two clear issues with my specification as a result.
+
+This is my next attempt:
+
+For a set of states S between gate B and gate Y on route R, a phase-complete path P is a cover of S that obeys the following:
+
+* Every point in P can backwards-navigate to B while remaining in P.
+* Every point in P can forwards-navigate to Y while remaining in P.
+* The projection of P to (x,y) is diagonally connected.
+
+
+I didn't think I could use this specification at first because it relies on an assumption that that the Euclidean distance between step(d) and step(d+1) is at most 1. I was worried that it could be sqrt(2), but it looks like that's not the case.
+
+I suppose I never explicitly said what the definition of phase-complete is. But in practical terms it means "The shortest way to navigate to a phase-complete path from somewhere off that path follows roughly the same trajectory in the model's discrete physics as it would under continuous physics". In other words, there's no need to take weird paths toward P due to P being undersaturated in phase offsets. Nor is it possible to be completely locked out from reaching P due to an undersaturation in phase offsets in part of a route with no phase bleed. Note: This is meant to be a philosophical definition. Building an actual continuous physics model to compare against is not practical.
+
+### 6
+
+We don't need gate A or Z to check for saturation in with the new definition.
+
+Next I'd like to create a new clock for a route. The first step is constructing the shortest possible phase-complete path around an entire route.
+
+I'm interested to see whether the shortest route is an integer number of ticks, and if not, whether multi-lap paths have integer ticks. I'm also interested to see whether the starting offset changes the total path length.
+
+I'm also interested in knowing the states/tick, ticks/pixel, and states/pixel.
+
+Depending on how simple this structure is, I'm hoping we can easily label each state with a tau value. But not all the possible answers to the previous questions lead to a decisive way to do so.
+
+### 7
+
+So I'm looking for the shortest possible path that is phase complete. What you've produced is a phase complete path of some S that you chose arbitrarily. That selection of S massively constrained your ability to make the phase complete path short.
+
+Really what you should be doing is finding the minimal number of ticks it takes for a state S to get to itself or somewhere that's a fractional tick in front of it. With ties being broken by the furthest spot that can be gotten to in the same number of ticks. It would be best to do this partial-tick measurement in a region expected to have a long period of purely horizontal or vertical movement.
+
+In practice, I think this means starting from any position on the same x value on the bottom straight area of edge 7, and finding the shortest path to [itself plus between 0 and 3 x value, inclusive].
+
+### 8
+
+Okay, I think the cleanest way to measure the shortest length of a loop that goes through any given state. Do this by measuring the number of ticks it takes to get to each state from the starting line in either direction of travel, measured in quarter-ticks. Each tick is 4 quarter-ticks, and the starting point for each direction contributes 0 to 3 quarter-ticks.
+
+Once you have that, you can measure the connectivity of all states that are part of loops of length N or less. The lowest value of N for which there's an 8-connected loop in the (x,y) projection is the set of all the shortest phase-complete loops.
+
+For the purpose of this project we're not trying to find the smallest phase-complete path, just the shortest. So the entire set of those states is the answer.
+
+### 9
+
+The purpose of this analysis was to find a good anchor for the route's clock.
+
+While it was possible to complete a lap in 259.25 ticks, it looks like the result of such a lap always ends up with the boid in a 260-tick band. So the best stable route length is 260.00 ticks.
+
+I'm sufficiently convinced of this from the data. But we should get a way to programmatically determine this going forward. And I think the way to do that is to find fewest number of ticks required to complete 4 laps, enforcing that the start and end state be the same.
+
+This gives us the stable lap length. I'm asserting that it's guaranteed that the set of states S with exactly that many quarter-ticks will be navigationally-connected to the cut in at least one of two directions. Alert me if that turns out to be wrong. With that, all of S can be labeled with a tau value with a BFS search from the cut.
+
+These states with tau values can then serve as anchors for a clock on the route.
+
+If you're able to generate that clock without running into problems along the way, I'd like to know a couple features about the results:
+
+---
+
+## Session 15 - 2026-09-15
+
+*Log `36e78a1a-5496-447f-80fe-06d7640d337a`, 9 prompts.*
+
+### 1
+
+The purpose of this analysis was to find a good anchor for the route's clock.
+
+While it was possible to complete a lap in 259.25 ticks, it looks like the result of such a lap always ends up with the boid in a 260-tick band. So the best stable route length is 260.00 ticks.
+
+I'm sufficiently convinced of this from the data. But we should get a way to programmatically determine this going forward. And I think the way to do that is to find fewest number of ticks required to complete 4 laps, enforcing that the start and end state be the same.
+
+This gives us the stable lap length. I'm asserting that it's guaranteed that the set of states S with exactly that many quarter-ticks will be navigationally-connected to the cut in at least one of two directions. Alert me if that turns out to be wrong. With that, all of S can be labeled with a tau value with a BFS search from the cut.
+
+These states with tau values can then serve as anchors for a clock on the route.
+
+If you're able to generate that clock without running into problems along the way, I'd like to know a couple features about the results:
+
+* Whether tau/tick is steady along the 259.25 tick route? Does the .75 get absorbed evenly? Do any ticks have a tau > 1?
+* A depiction of the tau/tick rate of the coasting path.
+* A heatmap of the average sum of squares difference between the tau of a state's successors.
+
+### 2
+
+I'd like to be able to directly visualize the texture of the tau calculations, and I've never been completely satisfied by my ability to tell what's going on via specific metrics. I think it's time to build a visualizer for that.
+
+Since (x,y,d)-space is pretty sparse, I think the first thing we can do is compress it to (x,y,d%16)-space.
+
+Note: This will generally be collision-less, but if a collision does happen the standard for this project for colliding data in visualizations is to display one of the colors, but make a change to it that's orthogonal to any color values used to represent data. For example, if data is being shown through saturation only, hue might be changed by 15%. Or if data is being shown by hue only, saturation might halved where multiple bits of data collide.
+
+Then these 16 slices can be tiled 4x4 in reading order. Showing tau mod 16 is probably a good balance of being able to see detail while being able to count total tau by number of bands.
+
+### 3
+
+[Image: original 2954x2530, displayed at 2000x1713. Multiply coordinates by 1.48 to map to original image.]
+
+### 4
+
+Awesome. This makes it visually clear just how the map-wide clock had distortions around the joining end splitting of routes. My only suggested change to the visualization is to have a + shape inserted somewhere (perhaps in a few places) OOB to show the directions of travel being depicted. It doesn't need to be perfect. It might even be easier just to paint some faint gridlines on the black before the map and the data paint over it. That avoids the problem of trying to figure out where it's safe to put them.
+
+Let's run this for the other two routes of interest, noting what can be done programmatically, and what still requires either your or my judgement.
+
+### 5
+
+[Image: original 2954x2514, displayed at 2000x1702. Multiply coordinates by 1.48 to map to original image.]
+
+### 6
+
+This is open-ended. You have quite a bit of time and usage to solve.
+
+Can you programmatically identify a series of longcuts from here? Success will likely identify the outside of each of the many curved turns sections, as well as one or both sides of the bulb on plait. It may also a second at the beginning of edge 7, and possibly identify a preferred direction of travel around the scoring area on dabeone.
+
+My hope is that identifying longcuts using a clock built around the shortest route will be simpler than anything we did before. And shortcuts will just be the corresponding state transitions that don't lose tau over those same ranges.
+
+### 7
+
+This is great.
+
+If I understand correctly, the strongest signal we're getting from this work is where the long path and short path differ in length most drastically. And it's completely independent of any clock. The length of the shortest maintainable lap length defines where zero is, but in theory that's not even necessary, as removing it from the equation would just cause a constant offset.
+
+### 8
+
+Right, right. L - min gives us the loss associated with forcing a boid through a single state. But it doesn't give us the loss associated with a forced path. In order to do that, we'd need to maintain F(s) and R(s) independently, and L(path) = F(path_end) +  R(path_start) + path_length.
+
+We want to get the stable lap to find min L, as it's invariant to our cut decision.  This is outside the scope of our analysis, but there's provably a cut where the minimum lap is the minimum stable lap. If we wanted to, we could calculate one such cut, where the notion of a faster lap disappears. It's visible on the white/yellow/orange/red P* map as the place where the ordering of the different band colors collapses and inverts.
+
+Let's catch up on documents and clean up anything left over from experiments that are no longer necessary.
+
+Comments? Unless something else comes up, this is likely the last turn of the session.
+
+### 9
+
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+Summary:
+1. Primary Request and Intent:
+   The session (2026-09-14 → 2026-09-16) on the Boids repo (`C:\Users\glitc\IdeaProjects\Boids`) progressed through a chain of user-specified constructions, each superseding the last:
+   - Explore the project (done, logged).
+   - Convert the user's non-constructive definition of a **phase-complete path** into a construction; pass back early on a defect. First definition (funnel clauses, gates A/Z) failed on the lattice (comb, speckled gate) → passed back. Second definition: *a cover P of S, every point navigable to B backward and Y forward within P, projection 8-connected* → built as strands + join-field measurement.
+   - Build a **route clock**: shortest lap measured a quarter tick at a time (260 on dabeone stable loop; loop clamps phase); then **the set of all shortest loops** from a starting line (F, R, L=F+R, P_N, N*); then the **anchored route clock** (stable lap = fewest ticks for 4 cut crossings back to the same state /4; S = states with exactly that L; anchors F/4; least squares; alert that S is not connected to the cut).
+   - Build a **visualiser** `TauSlices` ((x,y,d mod 16) tiled 4×4, value mod 16 as hue, collisions half saturation, faint heading grid on the black); run all three dabeone routes noting programmatic vs judgement.
+   - **Programmatically identify longcuts** from the shortest-route clock (open-ended): built as basins of the excess field E = L − 4T; run on every simple cycle of dabeone and plait.
+   - User's insights to record: the signal is clock-independent (L − min); loss of a forced path `L(path) = F(start) + length + R(end)` (user wrote F/R swapped relative to the code's convention); stable lap gives min L invariant to the cut; there provably exists a cut where the minimum lap equals the minimum stable lap (visible where P* band ordering collapses/inverts) — out of scope.
+   - **Final request (in progress):** "Let's catch up on documents and clean up anything left over from experiments that are no longer necessary. Comments? Unless something else comes up, this is likely the last turn of the session."
+
+   Standing constraints (CLAUDE.md/memory, verbatim-relevant): never edit `Params`; never compute physics from `display.png`; bump `FORMAT` when meaning changes; every number gets its ingest hash; commit and push to `main` periodically with descriptive messages (standing permission, stage by explicit path, never `git add -A`); deleting files/rewriting history/force-pushing need asking; never write to `HAPPY.md`; never hand-edit `PROMPTS.md` (hook rebuilds it, commit it with whatever else); every session writes `SESSION-LOG.md`; keep root docs' `**Status:**` dates fresh. Commit messages end with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
+
+2. Key Technical Concepts:
+   - Boids simulation over `(x, y, d)` states, 64 headings, ~4 px steps; at radius 40 adjacent headings' steps differ by ≤1 px never diagonally (checked).
+   - Edge decomposition; routes = simple cycles of the edge graph (`PhasePath.routes`: dabeone `[0,3,5,8,4]`, `[1,5,8,4,2]` scoring, `[2,7,4]` stable, `[3,5,6]` scoring; plait `[0,2,1,5]`, `[0,3]` scoring, `[1,4]` stable). Edge 8 (dabeone scoring ring) and plait edges 2, 5 are self-inverse.
+   - Corridor = states of a route's edges, cut at one edge crossing rotated opposite the line's edge.
+   - Phase-complete cover: strands (cheapest B→Y path through uncovered lane pixel, cost = squared pixel distance from lane) until projection 8-connected; join field (ticks to first reach P; |Δ| between same-heading 4-adjacent pixels ≤1 for a cover, ≥7 for single-phase S).
+   - Starting `Line(edge, axis, at, dir, otherLo, otherHi)` across the longest 8-connected piece of cardinal pixels (`findLine`, MIN_STRAIGHT=32); line between coordinates at−dir and at; F(s)=min_k 4·bfs(line+k→s)+k, R(s)=min_k 4·bfs(s→line−1−k)+k+1; L=F+R = shortest cycle through s (clock-free).
+   - Stable lap: `fewestTicksForLaps(c, cutLandings, 4)/4` (dabeone 260.00, 495.00; plait 1643.00, 781.50 half-integer).
+   - Excess E = L − 4T; fast band E ≤ 0; longcut = basin of E (watershed over transitions; PROMINENCE=4 q-ticks; greedy best-pair merge of basins touching in projection with F/4 ranges overlapping ≥ OVERLAP=0.5 of the shorter; LONGCUT_THRESHOLD=4).
+   - Loss of a forced path (user's formula, code convention): F(start) + length + R(end) − 4T, longest-path DP `longestForced` within a basin; loss ≥ depth.
+   - Anchored clock: F/4 on S (|L−T4| ≤ 2 tolerance when no exact), unit-weight least squares (CG on normal equations) with the line as seam; `build(..., boolean solve)`.
+   - Ring pass per sense of turn about centroid (dabeone edge 8: 65/65/65 → no preferred direction).
+   - Visualisation rule: collisions shown by a change orthogonal to data channels (half saturation when hue is data).
+
+3. Files and Code Sections:
+   - `src/boids/PhasePath.java` (~2,310 lines after cleanup; new this session). Structure now: `Which`, `GateSet`, `Corridor` (succ/pred cut-respecting, succRound/predRound), `run` (stretch cover + join field), gates/lane/cover (`Strands`, `sweepOrder`, `coverConnected`), join field (`joinField`, `reportJoin`, `dijkstra`, `unreaching`, `topology`, `label`), `Lap` record, `shortestLoops` (uses `distances(c, new Line(edge,0,x0,1))`), `bfs`, `closesRound`, `drawLoops`, the clock (`Line`, `findLine`, `Distances`, `distances`, `cutLandings`, `fewestTicksForLaps`, `lapAlong`, `Clocked`, `build(preset,gate,route,Line given,boolean solve)`, `clock`, `advance`, `anchoredLeastSquares`, `applyNormal`, `reportAlong`, `drawClock`, `drawRate`, `drawSpread`, `hue`, `diverging`, `write`), longcuts (`Region`, `LONGCUT_THRESHOLD`, `longcuts` with scoring check, sense split, ring pass, `basins`, `OVERLAP`, `find`, `PROMINENCE`, `dist`, `longestForced`, `drawExcess`), `routes`/`cycles`, renders (`PALETTE`, `crop`, `drawJoin`, `drawCover`). Class javadoc rewritten to describe the four entry points. Key new code:
+     ```java
+     private static double longestForced(Corridor c, Clocked k, int[] comp, int id, int s, double[] best, int[] bestNext) {
+         if (!Double.isNaN(best[s])) return best[s];
+         best[s] = 0; bestNext[s] = -1;
+         int[] out = new int[3]; int kk = c.succ(s, out);
+         double top = k.dist.R[s]; int next = -1;
+         for (int j = 0; j < kk; j++) { int u = out[j]; if (comp[u] != id) continue;
+             double v = 4 + longestForced(c, k, comp, id, u, best, bestNext);
+             if (v > top) { top = v; next = u; } }
+         best[s] = top; bestNext[s] = next; return top;
+     }
+     // in longcuts: loss = max over s in basin of (F(s) + longestForced(s) − T4) / 4
+     ```
+   - `src/boids/TauSlices.java` (new): `draw(map, states, value[], period, boolean periodic, region[], box, scale, out)`; `onGrid` faint grid (GRID=24) along slice heading; `hsv`.
+   - `src/boids/SubpathSearch.java` — **deleted** (`git rm`) as superseded placement fitness; `SimTest.subpathSearch` and `reportFound` removed; `RouteClock` javadoc reference updated.
+   - `src/boids/SimTest.java`: `main` runs `PhasePath.longcuts` over `PhasePath.routes(...)` for DABEONE (gate `new SolverFacts.Gate(false, 202, 174, 191, -1)`) and PLAIT (gate `new SolverFacts.Gate(true, 360, 335, 350, 0)`).
+   - Docs updated this cleanup: `README.md` (status 2026-09-16, 61 files, PhasePath/TauSlices class-map entries, SubpathSearch removal, entry points, removed loop/lap/subpathSearch rows), `GLOSSARY.md` (status 2026-09-16; retired entries: footprint, phase-complete loop, geometric clock, shortest lap driver; removed table rows; strand/funnel/longcut wording), `EDGES.md` (status 2026-09-16; funnel code removed note in §2a record; §5 loop section superseded/removed note; longcuts section: "Loss is now the user's formula…" paragraph, "The stable lap and the cut, the user's remark" paragraph, trimmed "Still chosen by a person").
+   - Earlier commits this session: `3455c1b`, `35ee23d`, `a66a5e4`, `49bfc2a`, `44e1ddc`, `4614e0c`, `f1a5e45`, `6b8bdce`, `07280ce`, `f162f76` (all pushed). Cleanup changes are NOT yet committed.
+   - Renders in `render/phase-path/` (gitignored): `<map>-<hash>-e<edge>-{cover,join}.png`, `-loops<route>-x<line>.png`, `-clock<route>-{tau,coast,spread,slices,slices-fitted}.png`, `-longcuts<route>{,-slices}.png`.
+
+4. Errors and fixes:
+   - First-definition funnels failed (comb holes N=5–12; speckled gate split at N≥54) → passed back; user replaced definition.
+   - Gate seed `y` not in its own landing set → gate states = core ∪ landing.
+   - Loop strands with cost `1+dist²` drifted (400 strands) → `OFF_LANE=64`; later whole loop construction removed as superseded.
+   - `shortestLoops` line states both starts and finishes (L=0) → finishes at x0−1−k.
+   - Anchor S not connected to cut (user's assertion false, alerted) → anchors F/4; mod-T reduction at the cut gave −260 seam → line as seam (`Seam`, later folded into `Line.crosses`).
+   - Plait: line unbounded across the edge (L=1.75) → `Line` bounded by otherLo/otherHi; row-run straight spanned all strands → straights as 8-connected pieces of cardinal pixels; half-integer stable lap (no exact-L states) → tolerance ±2 q-ticks.
+   - Basins: components too coarse on scoring routes; watershed too fine (phase stripes); union-find merge chained bends → greedy best-pair merge with half-overlap; alias-chain IndexOutOfBounds → resolve chains; duplicate locals `fast`/`behind` → renamed.
+   - Ring "preferred direction" from fast-band sliver flipped between routes → measured pass per sense directly (65/65/65).
+   - User feedback incorporated: don't build on the coasting cycle as S; loss should use the forced-path formula; the analysis is clock-free.
+
+5. Problem Solving:
+   All user predictions for longcuts confirmed (outer wall of every bend; dabeone left bulge = beginning of edge 7, 4.75 deep; plait bulb far side 11.5 deep, one side; twelve identical 2.5-tick plait bends; ring: no preferred direction, fast lap goes round it and scores). Final verification run after cleanup succeeded on both maps with clock-free loss (loss ≥ depth; plait bulb splits into two basins at one pixel under F-range merging — noted).
+
+6. All user messages:
+   - "Wake up. Take a turn to explore the project."
+   - First definition of phase-complete path (cover of S between gates B/Y; backward/forward navigation within P; Nth-successor/predecessor sets within AZ single border no holes; A/Z saturated) with the test setup (route, cut far away, phantom-edge gates around A,B,Y,Z; S a path from B to Y); pass back on defect/stall.
+   - "The setup you're testing with looks good… This is my next attempt:" second definition (backward to B, forward to Y within P, projection diagonally connected); assumption |step(d)−step(d+1)| ≤ 1; philosophical definition of phase-complete (shortest way onto P ≈ continuous physics; no weird paths from undersaturation; no lockout).
+   - "We don't need gate A or Z… Next I'd like to create a new clock for a route… shortest possible phase-complete path around an entire route… integer number of ticks? multi-lap? starting offset? states/tick, ticks/pixel, states/pixel…"
+   - "So I'm looking for the shortest possible path that is phase complete… selection of S massively constrained… find the fewest number of ticks for a state S to get to itself or a fractional tick in front… ties broken by the furthest spot… starting from any position on the same x value on the bottom straight area of edge 7… [itself plus between 0 and 3 x value, inclusive]."
+   - "Okay, I think the cleanest way… measure ticks from the starting line in either direction in quarter-ticks… connectivity of all states on loops of length N or less… lowest N with an 8-connected loop… we're not trying to find the smallest phase-complete path, just the shortest. So the entire set of those states is the answer."
+   - "The purpose of this analysis was to find a good anchor for the route's clock… best stable route length is 260.00… find fewest ticks to complete 4 laps, start and end state the same… S with exactly that many quarter-ticks will be navigationally-connected to the cut in at least one of two directions. Alert me if that turns out to be wrong… label S by BFS from the cut… anchors for a clock… [features: tau/tick along the 259.25 route; depiction of coasting path rate; heatmap of successor tau spread]."
+   - "I'd like to be able to directly visualize the texture of the tau calculations… compress to (x,y,d%16)… collisions: display one color with a change orthogonal to data channels… tile 4x4 in reading order… tau mod 16."
+   - "Awesome… suggested change: a + shape somewhere OOB… or faint gridlines on the black before the map… Let's run this for the other two routes of interest, noting what can be done programmatically, and what still requires either your or my judgement."
+   - "This is open-ended… Can you programmatically identify a series of longcuts from here? Success will likely identify the outside of each of the many curved turns sections, as well as one or both sides of the bulb on plait. It may also a second at the beginning of edge 7, and possibly identify a preferred direction of travel around the scoring area on dabeone… shortcuts will just be the corresponding state transitions that don't lose tau over those same ranges."
+   - "This is great. If I understand correctly, the strongest signal… is where the long path and short path differ in length most drastically. And it's completely independent of any clock… removing it would just cause a constant offset."
+   - "Right, right. L - min gives us the loss associated with forcing a boid through a single state. But it doesn't give us the loss associated with a forced path… L(path) = F(path_end) + R(path_start) + path_length. We want to get the stable lap to find min L, as it's invariant to our cut decision… there's provably a cut where the minimum lap is the minimum stable lap… visible on the white/yellow/orange/red P* map… Let's catch up on documents and clean up anything left over from experiments that are no longer necessary. Comments? Unless something else comes up, this is likely the last turn of the session."
+
+7. Pending Tasks:
+   - Finish the cleanup/documentation pass: `ROADMAP.md` (cleanup entry under §0i: what was removed and why; update "Next"; status line date to 2026-09-16), `SESSION-LOG.md` (entry for 2026-09-16: clock-free loss, F-range merge, removals, docs; heading/closing), optionally note "code removed 2026-09-16" on EDGES §2a placement superseded note, check `HINTS.md`/`PIPELINE.md` for stale references (grep found none in PIPELINE; HINTS mentions are conceptual).
+   - Commit (stage by explicit path incl. the `git rm` of SubpathSearch.java and PROMPTS.md if modified) with a descriptive message + Co-Authored-By line; push to main.
+   - Final report to the user with comments: F/R appear swapped in their formula relative to code convention (`L(path) = F(start)+length+R(end)`); loss now clock-free and ≥ depth; plait bulb splits into two basins under F-range merging; mention the file deletion (SubpathSearch) done under the cleanup request; open items (decision zone from a longcut basin; thresholds; whether anchored clock replaces RouteClock/EdgeMetric; self-inverse edge's other direction in corridors).
+
+8. Current Work:
+   Mid-cleanup for the user's final request. Code cleanup is complete and compiles; verification run done (dabeone `[2,7,4]` seven longcuts: bulge 8.25/4.0, right bend 5.75/3.5…; plait `[0,3]` bulb 12.0/11.5 plus a second basin 9.5/9.0 at the same pixel). README, GLOSSARY, EDGES updated and dated 2026-09-16. Last executed command confirmed EDGES status date and the §2a placement note ("> **Superseded 2026-09-15** by the longcuts of §5…"). Not yet done: ROADMAP.md, SESSION-LOG.md, commit, push, final message.
+
+9. Optional Next Step:
+   Complete the remaining bookkeeping and close: update `ROADMAP.md` (status → 2026-09-16; add a cleanup paragraph listing removals — funnels, loop/geometric clock, lap column search, coverSaturated, SubpathSearch/SimTest.subpathSearch — and the clock-free loss; revise "Next"), append the 2026-09-16 entry to `SESSION-LOG.md`, then `git add` by explicit path (EDGES.md GLOSSARY.md README.md ROADMAP.md SESSION-LOG.md HINTS.md PROMPTS.md src/boids/SimTest.java src/boids/PhasePath.java src/boids/RouteClock.java src/boids/TauSlices.java, plus the already-staged deletion of src/boids/SubpathSearch.java), commit with attribution, push, and reply with the comments above — per the user's "Let's catch up on documents and clean up anything left over from experiments that are no longer necessary. Comments? Unless something else comes up, this is likely the last turn of the session."
+
+If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: C:\Users\glitc\.claude\projects\C--Users-glitc-IdeaProjects-Boids\36e78a1a-5496-447f-80fe-06d7640d337a.jsonl
+Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
