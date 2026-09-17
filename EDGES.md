@@ -24,7 +24,9 @@ starting line, on which `F/4` is a quarter-tick clock exact along 98% of transit
 **the anchored route clock**: the stable lap found programmatically (260.00), `F/4` on the
 6,995 states of exactly that loop as anchors, least squares for the rest — `1 ± 0.087` per
 transition over the route. The anchor set is *not* connected to the cut, which was the alert asked
-for.
+for. **§6 gained stable+ on a route on 2026-09-16** — the route as a play area, its straight travel
+the lone flight, the flock's loop unchanged; and the finding that plait's map-wide stable+ leaves
+the stable edges through the trailing partial tick, not through any knock.
 
 An edge is a set of live `(x, y, d)` states. Edges are **defined relative to one another** —
 there is no line anyone draws and no geometry in the definition. This document states that
@@ -1396,6 +1398,76 @@ finite cover of the explanations possible.
 `5→6` closes a loop over `{3,5,6}` that a psyboid can maintain to keep a boid off the scoring
 edge indefinitely. **It occurs only in the first 500 ticks and then never again** across 1.28M
 boid-ticks, so it is a cold-start phenomenon; warm up before concluding anything about it.
+
+**Every simple cycle, classified: `PhasePath.routes`**, with `relevantRoutes` keeping those that
+are stable (every edge stable) or scoring. Four on dabeone — `[0,3,5,8,4]`, `[1,5,8,4,2]` and
+`[3,5,6]` scoring, `[2,7,4]` stable — and three on plait — `[0,2,1,5]` and `[0,3]` scoring,
+`[1,4]` stable. All seven are relevant.
+
+### Stable+ on a route — 2026-09-16
+
+**The user's specification.** Toward the cost of a shortcut or longcut — the fewest steered ticks
+a path forces on an unsteered boid starting anywhere in stable+ — stable+ is wanted per relevant
+route as well as map-wide: **the leader loop stays the same in every case, and the navigable area
+is restricted to the route's edges.**
+
+**The construction: the route is a play area.** `NavMap.corridor` is the same map with only the
+route's states alive, so every transition is legal exactly when it is legal on the map *and*
+lands on a route edge, and the unchanged veto keeps a boid on the route the way it keeps one in
+the kernel — the request stands unless it would leave, then straight, then the other hand. For a
+route's edges that is `DecisionOverride`'s rule, so **straight travel on the corridor is the lone
+psyboid's flight of the route**, its `pureStable` is the route's coasting cycle, and its
+`stablePlus` is what the flock does to a boid flying it. `MapStates.onRoute` binds the algebra to
+it; the influencers of every expansion are the whole map's pure set advancing under the whole
+map's straight travel. No chords (arcs between route edges the route does not take) exist on any
+of the seven routes, so the corridor has no side door; the corridor is forward-viable by one-step
+navigability and not backward-viable at entrances fed only from off-route edges, which nothing
+built forward from its own cycles can reach. `SimTest.routeStablePlus`, quorum 5; sheet at
+`render/route-states/<map>-<hash>-stableplus.png`, stable+ on the heading-count ramp with the
+coasting cycle traced over it in blue.
+
+**Measured, dabeone `609cffdb84be218c` and plait `46f880d41d2c1e4e`, quorum 5, no turn capped.**
+"Veto alters" counts route states whose straight successor the corridor changes; "vs map-wide"
+compares with the map-wide set over the route's own states.
+
+| route | states | veto alters | coasting cycle | stable+ | vs map-wide on these states |
+| --- | --- | --- | --- | --- | --- |
+| dabeone `[2,7,4]` stable | 43,970 | 36 (`2:20 4:16`) | **278** | 19,977 (`2:9,284 4:3,874 7:6,819`) | **identical** |
+| `[1,5,8,4,2]` scoring | 71,611 | 357 (`2:323 4:16 5:18`) | **535** | 31,084 (`1:9,362 2:9,559 4:4,270 5:3,577 8:4,316`) | 12,905 both, 18,179 route only, 284 map-wide only (`4:253 8:31`) |
+| `[0,3,5,8,4]` scoring | 71,611 | 234 (`4:216 5:18`) | **538** | 30,247 (`0:8,472 3:8,962 4:4,452 5:3,904 8:4,457`) | 3,620 both, 26,627 route only, 285 map-wide only (`4:254 8:31`) |
+| `[3,5,6]` scoring | 43,970 | 306 (`5:306`) | 281 | 19,603 (`3:8,828 5:4,199 6:6,576`) | no shared edge |
+| plait `[1,4]` stable | 156,235 | 64 (`1:64`) | 820 | 101,673 (`1:92,546 4:9,127`) | 101,673 both, **1** map-wide only |
+| `[0,3]` scoring | 156,235 | 197 (`0:197`) | 826 | 86,706 (`0:80,246 3:6,460`) | 904 both, 85,802 route only, 15 map-wide only |
+| `[0,2,1,5]` scoring | 296,640 | 568 (`0:81 1:487`) | 1,724 | 183,672 (`0:81,436 1:87,530 2:14,329 5:377`) | 87,887 both, 95,785 route only, 5,848 map-wide only (`1:5,831`) |
+
+1. **The checks pass.** The veto acts at the exits the route does not take and on the recorded
+   follow-through states — `4:16` and `5:18` are §4's counts to the state. The coasting cycles of
+   dabeone's scoring loops are **535 and 538 ticks, the two lone laps `DecisionOverride` flies**
+   (§2a). On the stable route the corridor changes nothing already on the unsteered cycle, and
+   stable+ comes out identical to the map-wide set on dabeone (the map-wide set's 31 ring states
+   are off-route).
+2. **Stable+ is a property of the route even on an edge two routes share.** The 253 edge-4 states
+   only the map-wide set has on the scoring routes are one wall-hugging line, `(327,184,36) →
+   (351,206,40) → …`, and straight travel treats them identically on both maps: they differ
+   because the stable loop enters edge 4 from 7 and the scoring loops from 8, so the coasting
+   line through the edge, and everything the flock knocks it onto, is different. On plait the
+   figure-eight enters edge 1 from 2 rather than 4 and 5,831 of edge 1's map-wide states are not
+   in its set for the same reason.
+3. **The mirror route's stable+ is a different shape.** `[3,5,6]` is `[2,7,4]` flown the other
+   way against the same flock, and the sheet shows it thick only on the top-left loop and the
+   left bulge, a one- or two-heading line along the bottom straight and the right side where
+   `[2,7,4]`'s carries the whole fan all the way round.
+4. **Plait's map-wide stable+ leaves the stable edges, and it is the trailing partial tick, not
+   a knock.** The map-wide set is `0:919 1:92,547 2:156 4:9,127 5:113` — 1,188 states on scoring
+   edges. Probed step by step: `pure.partialTick.closed` is `1:3,892 4:291`, and
+   **`expandByQuorum` stays on edges 1 and 4 at every quorum from 2 to 9** (`1:73,471 4:6,328`
+   at 5). The spill is the trailing `partialTick.closed`: a sample at the `1 → {4, 5}` branch
+   lands on a state labelled 5, and straight closure carries it a half-lap round the figure-eight,
+   `5 → 0 → 2 → 1`. Dabeone's 31 ring states are the same leak at a merge, where the closure
+   stops on an edge already in the set. **A suspected defect in the map-wide construction on
+   any map with a branch off its stable loop; reported, not changed.** The route-bound set is
+   immune — an off-route sample is dead on the corridor — which is the one state by which
+   `[1,4]`'s set is smaller.
 
 ---
 

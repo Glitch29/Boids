@@ -9,7 +9,8 @@ how you know you are winning.* Numbers are from `dabeone` and `plait` unless sta
 **Status:** 2026-09-16, physics 3. Figures taken under physics 2 are marked as such. §3a added
 2026-09-11: gates, edge insertion, and what a cut across a corridor has to be; braiding added to
 it 2026-09-12, phase-complete paths and the join field 2026-09-15, longcuts as basins of the
-excess field and the clock-free loss of a forced path 2026-09-16. This file is
+excess field and the clock-free loss of a forced path 2026-09-16; §10b' the same day: a route as a
+play area, and stable+ as a property of the route. This file is
 also the *training-wheels* condition of the evaluation —
 everything the expert can write down — so it is written to be read by someone who has not seen
 the code. For terms, see `GLOSSARY.md`; for what currently exists, `README.md`.
@@ -1012,6 +1013,37 @@ The set only becomes usable after **one partial tick** — turn as the rules say
 land on the samples the collision test walks — which takes it from 278 to 1,610. Without that it
 is a measure-zero curve that no boid knocked sideways by a pixel is ever on again.
 
+
+## 10b'. Stable+ is a property of the route, not of the edge — and a route is a play area
+
+Measured 2026-09-16 on dabeone `609cffdb84be218c` and plait `46f880d41d2c1e4e`; `EDGES.md` §6.
+
+**A route can be made a play area of its own** — the same map with only the route's states
+alive — and then nothing else needs inventing: the ordinary veto keeps a boid on the route the
+way it keeps one in the kernel, and straight travel on that corridor *is* the lone psyboid's
+flight of the route, the exit turned as late as it can be. Its straight-travel cycle came out at
+**535 and 538 ticks on dabeone's two scoring loops, the laps `DecisionOverride` actually flies.**
+One-step navigability is what makes the corridor forward-viable, so this works on any route of a
+valid decomposition. Stable+ on the corridor — the flock's loop unchanged — is then what ordinary
+traffic does to a boid flying the route.
+
+**Even on an edge two routes share, their stable+ differ, because the entrance fixes the coasting
+line.** Dabeone's stable loop enters edge 4 from 7 and the scoring loops from 8; 253 edge-4 states
+in the map-wide set are one wall-hugging line that a boid arriving from 8 is never knocked onto.
+A set of "ordinary" states is not a per-edge fact.
+
+**The mirror route is not the same set the other way round.** `[3,5,6]` is `[2,7,4]` flown
+against the flock's direction, and its stable+ carries the whole fan only on the top-left loop and
+the left bulge — a one- or two-heading line elsewhere, where the flock-direction route is thick
+all the way round.
+
+**A partial tick can leak through a branch, and closure then runs a long way.** Plait's map-wide
+stable+ has 1,188 states on scoring edges, and none of them is a knock: the expansion by quorum
+stays on the stable edges at every quorum from 2 to 9. A partial-tick sample at the `1 → {4, 5}`
+branch lands on a state labelled 5, and straight closure carries it a half-lap round the
+figure-eight. At a merge (dabeone's ring, 31 states) the same leak closes onto an edge already in
+the set and is harmless; at a branch it is not. Whenever a set is closed under straight travel
+after a partial tick, check whether the partial tick crossed an edge boundary first.
 
 ## 10c. Normalising a sum throws away the one thing that measured agreement
 

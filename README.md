@@ -80,6 +80,7 @@ exception, and only for bootstrapping a decomposition — see `EDGES.md` §2.
 | the anchored route clock | the stable lap by four-lap closure — **1,040 / 4 = 260.00** from 161 of 382 cut landings — `F/4` on the 6,995 states of exactly that loop, least squares for the rest: **advance `1 ± 0.087` rms over 105,772 transitions**. The anchor set is not connected to the cut (2,510 of 6,995 reached in neither direction), the alert the user asked for | `PhasePath.clock`, `EDGES.md` §5 |
 | the three routes' clocks | with the line found programmatically: stable laps **260.00, 495.00, 495.00** against fitted laps 275.29, 528.45, 528.38; clocks `1 ± 0.087 / 0.064 / 0.073`; `S` connected to the cut on one route of three; the scoring ring's two directions are the slice sheets' collisions | `PhasePath.clock`, `PhasePath.findLine`, `EDGES.md` §5 |
 | longcuts | basins of the anchored clock's excess field, over every simple cycle of both maps: **the outer wall of every bend**, dabeone's left bulge at the beginning of edge 7 (4.75 deep), **plait's bulb** (11.5 deep, one side), twelve identical 2.5-tick bends round the plait; the scoring ring is a 5.5-tick-deep longcut on its outer side, 14 ticks of loss along it, with **no preferred sense** (65 ticks round either way); **loss is clock-free**, the longest forced path in a basin, and a shallow wall can cost six times its depth (19 ticks from 3.25 on the top loop); plait's simple loops have a **half-integer stable lap, 781.50** | `PhasePath.longcuts`, `PhasePath.routes`, `EDGES.md` §5 |
+| stable+ on a route | the route as a play area, the flock's loop unchanged: its straight travel is the lone flight (**535 and 538 ticks** on dabeone's scoring loops, the two `DecisionOverride` laps), no chords on any of the seven relevant routes, the veto acting only at the exits not taken and on the recorded follow-through states (`4:16`, `5:18`), and the stable route's set **identical** to the map-wide one on dabeone; stable+ is **a property of the route even on a shared edge** (253 edge-4 states differ because the scoring loops enter it from 8, the stable loop from 7); and plait's map-wide set's 1,188 states on scoring edges are the **trailing partial tick leaking through a branch**, not a knock — the expansion stays on edges 1 and 4 at every quorum 2–9. Suspected defect, reported | `MapStates.onRoute`, `NavMap.corridor`, `SimTest.routeStablePlus`, `EDGES.md` §6 |
 
 The **snapshot-only test for "requires explanation"** exists and is the basis of the solver: a
 boid on an **unstable edge** is somewhere unsteered travel would not have left it, and that
@@ -168,7 +169,8 @@ the braiding evidence, run by hand).
 
 **Maps and storage** — `MapStore` (content-addressed ingests) · `Derived` (the structure and
 behaviour tiers: an artifact is addressed by everything it is a function of) · `NavMap`,
-`NavMapBuilder` (viability kernel, successors, predecessors, the veto).
+`NavMapBuilder` (viability kernel, successors, predecessors, the veto; `corridor` is a route as a
+play area of its own).
 
 **Macro structure** — `EdgeNavigation` (per-edge navigation, stability, scoring, exit turns) ·
 `EdgeMetric`, `EdgeMetricStore` (the clock) · `EdgeWeights` (transition weights) ·
@@ -179,7 +181,8 @@ stored by `CriticalEnvelopeStore` · `EdgeInfluence` (`steer`, the single-neighb
 `EdgeSlice` (bands at a fixed tau) · `Flocking` (constants as an argument, and `diluted()`).
 
 **State sets** — `StateSet` (the algebra: `partialTick`, `closed`, the perfections, `expandByQuorum`) ·
-`MapStates` (that algebra bound to one map, plus `pureStable` and the straight-travel cycles).
+`MapStates` (that algebra bound to one map, plus `pureStable` and the straight-travel cycles; `onRoute`
+binds it to a route's corridor with the flock's loop unchanged, for stable+ on a route).
 Behind an interface because stable+ is not yet defined and is expected to change.
 
 **Surveys** — `EdgeOccupancy` (how fast a flock forgets its spawn, and three spawn rules
@@ -207,7 +210,7 @@ per option, a closing gate; `EDGES.md` §2a) · `DecisionOverride` (steers by zo
 replaced flew identically and was retired 2026-09-13) · `PhasePath` (phase-complete
 paths, the shortest loops of a route and their excess field, the route clock anchored on the stable
 lap, and longcuts as basins of the excess; four entry points, all run by hand — `EDGES.md` §2a and
-§5. `SubpathSearch`, the placement fitness it replaced, was removed 2026-09-16) · `TauSlices` (a per-state
+§5. `routes` and `relevantRoutes` list and classify every simple cycle. `SubpathSearch`, the placement fitness it replaced, was removed 2026-09-16) · `TauSlices` (a per-state
 scalar drawn over `(x, y, d mod 16)`, sixteen slices tiled, the value modulo a period as hue;
 the user's visualiser for a clock's texture) · `RouteClock` (the clock refitted on one
 route alone, for `routeClock` and the search) · `CorpusPreset` (named recipes, so a
@@ -223,7 +226,7 @@ corpus is addressed by the settings that produced it). See `CORPUS.md`.
 `CriticalEnvelopeStore` · `ExitRender`.
 
 **Rendering** — `Boids2DRenderer` · `Renderer` · `NavMapRender` · `EdgeGraphRender` ·
-`StateSetRender` (state sets projected to `(x, y)`, several to a sheet) ·
+`StateSetRender` (state sets projected to `(x, y)`, several to a sheet, a trace drawn over each) ·
 `SceneRender` · `TwoBoidRender` · `TwoBoidRouteSheet`.
 
 **Driver** — `SimTest`, 2,501 lines. Holds every entry point below *and* the whole
@@ -261,6 +264,7 @@ ways → 6 edges.
 | `zones` | the exit decision zone of every edge, checked, then flown alone and in the flock: gates crossed in pairs, laps |
 | `subpaths` | three subpaths on one edge — coasting, left-hugging, right-hugging — each built as a zone, checked, and flown taken and skipped, alone and in a flock; plus the `S_1` saturation sweep |
 | `routeClock` | the clock refitted on one route at a time against the map-wide one: lengths, spans, and the within-edge spread of the change in tick |
+| `routeStablePlus` | stable+ on every relevant route beside the map-wide one, with the checks — chords, where the corridor veto acts, the coasting cycle's length against the flown lone lap, the stable route against map-wide — and the sheet |
 
 `ThreeBoidPhase.run`, `ThreeBoidSamples.run`, `ThreeBoidSamples.explain` and `PhasePath`'s four are
 the other entry points and do not live in `SimTest`. `PhasePath.run` takes a route, an edge and
@@ -337,6 +341,7 @@ behaviour tier and leaves the clock's thousands of gradient steps alone. Each ti
 | `render/phase-path/<map>-<hash>-clock<route>-{tau,coast,spread}.png` | `PhasePath.clock` | the clock as hue round the lap, anchors brighter; the coasting cycle by its advance per tick with a strip chart; the successor spread per pixel |
 | `render/phase-path/<map>-<hash>-clock<route>-slices.png`, `-slices-fitted.png` | `TauSlices`, from `PhasePath.clock` | the clock's texture: `(x, y, d mod 16)` tiled four by four in reading order, tau mod 16 as hue, collisions at half saturation; the anchored clock and the map-wide fitted clock on the same route |
 | `render/phase-path/<map>-<hash>-longcuts<route>.png`, `-slices.png` | `PhasePath.longcuts` | the excess per pixel, scaled to the route's deepest, with basin ids at their deepest states; and the excess over `(x, y, d mod 16)` on a blue-to-red ramp |
+| `render/route-states/<map>-<hash>-stableplus.png` | `SimTest.routeStablePlus` | one panel per corridor, the map-wide one first: stable+ on the heading-count ramp, the coasting cycle traced over it in blue |
 | `archive/<date>/` | hand | retired output, ignored. **Not a backup** — the maps it came from are in `areas/` |
 
 **Retired 2026-09-04.** `analysis/`, `ingests/` (the eighteen pre-physics-3 hashes), `render/`,

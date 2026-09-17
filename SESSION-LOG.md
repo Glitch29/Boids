@@ -11,6 +11,59 @@ Format: date, what was attempted, what came out, what changed on disk, what is o
 
 ---
 
+## 2026-09-16 (later) — stable+ on every relevant route, the route as a play area; plait's map-wide stable+ leaks through a branch
+
+**The goal, the user's.** Turn where shortcuts and longcuts are into a discrete set of actionable
+pathing overrides: define the quality of a cut or a set of cuts, then find a good set. A cut's
+cost is proxied by the fewest steered ticks it forces on an unsteered boid starting anywhere in
+stable+, so stable+ is wanted per relevant (stable or scoring) route — the leader loop the same in
+every case, the navigable area restricted to the route's edges — with an `(x, y)` sheet.
+
+**Assumption stated.** "Navigable area restricted to the route's edges" was read as the route
+being a play area of its own: `NavMap.corridor` keeps only the route's states alive, and the
+unchanged veto keeps a boid on it. Straight travel on that is `DecisionOverride`'s lone flight of
+the route, which is what let the reading be checked — the corridor's straight-travel cycles are
+**535 and 538 ticks** on dabeone's scoring loops, the two flown lone laps of `EDGES.md` §2a.
+
+**Built.** `NavMap.corridor(states, count)`; `MapStates.onRoute(states, count)` — the algebra on
+the corridor, its `pureStable` the route's coasting cycle, its `stablePlus` seeded from that with
+the whole map's pure set as influencers advancing under the whole map's straight travel
+(`leaders`); `PhasePath.Route` with `stable`/`scoring`/`relevant`, `routes` now returning them,
+`relevantRoutes`; `StateSetRender.Panel` gained a blue trace; `SimTest.routeStablePlus` with four
+checks and the sheet `render/route-states/<map>-<hash>-stableplus.png`.
+
+**Numbers, quorum 5, no turn capped, no chords on any route.** dabeone `609cffdb84be218c`:
+`[2,7,4]` stable — veto alters 36 (`2:20 4:16`), cycle 278, stable+ 19,977 **identical to
+map-wide** on the route's states (map-wide 20,008 with 31 on the ring, off-route); `[1,5,8,4,2]`
+— 357 (`2:323 4:16 5:18`), cycle **535**, stable+ 31,084 (`1:9,362 2:9,559 4:4,270 5:3,577
+8:4,316`), 284 map-wide-only (`4:253 8:31`); `[0,3,5,8,4]` — 234 (`4:216 5:18`), cycle **538**,
+30,247, 285 map-wide-only; `[3,5,6]` — 306 (`5:306`), cycle 281, 19,603. plait `46f880d41d2c1e4e`:
+`[1,4]` stable — 64, cycle 820, 101,673 against map-wide's 101,674 on those edges (**one** state);
+`[0,3]` — 197, cycle 826, 86,706; `[0,2,1,5]` — 568, cycle 1,724, 183,672, 5,848 map-wide-only on
+edge 1. `4:16` and `5:18` are the recorded follow-through counts.
+
+**Findings.** (1) Stable+ is a property of the route even on a shared edge: the 253 edge-4 states
+are one wall-hugging line, straight travel identical on both maps, unreachable from the `8 → 4`
+entrance. (2) The mirror route `[3,5,6]`'s stable+ is a different shape — the whole fan only on
+the top-left loop and the left bulge. (3) **Plait's map-wide stable+ has 1,188 states on scoring
+edges (`0:919 2:156 5:113`) and none is a knock**: probed step by step, `expandByQuorum` stays on
+edges 1 and 4 at every quorum 2–9 (`1:73,471 4:6,328` at 5); the trailing `partialTick.closed`
+leaks at the `1 → {4,5}` branch and closure runs `5 → 0 → 2 → 1`. Same mechanism as dabeone's 31
+ring states, at a branch rather than a merge. **Suspected defect in the map-wide construction;
+reported, not changed.** The corridor is immune (off-route samples are dead), which is the one
+state by which `[1,4]` is smaller.
+
+**Docs.** `EDGES.md` §6 "Stable+ on a route" (the table), `GLOSSARY.md` (corridor, relevant
+route, stable+ on a route; named-analyses row), `README.md` (verified row, class map, entry
+point, artifact), `ROADMAP.md` §0i ("Toward a discrete set of cuts", header), `HINTS.md` §10b'.
+
+**Open.** The cost of a path from the route's stable+ — the fewest steered ticks it forces — and
+the quality of a cut and a set of cuts from it; whether to keep the trailing partial tick from
+crossing an edge boundary in the map-wide construction (the user's call); whether a self-inverse
+edge's other direction belongs in a route's corridor (unchanged: it is in).
+
+---
+
 ## 2026-09-16 — the loss of a forced path, clock-free; the merge on `F`; the cleanup of the session's superseded experiments
 
 **The user's reading, then correction.** The strongest longcut signal is where the long and

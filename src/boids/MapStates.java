@@ -45,9 +45,16 @@ public final class MapStates {
 
     private int capped;
 
-    private MapStates(NavMap map, Flocking flock) {
+    /**
+     * Whose dynamics the influencers follow when a set is expanded by quorum: this instance's
+     * on the whole map, and the whole map's for an instance bound to a route.
+     */
+    private final MapStates leaders;
+
+    private MapStates(NavMap map, Flocking flock, MapStates leaders) {
         this.map = map;
         this.flock = flock;
+        this.leaders = leaders == null ? this : leaders;
         this.width = map.width();
         this.cells = map.width() * map.height() * Params.TURNS;
         this.straight = new int[cells];
@@ -59,10 +66,40 @@ public final class MapStates {
      * @param liveCount how many of {@code live} are real
      */
     public static MapStates of(NavMap map, Flocking flock, int[] live, int liveCount) {
-        MapStates m = new MapStates(map, flock);
+        MapStates m = new MapStates(map, flock, null);
         for (int i = 0; i < liveCount; i++) m.straight[live[i]] = map.successor(live[i], 0);
         return m;
     }
+
+    /**
+     * The same algebra bound to one route: the navigable area is the route's edges and nothing
+     * else, and the flock stays where it was.
+     * <p>
+     * The route is made a play area of its own ({@link NavMap#corridor}), so every operation
+     * here — the partial tick, the closures, the turns an expansion takes — is vetoed onto the
+     * route the way the whole map's is vetoed into the kernel. Straight travel on it is then the
+     * lone psyboid's flight of the route (straight unless that leaves the route, then the first
+     * turn that does not), {@link #pureStable} is the route's coasting cycle, and
+     * {@link #stablePlus} is what ordinary traffic does to a boid flying it. On the unsteered
+     * cycle nothing is vetoed that was not already, and this reduces to the whole map's.
+     * <p>
+     * <b>The leader loop is the whole map's.</b> The influencers of an expansion are this
+     * instance's {@link #pureStable}, advancing under the whole map's straight travel, whether or
+     * not that loop shares an edge with the route — a boid on a scoring route is knocked by a
+     * flock that is on the stable one.
+     *
+     * @param states the route's live states, {@code count} of them
+     */
+    public MapStates onRoute(int[] states, int count) {
+        if (leaders != this) throw new IllegalStateException("bind a route to the whole map, not to another route");
+        NavMap corridor = map.corridor(states, count);
+        MapStates m = new MapStates(corridor, flock, this);
+        for (int i = 0; i < count; i++) m.straight[states[i]] = corridor.successor(states[i], 0);
+        return m;
+    }
+
+    /** The map this algebra runs on: the whole kernel, or a route's corridor. */
+    public NavMap map() { return map; }
 
     /** How many turns hit {@link #TURN_CAP} instead of ending, over every expansion so far. */
     public int capped() { return capped; }
@@ -116,11 +153,16 @@ public final class MapStates {
      * again after the expansion for the same reason: an expansion ends on states of the step
      * lattice it happened to land on, and a boid nudged between two of them is somewhere just as
      * ordinary.
+     * <p>
+     * On a route ({@link #onRoute}) the seed is the route's own pure set and the influencers are
+     * the whole map's — the same expression, the two {@code pureStable} calls answered by
+     * different maps.
      */
     public StateSet stablePlus(int quorum) {
         StateSet pure = pureStable(1);
+        StateSet influencers = leaders == this ? pure : leaders.pureStable(1);
         return pure.partialTick(StateSet.Steering.STRAIGHT).closed(StateSet.Steering.STRAIGHT)
-                .expandByQuorum(pure, quorum)
+                .expandByQuorum(influencers, quorum)
                 .partialTick(StateSet.Steering.STRAIGHT).closed(StateSet.Steering.STRAIGHT);
     }
 
@@ -432,8 +474,9 @@ public final class MapStates {
                     int at = b;
                     int step = 0;
                     for (; step < TURN_CAP; step++) {
+                        // The influencers coast on their own map, which on a route is the whole one.
                         for (int i = 0; i < posse.length; i++) {
-                            posse[i] = posse[i] < 0 ? -1 : straight[posse[i]];
+                            posse[i] = posse[i] < 0 ? -1 : leaders.straight[posse[i]];
                         }
                         int next = map.successor(at, dir);
                         if (next < 0) break;

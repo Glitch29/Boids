@@ -31,8 +31,16 @@ public final class StateSetRender {
     private static final int TEXT = 0xE8ECF3;
     private static final int FAINT = 0x8B94A2;
 
-    /** One panel: a set and what to call it. */
-    public record Panel(String title, String detail, StateSet set) {}
+    /** A single trajectory drawn over a panel: one heading per pixel, so the ramp cannot show it. */
+    private static final int TRACE = 0x4FC3F7;
+
+    /**
+     * One panel: a set and what to call it, and optionally a trace to draw over it in blue — a
+     * coasting cycle, say, which the ramp would show at its dimmest.
+     */
+    public record Panel(String title, String detail, StateSet set, StateSet trace) {
+        public Panel(String title, String detail, StateSet set) { this(title, detail, set, null); }
+    }
 
     /**
      * @param background the play area to draw over; the display copy, since this is rendering
@@ -60,7 +68,7 @@ public final class StateSetRender {
         g.setColor(new Color(FAINT));
         g.setFont(new Font("SansSerif", Font.PLAIN, 12));
         g.drawString("each pixel coloured by how many of its 64 headings are in the set: "
-                + "dim red = 1, through orange, to white = the whole fan", gap + 4, 42);
+                + "dim red = 1, through orange, to white = the whole fan; a blue line is a trace drawn over it", gap + 4, 42);
 
         int turns = Params.TURNS;
         for (int i = 0; i < panels.size(); i++) {
@@ -87,6 +95,13 @@ public final class StateSetRender {
                     }
                     t.setColor(new Color(rgb));
                     t.fillRect(x * scale, y * scale + cap, scale, scale);
+                }
+            }
+            if (p.trace() != null) {
+                t.setColor(new Color(TRACE));
+                for (int s : p.trace().toArray()) {
+                    int cell = s / turns;
+                    t.fillRect((cell % w) * scale, (cell / w) * scale + cap, scale, scale);
                 }
             }
             t.setColor(new Color(TEXT));

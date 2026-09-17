@@ -2115,11 +2115,39 @@ public final class PhasePath {
     // ------------------------------------------------------------------------------ routes
 
     /**
-     * Every simple cycle of a map's edge graph, each listed from its lowest edge, with whether it
-     * is the unsteered cycle (every edge stable) and whether it scores. The routes a clock or a
-     * longcut search runs over, found rather than typed.
+     * A simple cycle of the edge graph, listed from its lowest edge, with whether it is the
+     * unsteered cycle (every edge stable) and whether it scores. <b>Relevant</b> means one or the
+     * other: a route a psyboid flies, or the one the flock flies.
      */
-    public static List<int[]> routes(SolverFacts f) {
+    public record Route(int[] edges, boolean stable, boolean scoring) {
+        public boolean relevant() { return stable || scoring; }
+
+        /** The states on the route's edges, in {@code live} order. */
+        public int[] states(int[] edgeOf, int[] live, int liveCount) {
+            int n = 0;
+            for (int i = 0; i < liveCount; i++) if (on(edgeOf[live[i]])) n++;
+            int[] out = new int[n];
+            for (int i = 0, k = 0; i < liveCount; i++) if (on(edgeOf[live[i]])) out[k++] = live[i];
+            return out;
+        }
+
+        private boolean on(int e) {
+            for (int r : edges) if (r == e) return true;
+            return false;
+        }
+
+        @Override
+        public String toString() {
+            return Arrays.toString(edges) + (stable ? " stable" : "") + (scoring ? " scoring" : "");
+        }
+    }
+
+    /**
+     * Every simple cycle of a map's edge graph, classified. The routes a clock or a longcut
+     * search runs over, found rather than typed; {@link #relevantRoutes} keeps the ones a boid
+     * has a reason to be on.
+     */
+    public static List<Route> routes(SolverFacts f) {
         int edges = f.edges();
         List<List<Integer>> succ = new ArrayList<>();
         for (int e = 0; e < edges; e++) succ.add(new ArrayList<>());
@@ -2130,13 +2158,23 @@ public final class PhasePath {
             boolean[] on = new boolean[edges];
             cycles(start, start, succ, path, on, found);
         }
+        List<Route> out = new ArrayList<>();
         System.out.printf("%d simple cycles in the edge graph:%n", found.size());
         for (int[] r : found) {
             boolean stable = true, scoring = false;
             for (int e : r) { stable &= f.stable(e); scoring |= f.scoring(e); }
-            System.out.printf("   %s%s%s%n", Arrays.toString(r), stable ? "  stable" : "", scoring ? "  scoring" : "");
+            Route route = new Route(r, stable, scoring);
+            System.out.printf("   %s%n", route);
+            out.add(route);
         }
-        return found;
+        return out;
+    }
+
+    /** The stable and the scoring routes: every simple cycle that is one or the other. */
+    public static List<Route> relevantRoutes(SolverFacts f) {
+        List<Route> out = new ArrayList<>();
+        for (Route r : routes(f)) if (r.relevant()) out.add(r);
+        return out;
     }
 
     private static void cycles(int start, int at, List<List<Integer>> succ, ArrayDeque<Integer> path, boolean[] on, List<int[]> found) {

@@ -2231,14 +2231,139 @@ picks, never in what is available to it.
     }
 
     /**
+     * Stable+ on every relevant route, beside the map-wide one, and a sheet of them.
+     * <p>
+     * The user's specification of 2026-09-16: the leader loop stays the same in every case, and
+     * for a route the navigable area is restricted to its edges. {@link MapStates#onRoute} makes
+     * the route a play area of its own, so its straight travel is the lone flight of the route,
+     * its pure set the route's coasting cycle, and its stable+ what the flock does to a boid
+     * flying it. Four things are checked on the way, because a corridor built from an edge set
+     * has ways of quietly meaning something else:
+     * <ul>
+     *   <li><b>chords</b> — an arc between two of the route's edges that the route does not
+     *       take. The corridor admits any transition between route edges, so a chord would be a
+     *       side door;</li>
+     *   <li><b>where the veto acts</b> — the states whose straight successor the corridor alters,
+     *       by edge. Expected at the route's exits and nowhere else;</li>
+     *   <li><b>the coasting cycle's length</b> against the lone lap {@code DecisionOverride}
+     *       flies (535 on dabeone's scoring routes, {@code EDGES.md} §2a) — the route's straight
+     *       travel is meant to be that flight;</li>
+     *   <li><b>the stable route's stable+ against the map-wide one</b>, which it should equal,
+     *       nothing on the unsteered cycle being vetoed that was not already.</li>
+     * </ul>
+     * Writes {@code render/route-states/<map>-<hash>-stableplus.png}: a row per corridor, the
+     * pure set on the left and stable+ on the right, the map-wide pair first.
+     */
+    public static void routeStablePlus(PresetScenarioParameter preset, SolverFacts.Gate gate, int quorum)
+            throws IOException {
+        Pipeline.Built b = Pipeline.build(preset, gate);
+        SolverFacts f = b.facts();
+        EdgeDecomposition.Labelling l = b.labelling();
+        NavMap map = l.map();
+        int[] edgeOf = l.edge();
+        Flocking flock = Flocking.of(preset.turningRadius());
+        MapStates whole = MapStates.of(map, flock, l.live(), l.liveCount());
+        StateSet pure = whole.pureStable(1);
+        StateSet plus = whole.stablePlus(quorum);
+        System.out.printf("%n=== %s @%s: stable+ on every relevant route, quorum %d ===%n",
+                preset.name(), preset.ingest().hash(), quorum);
+        System.out.printf("map-wide: pure %,d states in cycles %s; stable+ %,d states: %s%n",
+                pure.size(), lengths(whole.cycles(pure)), plus.size(), MapStates.byEdge(plus, edgeOf, f.edges()));
+
+        List<StateSetRender.Panel> panels = new ArrayList<>();
+        panels.add(new StateSetRender.Panel("map-wide", String.format("stable+ %,d states  %s;  pure cycles %s in blue",
+                plus.size(), MapStates.byEdge(plus, edgeOf, f.edges()), lengths(whole.cycles(pure))), plus, pure));
+
+        for (PhasePath.Route route : PhasePath.relevantRoutes(f)) {
+            int[] r = route.edges();
+            int[] states = route.states(edgeOf, l.live(), l.liveCount());
+            System.out.printf("%n-- route %s: %,d states --%n", route, states.length);
+
+            // Chords: arcs between route edges the route does not take.
+            StringBuilder chords = new StringBuilder();
+            for (int i = 0; i < r.length; i++) {
+                int a = r[i], next = r[(i + 1) % r.length];
+                for (int j = 0; j < r.length; j++) {
+                    int c = r[j];
+                    if (c == next || c == a) continue;
+                    for (int p : f.predecessors(c)) if (p == a) chords.append(' ').append(a).append("->").append(c);
+                }
+            }
+            System.out.printf("chords:%s%n", chords.isEmpty() ? " none" : chords);
+
+            MapStates m = whole.onRoute(states, states.length);
+            int[] vetoed = new int[f.edges()];
+            int vetoedTotal = 0;
+            for (int s : states) {
+                if (m.map().successor(s, 0) != map.successor(s, 0)) { vetoed[edgeOf[s]]++; vetoedTotal++; }
+            }
+            StringBuilder where = new StringBuilder();
+            for (int e = 0; e < f.edges(); e++) if (vetoed[e] > 0) where.append(String.format(" %d:%,d", e, vetoed[e]));
+            System.out.printf("straight successor altered by the corridor veto on %,d states:%s%n", vetoedTotal, where);
+
+            StateSet pureR = m.pureStable(1);
+            List<int[]> cyclesR = m.cycles(pureR);
+            System.out.printf("pure %,d states in %d cycle(s) of %s ticks: %s%n", pureR.size(), cyclesR.size(),
+                    lengths(cyclesR), MapStates.byEdge(pureR, edgeOf, f.edges()));
+            StateSet plusR = m.stablePlus(quorum);
+            System.out.printf("stable+ %,d states (%d turns capped): %s%n", plusR.size(), m.capped(),
+                    MapStates.byEdge(plusR, edgeOf, f.edges()));
+
+            // Against the map-wide set, restricted to the route's states. The states only the
+            // map-wide set has are listed by edge, with where straight travel takes them on each
+            // map, since the corridor veto is the only thing that can have made the difference.
+            int both = 0, onlyRoute = 0, onlyWhole = 0;
+            int[] wholeByEdge = new int[f.edges()];
+            List<Integer> examples = new ArrayList<>();
+            for (int s : states) {
+                boolean a = plusR.contains(s), w = plus.contains(s);
+                if (a && w) both++;
+                else if (a) onlyRoute++;
+                else if (w) { onlyWhole++; wholeByEdge[edgeOf[s]]++; if (examples.size() < 6) examples.add(s); }
+            }
+            System.out.printf("against map-wide stable+ on these states: %,d in both, %,d only on the route, %,d only map-wide%s%n",
+                    both, onlyRoute, onlyWhole, route.stable() && (onlyRoute + onlyWhole) > 0 ? "   DIFFERS on the stable route" : "");
+            if (onlyWhole > 0) {
+                StringBuilder by = new StringBuilder();
+                for (int e = 0; e < f.edges(); e++) if (wholeByEdge[e] > 0) by.append(String.format(" %d:%,d", e, wholeByEdge[e]));
+                System.out.printf("   only map-wide, by edge:%s%n", by);
+                int turns = Params.TURNS;
+                for (int s : examples) {
+                    int ms = map.successor(s, 0), cs = m.map().successor(s, 0);
+                    System.out.printf("   e.g. (%d,%d,%d) on edge %d: straight goes to edge %d map-wide, %s on the corridor%n",
+                            (s / turns) % map.width(), (s / turns) / map.width(), s % turns, edgeOf[s],
+                            ms < 0 ? -1 : edgeOf[ms], cs < 0 ? "nowhere" : "edge " + edgeOf[cs] + (cs == ms ? " (the same state)" : " (a different state)"));
+                }
+            }
+
+            String name = Arrays.toString(r) + (route.stable() ? " stable" : "") + (route.scoring() ? " scoring" : "");
+            panels.add(new StateSetRender.Panel(name, String.format("stable+ %,d states  %s;  coasting cycle %s ticks in blue",
+                    plusR.size(), MapStates.byEdge(plusR, edgeOf, f.edges()), lengths(cyclesR)), plusR, pureR));
+        }
+
+        Path out = Path.of("render", "route-states", preset.name().toLowerCase(java.util.Locale.ROOT)
+                + "-" + preset.ingest().hash() + "-stableplus.png");
+        StateSetRender.write(preset.ingest().display(), out, panels, 3, 2,
+                String.format("%s @%s — stable+ on every relevant route, quorum %d; the flock's loop is the map-wide pure set throughout",
+                        preset.name(), preset.ingest().hash(), quorum));
+    }
+
+    /** Cycle lengths, longest first, as text. */
+    private static String lengths(List<int[]> cycles) {
+        StringBuilder s = new StringBuilder("[");
+        for (int i = 0; i < cycles.size(); i++) s.append(i == 0 ? "" : ", ").append(cycles.get(i).length);
+        return s.append(']').toString();
+    }
+
+    /**
      * Scratch dispatcher, not an interface. Edit it to call whatever entry point is wanted;
      * {@code PIPELINE.md} has the real invocations in order with their expected numbers.
      */
     public static void main(String[] args) throws IOException {
         SolverFacts.Gate dab = new SolverFacts.Gate(false, 202, 174, 191, -1);
         SolverFacts.Gate plait = new SolverFacts.Gate(true, 360, 335, 350, 0);
-        for (int[] route : PhasePath.routes(Pipeline.build(PresetScenarioParameter.DABEONE, dab).facts())) PhasePath.longcuts(PresetScenarioParameter.DABEONE, dab, route, null);
-        for (int[] route : PhasePath.routes(Pipeline.build(PresetScenarioParameter.PLAIT, plait).facts())) PhasePath.longcuts(PresetScenarioParameter.PLAIT, plait, route, null);
+        routeStablePlus(PresetScenarioParameter.DABEONE, dab, QUORUM);
+        routeStablePlus(PresetScenarioParameter.PLAIT, plait, QUORUM);
     }
 
     /** A fingerprint of a labelling, so two runs can be compared without eyeballing 136k states. */

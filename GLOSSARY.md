@@ -763,6 +763,30 @@ the edge's entrances, which the straight-travel loop never touches, and on dabeo
 1,065 of 2,371 settled states are in it. Anything using stable+ as ground must **union** with
 settled, never replace it.
 
+**corridor** (of a route) — the route's states as a play area of their own: `NavMap.corridor`,
+the same map with only those states alive, so a transition is legal exactly when it is legal on
+the map *and* lands on a route edge, and the unchanged veto keeps a boid on the route as it keeps
+one in the kernel. Straight travel on it is the lone psyboid's flight of the route (`DecisionOverride`'s
+rule: the request unless it would leave, then straight, then the other hand). Forward-viable by
+one-step navigability; not backward-viable at entrances fed only from off-route edges. Not the
+same object as `PhasePath.Corridor`, which is a *view* of the route's states on the whole map
+with the cut marked, for the loop searches.
+
+**relevant route** — a simple cycle of the edge graph that is stable (every edge stable) or
+scoring: one a psyboid flies, or the one the flock flies. `PhasePath.Route`, `relevantRoutes`.
+All four of dabeone's and all three of plait's are relevant.
+
+**stable+ on a route** (2026-09-16, the user's specification) — stable+ with the navigable area
+restricted to the route's edges and the leader loop unchanged: `MapStates.onRoute`, the algebra
+bound to the route's corridor, so its `pureStable` is the route's **coasting cycle** (535 and 538
+ticks on dabeone's scoring loops, the two lone laps `DecisionOverride` flies) and its `stablePlus`
+is what the flock — the whole map's pure set, advancing under the whole map's straight travel —
+does to a boid flying the route. Reduces to the map-wide set on the stable route. **A property of
+the route even on a shared edge**, because the entrance fixes the coasting line: dabeone's
+scoring loops enter edge 4 from 8 where the stable loop enters from 7, and 253 of its map-wide
+states are not in theirs. The start states of a cut's cost. `SimTest.routeStablePlus`;
+`EDGES.md` §6.
+
 **quorum** — the one free parameter in stable+, and **one** number: that many influencer
 placements must ask for a turn before it may start, the same count must keep asking for it to
 continue, and nothing at all is needed to end it, so a turn may stop at any tick. **It is a count
@@ -908,6 +932,7 @@ anything not listed.
 | region sample sheet | `ThreeBoidSamples` | `render/phase<f>_<t>-samples.png` |
 | artifact addressing | `Derived` (structure and behaviour tiers) | `ingests/<map>/structure/<h>/behaviour/<h>/` |
 | map-wide stable, stable+ | `StateSet` + `MapStates.stablePlus` at `SimTest.QUORUM` | in memory |
+| stable+ on a route | `MapStates.onRoute` on `NavMap.corridor`, over `PhasePath.relevantRoutes`, driven by `SimTest.routeStablePlus` | `render/route-states/<map>-<hash>-stableplus.png`; printed |
 | phase map on stable+ | `SimTest.phaseMapOnStablePlus` | `render/phase40-stableplus.png` |
 | white feature census | `ThreeBoidSamples.features` / `bands` / `classify` | `render/phase40-stableplus-white-atlas.png` |
 | aggregation survey | **retired 2026-09-13**; `AggregationSurvey` keeps the fidelity and closed-form checks, `SimTest.aggregationPhaseMaps` and `proposedPhysics` compare physics 2 and 3 | `render/agg-*.png`, `render/prop-*.png` |

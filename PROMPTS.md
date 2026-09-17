@@ -10,7 +10,7 @@ the *next* run, because its own log is still being written while it is running.
 **Not required reading.** This exists so a later session can search what was already asked without
 opening tens of megabytes of transcript. Read `README.md` first; come here for exact wording.
 
-389 prompts across 15 sessions.
+390 prompts across 16 sessions.
 
 ---
 
@@ -10943,3 +10943,13 @@ Summary:
 
 If you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: C:\Users\glitc\.claude\projects\C--Users-glitc-IdeaProjects-Boids\36e78a1a-5496-447f-80fe-06d7640d337a.jsonl
 Continue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with "I'll continue" or similar. Pick up the last task as if the break never happened.
+
+---
+
+## Session 16 - 2026-09-16
+
+*Log `3046fa94-7ab2-4b1f-8b44-171823f8ef7d`, 1 prompts.*
+
+### 1
+
+Boot up on the project.

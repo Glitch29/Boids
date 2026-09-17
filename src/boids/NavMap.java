@@ -60,6 +60,33 @@ public final class NavMap {
         this.passable = passable;
     }
 
+    /**
+     * The same map with only {@code states} alive: a route as a play area.
+     * <p>
+     * Everything else is shared — geometry, the step table, the pixel-level passability — so a
+     * transition is legal here exactly when it is legal on the map <em>and</em> lands in the set,
+     * and {@link #constrainTurn} then keeps a boid on the route the way it keeps one in the kernel:
+     * the flock's request stands unless it would leave, and then straight, then the other hand.
+     * For a route's edges that is the retired pilot's rule and {@code DecisionOverride}'s, so
+     * straight travel on the corridor is the lone psyboid's flight of the route.
+     * <p>
+     * <b>Forward-viable, not backward.</b> One-step navigability (a consequence of the axiom)
+     * promises every state of an edge a turn that stays on it or reaches the chosen successor,
+     * so from every state in a route's corridor some turn stays in it. It promises nothing about
+     * predecessors: an entrance fed only from an edge off the route has none here. Anything
+     * built forward from the corridor's own cycles never meets those states.
+     *
+     * @param states the states to keep alive, {@code count} of them; the rest go dead
+     */
+    NavMap corridor(int[] states, int count) {
+        long[] keep = new long[alive.length];
+        for (int i = 0; i < count; i++) {
+            int s = states[i];
+            if (get(alive, s)) keep[s >>> 6] |= 1L << (s & 63);
+        }
+        return new NavMap(width, height, radius, oob, score, stepX, stepY, path, keep, passable);
+    }
+
     public int width() { return width; }
     public int height() { return height; }
     public int radius() { return radius; }

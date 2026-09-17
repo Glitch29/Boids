@@ -6,9 +6,12 @@ entries of 2026-09-15 and 16: the handoff of 2026-09-14 is closed — phase-comp
 defined and built, a route clock is anchored on the shortest lap, and **longcuts are basins of
 that clock's excess field**, found on every route of both maps, their loss the longest forced
 path and clock-free (`EDGES.md` §5). The placement fitness of 2026-09-13 is superseded and its
-code removed, with the session's other superseded experiments (the cleanup of 2026-09-16). Next
-is a decision zone from a longcut. §0h is closed; its handoff is kept as the record of what the
-benchmark measured and why that search was abandoned.
+code removed, with the session's other superseded experiments (the cleanup of 2026-09-16). The
+thread since: **a discrete set of cuts**, costed by the steered ticks a path forces on a boid
+coasting from stable+ — and stable+ is now built per relevant route, the route as a play area
+with the flock's loop unchanged ("Toward a discrete set of cuts", at the end of §0i). Next is the
+cost itself. §0h is closed; its handoff is kept as the record of what the benchmark measured and
+why that search was abandoned.
 
 ---
 
@@ -2155,6 +2158,37 @@ basins at one pixel under the tau-range merge; whether this clock replaces `Rout
 `EdgeMetric` for routes, and with what weighting; whether a self-inverse edge's other direction
 belongs in a route's corridor.
 
+
+### Toward a discrete set of cuts: stable+ on a route — **built** 2026-09-16
+
+**The goal, the user's.** Turn a general sense of where shortcuts and longcuts are into a
+discrete set of actionable pathing overrides, in two steps: define the quality of a cut, or of a
+set of cuts, for a map — with whatever intermediate metrics that needs — and then find a way to
+produce a good set by that metric. A cut is something a psyboid spends override ticks on, to gain
+flexibility in its phase relative to other boids or to reach a destination sooner. **The best
+proxy for a path's cost in override ticks is the fewest steered ticks it forces on an unsteered
+boid starting at any state in stable+.** The cost of having many cuts is search-tree breadth:
+each adds to it, and takes depth in ticks from the search at a given compute.
+
+**Built first: stable+ on every relevant route**, since the cost is measured from it. The user's
+specification — the leader loop stays the same in every case, and for a route the navigable
+area is restricted to its edges — built as the route being a play area of its own
+(`NavMap.corridor`), bound to the state-set algebra by `MapStates.onRoute`; routes classified by
+`PhasePath.routes` / `relevantRoutes`; driven by `SimTest.routeStablePlus`, sheet at
+`render/route-states/<map>-<hash>-stableplus.png`. Canonical account and the table in
+`EDGES.md` §6 "Stable+ on a route". The checks: no chords on any of the seven routes; the veto
+alters only exits not taken and the recorded follow-through states; **the coasting cycles are
+the flown lone laps, 535 and 538**; the stable route's set is identical to the map-wide one on
+dabeone. Findings: stable+ is a property of the route even on a shared edge (the entrance fixes
+the coasting line); the mirror route's stable+ is a different shape; and **plait's map-wide
+stable+ leaves the stable edges through the trailing partial tick at a branch, not through any
+knock** — the expansion stays on edges 1 and 4 at every quorum 2–9 — a suspected defect in the
+map-wide construction, reported and not changed.
+
+**Next: the cost.** For a path `P` — a longcut basin or its loss path, or the fast band beside
+it — the fewest steered ticks it forces on a boid coasting from each state of the route's
+stable+, and the quality of a cut and of a set of cuts from that; then a way to produce a good
+set. Open on the way: whether a longcut is the basin or its loss path; the size floor for basins.
 
 ### The cleanup, 2026-09-16 — the experiments the shortest-route clock superseded
 
